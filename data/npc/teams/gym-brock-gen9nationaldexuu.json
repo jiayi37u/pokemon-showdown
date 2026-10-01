@@ -1,0 +1,60 @@
+{
+  "format": "gen9nationaldexuu",
+  "pokemon": [
+    {
+      "species": "Rhyperior",
+      "ability": "Solid Rock",
+      "item": "Leftovers",
+      "nature": "Adamant",
+      "teraType": "Rock",
+      "evs": { "hp": 252, "atk": 252, "spd": 4 },
+      "moves": ["Stone Edge", "Earthquake", "Megahorn", "Stealth Rock"]
+    },
+    {
+      "species": "Krookodile",
+      "ability": "Intimidate",
+      "item": "Choice Scarf",
+      "nature": "Jolly",
+      "teraType": "Dark",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Earthquake", "Knock Off", "Stone Edge", "Close Combat"]
+    },
+    {
+      "species": "Coalossal",
+      "ability": "Steam Engine",
+      "item": "Heavy-Duty Boots",
+      "nature": "Modest",
+      "teraType": "Fire",
+      "evs": { "hp": 252, "spa": 252, "spe": 4 },
+      "moves": ["Flamethrower", "Power Gem", "Earth Power", "Will-O-Wisp"]
+    },
+    {
+      "species": "Lycanroc",
+      "ability": "Sand Rush",
+      "item": "Life Orb",
+      "nature": "Jolly",
+      "teraType": "Rock",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Stone Edge", "Close Combat", "Psychic Fangs", "Swords Dance"]
+    },
+    {
+      "species": "Gigalith",
+      "ability": "Sand Stream",
+      "item": "Smooth Rock",
+      "nature": "Brave",
+      "teraType": "Rock",
+      "evs": { "hp": 252, "atk": 252, "spd": 4 },
+      "ivs": { "spe": 0 },
+      "moves": ["Stone Edge", "Heavy Slam", "Earthquake", "Stealth Rock"]
+    },
+    {
+      "species": "Omastar",
+      "ability": "Swift Swim",
+      "item": "Choice Specs",
+      "nature": "Modest",
+      "teraType": "Water",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Hydro Pump", "Ice Beam", "Earth Power", "Surf"]
+    }
+  ]
+}

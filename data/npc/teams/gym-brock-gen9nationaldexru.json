@@ -1,0 +1,59 @@
+{
+  "format": "gen9nationaldexru",
+  "pokemon": [
+    {
+      "species": "Aggron",
+      "ability": "Rock Head",
+      "item": "Choice Band",
+      "nature": "Adamant",
+      "teraType": "Rock",
+      "evs": { "hp": 4, "atk": 252, "spe": 252 },
+      "moves": ["Head Smash", "Heavy Slam", "Earthquake", "Aqua Tail"]
+    },
+    {
+      "species": "Sudowoodo",
+      "ability": "Sturdy",
+      "item": "Custap Berry",
+      "nature": "Adamant",
+      "teraType": "Rock",
+      "evs": { "hp": 252, "atk": 252, "def": 4 },
+      "moves": ["Stone Edge", "Wood Hammer", "Earthquake", "Stealth Rock"]
+    },
+    {
+      "species": "Cradily",
+      "ability": "Storm Drain",
+      "item": "Leftovers",
+      "nature": "Careful",
+      "teraType": "Grass",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "moves": ["Giga Drain", "Toxic", "Recover", "Stealth Rock"]
+    },
+    {
+      "species": "Aurorus",
+      "ability": "Snow Warning",
+      "item": "Heavy-Duty Boots",
+      "nature": "Modest",
+      "teraType": "Ice",
+      "evs": { "hp": 252, "spa": 252, "spe": 4 },
+      "moves": ["Blizzard", "Freeze-Dry", "Earth Power", "Thunderbolt"]
+    },
+    {
+      "species": "Golem",
+      "ability": "Sturdy",
+      "item": "Weakness Policy",
+      "nature": "Adamant",
+      "teraType": "Rock",
+      "evs": { "hp": 252, "atk": 252, "spd": 4 },
+      "moves": ["Stone Edge", "Earthquake", "Explosion", "Stealth Rock"]
+    },
+    {
+      "species": "Relicanth",
+      "ability": "Rock Head",
+      "item": "Choice Band",
+      "nature": "Adamant",
+      "teraType": "Rock",
+      "evs": { "hp": 4, "atk": 252, "spe": 252 },
+      "moves": ["Head Smash", "Waterfall", "Earthquake", "Double-Edge"]
+    }
+  ]
+}

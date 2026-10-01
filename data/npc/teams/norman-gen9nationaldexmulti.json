@@ -1,0 +1,69 @@
+{
+  "format": "gen9nationaldexmulti",
+  "pokemon": [
+    {
+      "species": "Vigoroth",
+      "ability": "Vital Spirit",
+      "item": "Eviolite",
+      "nature": "Careful",
+      "evs": { "hp": 252, "atk": 4, "spd": 252 },
+      "moves": ["Return", "Play Rough", "Bulk Up", "Slack Off"],
+      "teraType": "Normal",
+      "slot": "p2"
+    },
+    {
+      "species": "Exploud",
+      "ability": "Scrappy",
+      "item": "Throat Spray",
+      "nature": "Modest",
+      "evs": { "hp": 252, "spa": 252, "spd": 4 },
+      "moves": ["Hyper Voice", "Fire Blast", "Blizzard", "Focus Blast"],
+      "teraType": "Normal",
+      "ivs": { "atk": 0 },
+      "slot": "p2"
+    },
+    {
+      "species": "Ursaluna",
+      "ability": "Guts",
+      "item": "Flame Orb",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 252, "spd": 8 },
+      "moves": ["Headlong Rush", "Return", "Close Combat", "Earthquake"],
+      "teraType": "Ground",
+      "slot": "p2"
+    },
+    {
+      "species": "Staraptor",
+      "ability": "Intimidate",
+      "item": "Eject Button",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Brave Bird", "Close Combat", "Roost", "Return"],
+      "teraType": "Normal",
+      "slot": "p4"
+    },
+    {
+      "species": "Zangoose",
+      "ability": "Toxic Boost",
+      "item": "Toxic Orb",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Close Combat", "Return", "Zen Headbutt"],
+      "shiny": true,
+      "teraType": "Normal",
+      "slot": "p4"
+    },
+    {
+      "species": "Deoxys-Defense",
+      "ability": "Pressure",
+      "item": "Leftovers",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spa": 8 },
+      "moves": ["Recover", "Toxic", "Psychic", "Calm Mind"],
+      "teraType": "Psychic",
+      "ivs": { "atk": 0 },
+      "slot": "p4"
+    }
+  ]
+}
+

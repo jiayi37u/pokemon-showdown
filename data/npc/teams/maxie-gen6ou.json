@@ -1,0 +1,63 @@
+{
+  "format": "gen6ou",
+  "pokemon": [
+    {
+      "species": "Camerupt",
+      "ability": "Solid Rock",
+      "item": "Assault Vest",
+      "nature": "Modest",
+      "evs": { "hp": 248, "spa": 252, "spd": 8 },
+      "moves": ["Heat Wave", "Scorching Sands", "Hidden Power [Ice]", "Overheat"],
+      "shiny": true,
+      "teraType": "Fire",
+      "ivs": { "atk": 0 }
+    },
+    {
+      "species": "Cacturne",
+      "ability": "Water Absorb",
+      "item": "Leftovers",
+      "nature": "Careful",
+      "evs": { "hp": 248, "atk": 8, "spd": 252 },
+      "moves": ["Spiky Shield", "Leech Seed", "Knock Off", "Seed Bomb"],
+      "teraType": "Grass"
+    },
+    {
+      "species": "Alakazam",
+      "ability": "Magic Guard",
+      "item": "Life Orb",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Encore", "Shadow Ball", "Dazzling Gleam", "Expanding Force"],
+      "teraType": "Psychic",
+      "ivs": { "atk": 0 }
+    },
+    {
+      "species": "Mightyena",
+      "ability": "Intimidate",
+      "item": "Rocky Helmet",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Psychic Fangs", "Throat Chop", "Play Rough", "Taunt"],
+      "teraType": "Dark"
+    },
+    {
+      "species": "Crobat",
+      "ability": "Inner Focus",
+      "item": "Black Sludge",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "atk": 4, "spe": 252 },
+      "moves": ["Tailwind", "Roost", "Brave Bird", "Super Fang"],
+      "teraType": "Poison"
+    },
+    {
+      "species": "Houndoom",
+      "ability": "Flash Fire",
+      "item": "Life Orb",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Nasty Plot", "Dark Pulse", "Fire Blast", "Heat Wave"],
+      "teraType": "Dark",
+      "ivs": { "atk": 0 }
+    }
+  ]
+}

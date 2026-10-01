@@ -1,0 +1,65 @@
+{
+  "format": "gen9nationaldexmulti",
+  "pokemon": [
+    {
+      "species": "Tyranitar",
+      "ability": "Sand Stream",
+      "item": "Assault Vest",
+      "nature": "Adamant",
+      "teraType": "Rock",
+      "evs": { "hp": 252, "atk": 252, "spd": 4 },
+      "moves": ["Rock Slide", "Crunch", "Low Kick", "Protect"],
+      "slot": "p2"
+    },
+    {
+      "species": "Garganacl",
+      "ability": "Purifying Salt",
+      "item": "Leftovers",
+      "nature": "Careful",
+      "teraType": "Ghost",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "moves": ["Salt Cure", "Wide Guard", "Recover", "Protect"],
+      "slot": "p2"
+    },
+    {
+      "species": "Great Tusk",
+      "ability": "Protosynthesis",
+      "item": "Clear Amulet",
+      "nature": "Jolly",
+      "teraType": "Ground",
+      "evs": { "hp": 4, "atk": 252, "spe": 252 },
+      "moves": ["Headlong Rush", "Close Combat", "Rock Slide", "Protect"],
+      "slot": "p2"
+    },
+    {
+      "species": "Excadrill",
+      "ability": "Sand Rush",
+      "item": "Life Orb",
+      "nature": "Jolly",
+      "teraType": "Ground",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Rock Slide", "Protect"],
+      "slot": "p4"
+    },
+    {
+      "species": "Arcanine-Hisui",
+      "ability": "Intimidate",
+      "item": "Safety Goggles",
+      "nature": "Adamant",
+      "teraType": "Rock",
+      "evs": { "hp": 252, "atk": 252, "spe": 4 },
+      "moves": ["Head Smash", "Flare Blitz", "Extreme Speed", "Protect"],
+      "slot": "p4"
+    },
+    {
+      "species": "Amoonguss",
+      "ability": "Regenerator",
+      "item": "Rocky Helmet",
+      "nature": "Calm",
+      "teraType": "Water",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "moves": ["Spore", "Rage Powder", "Pollen Puff", "Protect"],
+      "slot": "p4"
+    }
+  ]
+}

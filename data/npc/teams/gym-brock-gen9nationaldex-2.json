@@ -1,0 +1,59 @@
+{
+  "format": "gen9nationaldex",
+  "pokemon": [
+    {
+      "species": "Gigalith",
+      "ability": "Sand Stream",
+      "item": "Leftovers",
+      "nature": "Adamant",
+      "teraType": "Rock",
+      "evs": { "hp": 252, "atk": 252, "spe": 4 },
+      "moves": ["Stone Edge", "Protect", "Earthquake", "Stealth Rock"]
+    },
+    {
+      "species": "Garchomp",
+      "ability": "Rough Skin",
+      "item": "Rocky Helmet",
+      "nature": "Jolly",
+      "teraType": "Ground",
+      "evs": { "hp": 252, "def": 4, "spe": 252 },
+      "moves": ["Earthquake", "Stone Edge", "Swords Dance", "Scale Shot"]
+    },
+    {
+      "species": "Glimmora",
+      "ability": "Toxic Debris",
+      "item": "Focus Sash",
+      "nature": "Timid",
+      "teraType": "Grass",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Mortal Spin", "Power Gem", "Earth Power", "Spiky Shield"]
+    },
+    {
+      "species": "Garganacl",
+      "ability": "Purifying Salt",
+      "item": "Leftovers",
+      "nature": "Careful",
+      "teraType": "Ghost",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "moves": ["Salt Cure", "Recover", "Stealth Rock", "Body Press"]
+    },
+    {
+      "species": "Iron Thorns",
+      "ability": "Quark Drive",
+      "item": "Booster Energy",
+      "nature": "Jolly",
+      "teraType": "Electric",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Stone Edge", "Wild Charge", "Earthquake", "Swords Dance"]
+    },
+    {
+      "species": "Great Tusk",
+      "ability": "Protosynthesis",
+      "item": "Booster Energy",
+      "nature": "Jolly",
+      "teraType": "Ground",
+      "evs": { "hp": 252, "atk": 4, "spe": 252 },
+      "moves": ["Headlong Rush", "Close Combat", "Knock Off", "Rapid Spin"]
+    }
+  ]
+}

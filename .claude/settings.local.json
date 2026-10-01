@@ -1,0 +1,19 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:8441"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(npm run build:*)",
+      "Bash(node test/npc/ai/run-tests.js:*)",
+      "Bash(cp:*)",
+      "Bash(find:*)",
+      "Bash(for:*)",
+      "Bash(done)",
+      "Bash(sort:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

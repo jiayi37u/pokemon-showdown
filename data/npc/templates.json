@@ -1,0 +1,95 @@
+{
+  "gymbrock": {
+    "id": "gymbrock",
+    "name": "Brock",
+    "avatar": "brock",
+    "title": "Pewter Gym Leader",
+    "description": "The rock-solid Pokemon Trainer!",
+    "difficulty": "smart",
+    "teams": {
+      "singles": {
+        "gen9nationaldex": [
+          "gym-brock-gen9nationaldex.json",
+          "gym-brock-gen9nationaldex-2.json"
+        ],
+        "gen9nationaldexuu": [
+          "gym-brock-gen9nationaldexuu.json"
+        ],
+        "gen9nationaldexru": [
+          "gym-brock-gen9nationaldexru.json"
+        ]
+      },
+      "doubles": {
+        "gen9doublesou": [
+          "gym-brock-gen9doublesou.json"
+        ]
+      },
+      "multi": {
+        "gen9nationaldexmulti": [
+          "gym-brock-gen9nationaldexmulti.json"
+        ]
+      },
+      "randombattle": [
+        "gen9randombattle"
+      ]
+    }
+  },
+  "maxie": {
+    "id": "maxie",
+    "name": "Maxie",
+    "avatar": "maxie-gen3",
+    "title": "Magma Leader熔岩队老大",
+    "description": "他的野心是借助传说的宝可梦固拉多的力量，令海水干涸并扩展大地，增加陆上生物能活动的空间！",
+    "difficulty": "smart",
+    "teams": {
+      "singles": {
+        "gen9nationaldex": [
+          "maxie-gen9nationaldex.json"
+        ],
+        "gen9nationaldexuu": [
+          "maxie-gen9nationaldexuu.json"
+        ],
+        "gen6ou": [
+          "maxie-gen6ou.json"
+        ]
+      },
+      "doubles": {
+        "gen9doublesou": [
+          "maxie-gen9nationaldexdoublesou.json"
+        ]
+      },
+      "multi": {
+        "gen9nationaldexmulti": [
+          "maxie-gen9nationaldexmulti.json"
+        ]
+      },
+      "randombattle": [
+        "gen9randombattle"
+      ]
+    }
+  },
+  "norman": {
+    "id": "norman",
+    "name": "千里",
+    "avatar": "norman-gen3",
+    "title": "橙华市道馆馆主",
+    "description": "精通一般属性宝可梦，掌管天秤徽章。",
+    "difficulty": "smart",
+    "teams": {
+      "randombattle": [
+        "gen9randombattle"
+      ],
+      "multi": {
+        "gen9nationaldexmulti": [
+          "norman-gen9nationaldexmulti.json"
+        ]
+      },
+      "singles": {
+        "gen9nationaldex": [
+          "norman-gen9nationaldex.json"
+        ]
+      }
+    }
+  }
+}
+

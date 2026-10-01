@@ -126,6 +126,10 @@ function setupGlobals() {
 	const TeamValidatorAsync = require('./team-validator-async');
 	global.TeamValidatorAsync = TeamValidatorAsync;
 
+	// Initialize NPC module
+	const { NPC } = require('./npc/manager');
+	NPC.loadTemplates();
+
 	global.Sockets = Sockets;
 	Sockets.start(Config.subprocessescache);
 }

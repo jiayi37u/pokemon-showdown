@@ -17,8 +17,14 @@ import type {
 	FieldConditions,
 	CFRUAIConfig,
 } from './types';
-import { DEFAULT_AI_CONFIG, resolveLevel } from './types';
+import { DEFAULT_AI_CONFIG, resolveLevel, defaultBoosts } from './types';
 import type { BattleTracker, TrackedPokemon } from './util/battle-tracker';
+import {
+	parseCondition,
+	parseDetails,
+	speciesDefaults,
+	makeAIPokemonSkeleton,
+} from './util/pokemon-builder';
 
 /**
  * Build BattleState from Pokemon Showdown request and battle data
@@ -147,31 +153,14 @@ function buildSelfReserve(request: AnyObject, active: AIPokemon[]): AIPokemon[] 
  * For active Pokemon with boosts, use buildSelfActiveWithBoosts which requires battle object.
  */
 function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: boolean): AIPokemon {
-	// Parse condition: "100/100" or "50/100 par" or "0 fnt"
-	const conditionParts = mon.condition.split(' ');
-	const hpParts = conditionParts[0].split('/');
-	const currentHp = parseInt(hpParts[0]) || 0;
-	const maxHp = parseInt(hpParts[1]) || currentHp;
-	const status = conditionParts[1] || '';
-	const fainted = status === 'fnt' || currentHp === 0;
-	const hpPercent = maxHp > 0 ? (currentHp / maxHp) * 100 : 0;
-
-	// Parse details: "Species, L50, M" or "Species-Forme, L100, F"
-	const details = mon.details.split(', ');
-	const species = details[0];
-	// CFRU AI Fix: Default to L100 for National Dex and similar formats
-	// PS omits level in details when it's the format default (usually 100)
-	const level = parseInt((details[1] || 'L100').replace('L', '')) || 100;
-	const gender = details[2] || 'N';
-
-	// Get species data
-	const speciesData = Dex.species.get(species);
-	const types = speciesData.types || [];
+	const { currentHp, maxHp, hpPercent, status, fainted } = parseCondition(mon.condition);
+	const { species, level, gender } = parseDetails(mon.details);
+	const { types } = speciesDefaults(species);
 
 	// CFRU AI Fix: Use actual stats from request instead of base stats (species stats)
 	// mon.stats contains the actual computed stats: { atk, def, spa, spd, spe }
 	// This is critical for damage calculation accuracy!
-	const speciesBaseStats = speciesData.baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 };
+	const { baseStats: fallbackBaseStats } = speciesDefaults(species);
 	const actualStats = mon.stats ? {
 		hp: maxHp, // Use actual max HP from condition
 		atk: mon.stats.atk,
@@ -179,58 +168,25 @@ function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: boolean
 		spa: mon.stats.spa,
 		spd: mon.stats.spd,
 		spe: mon.stats.spe,
-	} : speciesBaseStats; // Fallback to base stats if mon.stats is not available
+	} : fallbackBaseStats; // Fallback to base stats if mon.stats is not available
 
-	// DEBUG: Uncomment to debug Pokemon stats from request
-	// console.log(`[DEBUG] buildPokemonFromRequest: ${species}, mon.stats=${JSON.stringify(mon.stats)}, actualStats=${JSON.stringify(actualStats)}`);
-
-	// Get moves
-	const moves = mon.moves || [];
-
-	// Get ability and item
-	const ability = mon.ability || mon.baseAbility || '';
-	const item = mon.item || '';
-
-	// Parse boosts from request data if available
-	// CFRU AI Fix: Boosts need to be tracked for setup move scoring
-	// The request doesn't include boosts directly, they come from battle.sides[].active[].boosts
-	const boosts = {
-		atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0,
-	};
-
-	// Parse volatiles (simplified)
-	const volatiles = new Set<string>();
-
-	// Default ability stat mod (Quark Drive, Protosynthesis, etc.)
-	// Will be overwritten by tracker data for active Pokemon
-	const abilityStatMod = {
-		stat: null as 'atk' | 'def' | 'spa' | 'spd' | 'spe' | null,
-		multiplier: 1,
-	};
-
-	return {
+	return makeAIPokemonSkeleton({
 		slot,
 		species,
 		hp: currentHp,
 		maxHp,
 		hpPercent,
-		status: fainted ? '' : status,
-		sleepTurns: 0,
-		toxicCounter: 0,
-		types,
-		ability,
-		item,
-		moves,
-		lastMove: '', // Self lastMove is tracked via BattleTracker for consecutive Protect detection
-		baseStats: actualStats, // Now using actual stats instead of species base stats!
-		boosts,
-		abilityStatMod,
-		volatiles,
+		status,
 		fainted,
+		types,
+		ability: mon.ability || mon.baseAbility || '',
+		item: mon.item || '',
+		moves: mon.moves || [],
+		baseStats: actualStats,
 		active: isActive,
 		level,
 		gender,
-	};
+	});
 }
 
 /**
@@ -286,7 +242,7 @@ function buildOpponentReserveRevealed(battle: AnyObject | null, active: AIPokemo
 			itemLost: false, // Unknown, assume has item
 			moves: [], // Unknown
 			baseStats: Dex.species.get(mon.speciesForme || mon.species).baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 },
-			boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
+			boosts: defaultBoosts(),
 			volatiles: new Set(),
 			fainted: mon.fainted || false,
 			active: false,
@@ -332,9 +288,7 @@ function buildOpponentPokemonRevealed(mon: AnyObject, slot: number, isActive: bo
 	}
 
 	// Get boosts
-	const boosts = { ...mon.boosts } || {
-		atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0,
-	};
+	const boosts = { ...defaultBoosts(), ...mon.boosts };
 
 	// Get volatiles
 	const volatiles = new Set<string>();
@@ -424,9 +378,7 @@ function buildOpponentPokemonFull(mon: AnyObject, slot: number, isActive: boolea
 	}
 
 	// Get boosts
-	const boosts = { ...mon.boosts } || {
-		atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0,
-	};
+	const boosts = { ...defaultBoosts(), ...mon.boosts };
 
 	// Get volatiles
 	const volatiles = new Set<string>();
@@ -547,46 +499,53 @@ function buildFieldConditions(battle: AnyObject | null): FieldConditions {
 }
 
 /**
+ * 把单条 PS move 数据转成 AIMove。
+ *
+ * 入参 `moveData` 容忍三种来源：
+ *   1) request.active[i].moves[j] —— 原生 PS 协议对象，字段：
+ *      { move, id, pp, maxpp, target, disabled }
+ *   2) NPCBattleAI 的 MoveChoice —— 已经预先补了 Dex 字段：
+ *      { slot, move, target, zMove, disabled, basePower, type, category }
+ *   3) Multi 场景从别处搬运的 move 对象：可能只有 `id` 而没有 `move`
+ *
+ * Return/Frustration 这类 PS 名字带 BP 的招（例如 "Return 102"），Dex 查不到，硬编码。
+ */
+export function buildAIMove(moveData: AnyObject, slot: number): AIMove {
+	const moveName = moveData.move || moveData.id || '';
+	const moveId = toID(moveName);
+	const dexMove = Dex.moves.get(moveName);
+	const isReturn = moveId.startsWith('return') && moveId !== 'returntoearth';
+	const isFrustration = moveId.startsWith('frustration');
+
+	return {
+		id: moveId,
+		name: isReturn ? 'Return' : (isFrustration ? 'Frustration' : (dexMove.name || moveName)),
+		slot,
+		type: isReturn || isFrustration ? 'Normal' : (moveData.type || dexMove.type || '???'),
+		category: isReturn || isFrustration ? 'Physical' :
+			((moveData.category || dexMove.category || 'Status') as 'Physical' | 'Special' | 'Status'),
+		basePower: isReturn ? 102 : (isFrustration ? 1 : (moveData.basePower || dexMove.basePower || 0)),
+		accuracy: isReturn || isFrustration ? 100 : dexMove.accuracy,
+		pp: moveData.pp ?? dexMove.pp ?? 10,
+		maxPp: moveData.maxpp ?? dexMove.pp ?? 10,
+		priority: dexMove.priority || 0,
+		target: moveData.target || dexMove.target || 'normal',
+		flags: isReturn || isFrustration ? { contact: 1, protect: 1 } : (dexMove.flags || {}),
+		secondaryChance: dexMove.secondary?.chance || 0,
+		disabled: moveData.disabled || false,
+		isZMove: !!moveData.zMove,
+		isMaxMove: false,
+		multihit: dexMove.multihit || null,
+	};
+}
+
+/**
  * Build AIMove array from request move data
  */
 export function buildMovesFromRequest(request: AnyObject, activeIndex: number): AIMove[] {
-	const moves: AIMove[] = [];
 	const active = request.active?.[activeIndex];
-
-	if (!active?.moves) return moves;
-
-	for (let i = 0; i < active.moves.length; i++) {
-		const moveData = active.moves[i];
-		const moveId = toID(moveData.move);
-		const dexMove = Dex.moves.get(moveData.move);
-
-		// Return/Frustration: PS sends "Return 102" format, Dex lookup fails
-		// Hardcode as 102 BP Physical Normal move
-		const isReturn = moveId.startsWith('return') && moveId !== 'returntoearth';
-		const isFrustration = moveId.startsWith('frustration');
-
-		moves.push({
-			id: moveId,
-			name: isReturn ? 'Return' : (isFrustration ? 'Frustration' : (dexMove.name || moveData.move)),
-			slot: i + 1,
-			type: isReturn || isFrustration ? 'Normal' : (dexMove.type || '???'),
-			category: isReturn || isFrustration ? 'Physical' : (dexMove.category || 'Status'),
-			basePower: isReturn ? 102 : (isFrustration ? 1 : (moveData.basePower || dexMove.basePower || 0)),
-			accuracy: isReturn || isFrustration ? 100 : dexMove.accuracy,
-			pp: moveData.pp ?? dexMove.pp,
-			maxPp: moveData.maxpp ?? dexMove.pp,
-			priority: dexMove.priority || 0,
-			target: moveData.target || dexMove.target || 'normal',
-			flags: isReturn || isFrustration ? { contact: 1, protect: 1 } : (dexMove.flags || {}),
-			secondaryChance: dexMove.secondary?.chance || 0,
-			disabled: moveData.disabled || false,
-			isZMove: false,
-			isMaxMove: false,
-			multihit: dexMove.multihit || null,
-		});
-	}
-
-	return moves;
+	if (!active?.moves) return [];
+	return active.moves.map((moveData: AnyObject, i: number) => buildAIMove(moveData, i + 1));
 }
 
 /**
@@ -745,7 +704,6 @@ export function trackedPokemonToAIPokemon(
 	isActive: boolean,
 	formatId: string = ''
 ): AIPokemon {
-	const speciesData = Dex.species.get(tracked.species);
 	// CFRU AI Fix: Use tracked.level directly instead of resolveLevel
 	// This ensures opponent level matches the actual level parsed from protocol messages
 	// Previously resolveLevel could return 100 for unrecognized formats, causing level mismatch
@@ -756,8 +714,7 @@ export function trackedPokemonToAIPokemon(
 	// For HP: stat = ((2 * base + IV + EV/4) * level / 100) + level + 10
 	const IV = 31;
 	const EV = 85;
-
-	const baseStats = speciesData.baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 };
+	const { baseStats } = speciesDefaults(tracked.species);
 
 	// Calculate actual stat values for opponent
 	const calculatedStats = {
@@ -769,40 +726,30 @@ export function trackedPokemonToAIPokemon(
 		spe: Math.floor((2 * baseStats.spe + IV + Math.floor(EV / 4)) * level / 100) + 5,
 	};
 
-	// Estimate HP values using calculated max HP
 	const estimatedMaxHp = calculatedStats.hp;
 	const estimatedHp = Math.floor(estimatedMaxHp * tracked.hpPercent / 100);
+	const fainted = tracked.hpPercent <= 0;
 
-	// Copy boosts from tracker (or use defaults)
-	const boosts = tracked.boosts ? { ...tracked.boosts } : {
-		atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0,
-	};
-
-	return {
+	return makeAIPokemonSkeleton({
 		slot,
 		species: tracked.species,
 		hp: estimatedHp,
 		maxHp: estimatedMaxHp,
 		hpPercent: tracked.hpPercent,
 		status: tracked.status || '',
-		sleepTurns: 0, // Not tracked
-		toxicCounter: 0, // Not tracked
+		fainted,
 		types: tracked.types,
 		ability: tracked.ability || '',
 		item: tracked.item || '',
-		itemLost: tracked.itemLost || false,  // Use tracked itemLost status
+		itemLost: tracked.itemLost || false,
 		moves: tracked.knownMoves,
 		lastMove: tracked.lastMove || '',
-		// Use calculated stats instead of base stats for damage calculation
 		baseStats: calculatedStats,
-		boosts,
-		abilityStatMod: { stat: null, multiplier: 1 },
-		volatiles: new Set(), // TODO: track volatiles
-		fainted: tracked.hpPercent <= 0,
+		boosts: tracked.boosts ? { ...tracked.boosts } : undefined,
 		active: isActive,
 		level,
 		gender: 'N',
-	};
+	});
 }
 
 /**

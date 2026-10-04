@@ -307,6 +307,15 @@ export interface AIMove {
 /** Base score constant */
 export const BASE_SCORE = 100;
 
+/**
+ * AIPokemon.boosts 的默认值（所有阶段为 0）。
+ * 用于：Pokemon 构建、换人时清空 boosts、tracker 初始化。
+ * 一律返回新对象，调用方可以放心 mutate。
+ */
+export function defaultBoosts(): AIPokemon['boosts'] {
+	return { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 };
+}
+
 /** Score breakdown for debugging/logging */
 export interface ScoreBreakdown {
 	/** Initial score (always 100) */

@@ -10,6 +10,7 @@
  */
 
 import { Dex, toID } from '../../../../../sim/dex';
+import { defaultBoosts } from '../types';
 
 /**
  * Tracked Pokemon information
@@ -341,9 +342,7 @@ export class BattleTracker {
 		// In multi battles, this handles both p2 and p4 switches
 		if (this.isOurTeamSide(side)) {
 			const boostKey = `${side}${slot}`;
-			this.ourActiveBoosts.set(boostKey, {
-				atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0,
-			});
+			this.ourActiveBoosts.set(boostKey, defaultBoosts());
 			// Also clear ability stat mods (Quark Drive/Protosynthesis)
 			this.ourAbilityStatMods.delete(boostKey);
 			// Reset lastMove (CFRU: switching resets gDisableStructs)
@@ -415,7 +414,7 @@ export class BattleTracker {
 			lastMove: '',
 			active: true,
 			position,
-			boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
+			boosts: defaultBoosts(),
 		};
 
 		// Deactivate previous Pokemon in this exact position (not other positions on same side)
@@ -843,9 +842,7 @@ export class BattleTracker {
 			console.log(`[DEBUG BattleTracker] isOurTeamSide(${side})=true, ourTeamSides=${Array.from(this.ourTeamSides).join(',')}`);
 			// Initialize boosts for this slot if not exists
 			if (!this.ourActiveBoosts.has(boostKey)) {
-				this.ourActiveBoosts.set(boostKey, {
-					atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0,
-				});
+				this.ourActiveBoosts.set(boostKey, defaultBoosts());
 			}
 			const boosts = this.ourActiveBoosts.get(boostKey)!;
 			if (command === '-boost') {
@@ -893,9 +890,7 @@ export class BattleTracker {
 		if (this.isOurTeamSide(side)) {
 			const boostKey = `${side}${slot}`;
 			if (!this.ourActiveBoosts.has(boostKey)) {
-				this.ourActiveBoosts.set(boostKey, {
-					atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0,
-				});
+				this.ourActiveBoosts.set(boostKey, defaultBoosts());
 			}
 			const boosts = this.ourActiveBoosts.get(boostKey)!;
 			boosts[stat as keyof typeof boosts] = Math.max(-6, Math.min(6, amount));
@@ -919,7 +914,7 @@ export class BattleTracker {
 			// Clear opponent boosts
 			for (const [pos, mon] of this.opponentPokemon) {
 				if (this.isOpponentSide(pos.slice(0, 2)) && mon.active) {
-					mon.boosts = { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 };
+					mon.boosts = defaultBoosts();
 				}
 			}
 			// Clear our team boosts
@@ -1092,7 +1087,7 @@ export class BattleTracker {
 			return { ...boosts };
 		}
 		// Return default zeros if not tracked yet
-		return { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 };
+		return defaultBoosts();
 	}
 
 	/**

@@ -29,7 +29,7 @@ import {
 	createAICache,
 } from './cfru/types';
 import { createScoringEngine, ScoringEngine } from './cfru/scoring';
-import { buildBattleState, buildBattleStateWithTracker, buildMovesFromRequest } from './cfru/state-builder';
+import { buildBattleState, buildBattleStateWithTracker, buildMovesFromRequest, buildAIMove } from './cfru/state-builder';
 import { createCache, updateCacheTurn } from './cfru/util/cache';
 import { AIDecisionLogger, LogLevel, createBattleLogger, SwitchScoreLog } from './cfru/logger';
 import { BattleTracker, createBattleTracker, TrackedPokemon } from './cfru/util/battle-tracker';
@@ -503,38 +503,8 @@ export class NormalAI extends NPCBattleAI {
 	 * Convert MoveChoice to AIMove
 	 */
 	private convertToAIMoves(moves: MoveChoice[], active: AnyObject): AIMove[] {
-		const aiMoves: AIMove[] = [];
-
-		for (const move of moves) {
-			const moveId = toID(move.move);
-			const dexMove = Dex.moves.get(move.move);
-
-			// Return/Frustration: PS sends "Return 102" format, Dex lookup fails
-			// Hardcode as Physical Normal move
-			const isReturn = moveId.startsWith('return') && moveId !== 'returntoearth';
-			const isFrustration = moveId.startsWith('frustration');
-
-			aiMoves.push({
-				id: moveId,
-				name: isReturn ? 'Return' : (isFrustration ? 'Frustration' : (dexMove.name || move.move)),
-				slot: move.slot,
-				type: isReturn || isFrustration ? 'Normal' : (move.type || dexMove.type || '???'),
-				category: isReturn || isFrustration ? 'Physical' : ((move.category || dexMove.category || 'Status') as 'Physical' | 'Special' | 'Status'),
-				basePower: isReturn ? 102 : (isFrustration ? 1 : (move.basePower || dexMove.basePower || 0)),
-				accuracy: isReturn || isFrustration ? 100 : dexMove.accuracy,
-				pp: 10, // Simplified - would need full tracking
-				maxPp: dexMove.pp || 10,
-				priority: dexMove.priority || 0,
-				target: move.target || dexMove.target || 'normal',
-				flags: isReturn || isFrustration ? { contact: 1, protect: 1 } : (dexMove.flags || {}),
-				secondaryChance: dexMove.secondary?.chance || 0,
-				disabled: move.disabled,
-				isZMove: move.zMove,
-				isMaxMove: false,
-			});
-		}
-
-		return aiMoves;
+		// 直接委托给 state-builder 的统一实现；MoveChoice 的字段是 buildAIMove 入参的超集
+		return moves.map(m => buildAIMove(m, m.slot));
 	}
 
 	/** Switch evaluation thresholds

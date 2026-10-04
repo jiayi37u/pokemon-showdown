@@ -2,6 +2,40 @@
 
 ## [已发布]
 
+### v1.2.20 - 重复代码重构 P1/P2/P3 (2026-10-05)
+
+**背景**: `docs/tmp.md` 里 P1/P2/P3 遗留，每次 bug 修复要改多处（v1.2.8/v1.2.9 的 Bug 根因）。
+
+**P1 - Pokemon 构建**：
+- 新增 `server/npc/ai/cfru/util/pokemon-builder.ts`：`parseCondition` / `parseDetails` / `speciesDefaults` / `makeAIPokemonSkeleton`
+- `buildPokemonFromRequest` / `trackedPokemonToAIPokemon` 都走共享骨架
+- `multi-manager.ts` 的 `buildAIPokemon` 现有字段形态（`isActive` + `terastallized`）与 AIPokemon 不严格对齐；下游不读这几个字段，暂保留并加 JSDoc 说明等 Multi 流程后续重构一并处理
+
+**P2 - AIMove 构造**：
+- `state-builder.ts` 导出 `buildAIMove(moveData, slot)`
+- `normal.ts` 的 `convertToAIMoves` / `multi-manager.ts` 的 `convertToAIMoves` 都改为 `moves.map((m, i) => buildAIMove(m, i + 1))`
+- Return/Frustration 的硬编码只在一处维护
+
+**P3 - DEFAULT_BOOSTS**：
+- `types.ts` 新增 `defaultBoosts()` 工厂（返回新对象）
+- 替换生产代码 10+ 处字面量（state-builder、battle-tracker、multi-manager）
+- test/ 下的 mock 定义保留原样（独立快照更稳定）
+
+**文件变更**:
+| 文件 | 变更 |
+|------|------|
+| server/npc/ai/cfru/util/pokemon-builder.ts | 新建 |
+| server/npc/ai/cfru/types.ts | +defaultBoosts |
+| server/npc/ai/cfru/state-builder.ts | 用共享工具重写 buildPokemonFromRequest / trackedPokemonToAIPokemon，导出 buildAIMove |
+| server/npc/ai/cfru/util/battle-tracker.ts | 用 defaultBoosts 替换字面量 |
+| server/npc/ai/multi-manager.ts | 用 buildAIMove / defaultBoosts；buildAIPokemon 加字段差异说明 |
+| server/npc/ai/normal.ts | convertToAIMoves 收敛到共享实现 |
+| docs/tmp.md | 标记 P1/P2/P3 已处理 |
+
+**测试**: 352 个测试通过，sim-battle singles / multi 回归验证通过
+
+---
+
 ### v1.2.19 - sim-battle runner 策略化 + Multi 支持 + AI 伤害回归 (2026-10-05)
 
 **新增能力**:

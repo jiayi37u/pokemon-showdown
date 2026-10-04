@@ -24,12 +24,13 @@ import {
 	AIPokemon,
 	AIMove,
 	MoveScore,
+	defaultBoosts,
 } from './cfru/types';
 import { createScoringEngine, ScoringEngine } from './cfru/scoring';
 import { createCache, updateCacheTurn } from './cfru/util/cache';
 import { AIDecisionLogger, LogLevel, createBattleLogger } from './cfru/logger';
 import { BattleTracker, createBattleTracker } from './cfru/util/battle-tracker';
-import { trackedPokemonToAIPokemon } from './cfru/state-builder';
+import { trackedPokemonToAIPokemon, buildAIMove } from './cfru/state-builder';
 
 /** NPCMultiManager configuration options */
 export interface NPCMultiManagerOptions {
@@ -485,6 +486,14 @@ export class NPCMultiManager {
 	 * @param isActive - Whether the Pokemon is active
 	 * @param activeData - Optional active data with moves
 	 * @param side - Optional side ('p2' or 'p4') for boost tracking in multi battles
+	 *
+	 * NOTE: 该函数当前返回的对象字段**与 AIPokemon 不完全对齐**：
+	 *   - 用 isActive 命名而非 AIPokemon 规范里的 active
+	 *   - 多出 Multi 专用的 terastallized / teraType
+	 *   - 缺少 sleepTurns / toxicCounter / lastMove / itemLost / abilityStatMod / level / gender
+	 *   下游评分路径目前并没有读这些字段（AIPokemon.active 本身只被极少数路径读），所以能跑通。
+	 *   彻底统一要等 Multi 流程走通 state-builder；共享的解析工具已在
+	 *   cfru/util/pokemon-builder.ts 就位，后续重构可以直接复用。
 	 */
 	private buildAIPokemon(mon: AnyObject, slot: number, isActive: boolean, activeData?: AnyObject, side?: string): AIPokemon {
 		const species = mon.details?.split(',')[0]?.trim() || mon.speciesForme || 'Unknown';
@@ -543,15 +552,7 @@ export class NPCMultiManager {
 		} else {
 			console.log(`[DEBUG] buildAIPokemon: species=${species}, isActive=${isActive}, side=${side} - using default boosts`);
 			// Reserve Pokemon have no boosts
-			boosts = {
-				atk: 0,
-				def: 0,
-				spa: 0,
-				spd: 0,
-				spe: 0,
-				accuracy: 0,
-				evasion: 0,
-			};
+			boosts = defaultBoosts();
 		}
 
 		return {
@@ -853,33 +854,7 @@ export class NPCMultiManager {
 	 * Convert moves from request to AIMove format
 	 */
 	private convertToAIMoves(moves: AnyObject[]): AIMove[] {
-		return moves.map((move, index) => {
-			const moveId = toID(move.move || move.id);
-			const dexMove = Dex.moves.get(move.move || move.id);
-
-			// Return/Frustration: PS sends "Return 102" format, Dex lookup fails
-			const isReturn = moveId.startsWith('return') && moveId !== 'returntoearth';
-			const isFrustration = moveId.startsWith('frustration');
-
-			return {
-				id: moveId,
-				name: isReturn ? 'Return' : (isFrustration ? 'Frustration' : (dexMove.name || move.move || move.id)),
-				slot: index + 1,
-				type: isReturn || isFrustration ? 'Normal' : (dexMove.type || '???'),
-				category: isReturn || isFrustration ? 'Physical' : ((dexMove.category || 'Status') as 'Physical' | 'Special' | 'Status'),
-				basePower: isReturn ? 102 : (isFrustration ? 1 : (dexMove.basePower || 0)),
-				accuracy: isReturn || isFrustration ? 100 : dexMove.accuracy,
-				pp: move.pp ?? dexMove.pp ?? 10,
-				maxPp: dexMove.pp || 10,
-				priority: dexMove.priority || 0,
-				target: move.target || dexMove.target || 'normal',
-				flags: isReturn || isFrustration ? { contact: 1, protect: 1 } : (dexMove.flags || {}),
-				secondaryChance: dexMove.secondary?.chance || 0,
-				disabled: move.disabled || false,
-				isZMove: false,
-				isMaxMove: false,
-			};
-		});
+		return moves.map((move, index) => buildAIMove(move, index + 1));
 	}
 
 	/**

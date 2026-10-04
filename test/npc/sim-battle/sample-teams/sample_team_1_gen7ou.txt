@@ -1,0 +1,59 @@
+Lopunny-Mega @ Lopunnite  
+Ability: Limber  
+Happiness: 0  
+EVs: 252 Atk / 4 SpD / 252 Spe  
+Jolly Nature  
+- Fake Out  
+- Frustration  
+- High Jump Kick  
+- Quick Attack  
+
+Kartana @ Choice Band  
+Ability: Beast Boost  
+Happiness: 0  
+EVs: 252 Atk / 4 SpD / 252 Spe  
+Jolly Nature  
+- Leaf Blade  
+- Smart Strike  
+- Sacred Sword  
+- Knock Off  
+
+Tapu Fini @ Leftovers  
+Ability: Misty Surge  
+EVs: 248 HP / 12 SpA / 52 SpD / 196 Spe  
+Calm Nature  
+IVs: 0 Atk  
+- Taunt  
+- Scald  
+- Moonblast  
+- Defog  
+
+Jirachi @ Leftovers  
+Ability: Serene Grace  
+EVs: 248 HP / 184 SpD / 76 Spe  
+Careful Nature  
+- Iron Head  
+- Wish  
+- Protect  
+- U-turn  
+
+Zapdos @ Leftovers  
+Ability: Static  
+EVs: 252 HP / 180 Def / 76 Spe  
+Bold Nature  
+IVs: 0 Atk  
+- Volt Switch  
+- Heat Wave  
+- Hidden Power [Ice]  
+- Roost  
+
+Garchomp @ Rockium Z  
+Ability: Rough Skin  
+EVs: 252 Atk / 4 SpD / 252 Spe  
+Jolly Nature  
+- Swords Dance  
+- Earthquake  
+- Stone Edge  
+- Stealth Rock  
+
+

@@ -2,6 +2,59 @@
 
 ## [已发布]
 
+### v1.2.19 - sim-battle runner 策略化 + Multi 支持 + AI 伤害回归 (2026-10-05)
+
+**新增能力**:
+- Runner 把 player 控制重构成 **5 种策略**：`max-damage`、`random`、`mirror-npc`、`scripted`、`interactive`，可以采集 NPC 在不同压力下的决策曲线
+- 支持 `--game-type singles | doubles | multi`，Multi 下 `(p1+p3)` 玩家对 `(p2+p4)` NPC
+- 支持 PS 导出 `.txt` 队伍文件（Teams.import），不再强制 JSON
+- Multi NPC 队伍自动按 `slot: "p2" / "p4"` 字段拆分
+- 新增 `test/npc/ai/ai-damage-calc.test.js` —— 用 Garchomp vs Mega Char-X 的 4 个期望值（含双打 0.75× 衰减）锚定 AI 的 `calculateDamage` 输出
+
+**背景**:
+原来 player 只能被动脚本控制，不能用来验证 NPC 在"合理对手"下的决策合理性。改成策略插件后：
+- `mirror-npc` 让两个 NormalAI 互殴，用来找对称场景的决策盲点
+- `max-damage` 当作一个强而稳定的基准对手，让 NPC 必须给出不被压制的 counter
+- 组合不同 team × 不同策略跑一批场景，批量采集"NPC 用某招时的局势"
+
+**文件变更**:
+| 文件 | 变更类型 |
+|------|---------|
+| test/npc/sim-battle/strategies.ts | 新建，5 种策略实现 |
+| test/npc/sim-battle/runner.ts | 重写：策略 + game-type + Multi + .txt 支持 |
+| test/npc/sim-battle/README.md | 重写使用说明 |
+| test/npc/sim-battle/sample-teams/*.txt | 新建 Gen7 OU 样例队伍（Garchomp / Mega Char-X 对子） |
+| test/npc/ai/ai-damage-calc.test.js | 新建，4 个 Garchomp/Char-X 伤害范围断言 |
+| test/npc/ai/run-tests.js | 挂上新测试 |
+
+**测试**: 352 个测试通过（新增 4 个伤害计算用例）
+
+---
+
+### v1.2.18 - 新增 NPC AI 实战模拟 Runner (2026-10-04)
+
+**新增能力**:
+- `test/npc/sim-battle/runner.ts` — 进程内启动 BattleStream，p1 由 scripted/interactive/random 玩家控制、p2 直接实例化 BasicAI / NormalAI
+- 协议日志（stdout）+ AI 决策日志（stderr）同时输出，解决"开发功能不知道实际运行时执行到哪里获取了什么数据"的调试盲区
+- 固定 `--seed` 可重现，脚本模式可写入 CI 做回归
+
+**使用场景**:
+- 发现 AI 决策异常时，直接把当时场景写成 Scripted 回归用例
+- 用 `--log-level SCORING` 对照 CFRU 预期评分
+- 用 `interactive` 模式手动驱动 p1，现场观察 AI 的反应
+
+**文件变更**:
+| 文件 | 变更类型 |
+|------|---------|
+| test/npc/sim-battle/runner.ts | 新建 |
+| test/npc/sim-battle/README.md | 新建 |
+| test/npc/sim-battle/scripts/*.json | 新建示例脚本 |
+| docs/testing/README.md | 增加实战验证层 |
+
+**已知限制**: 仅接 p1+p2 单打 / 双打，Multi 尚未支持。
+
+---
+
 ### v1.2.17 - Return/Frustration 威力计算修复 (2026-02-04)
 
 **问题修复**:

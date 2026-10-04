@@ -20,23 +20,16 @@
 |------|--------|------|------|
 | PS 原生 | 模拟器引擎正确性 + 稳定性 | test/sim/, tools/simulate | [ps-native/](./ps-native/) |
 | NPC AI | AI 决策逻辑正确性 | test/npc/ai/ | [npc-ai/](./npc-ai/) |
+| NPC AI 实战 | AI 在真实协议下的运行时轨迹 | test/npc/sim-battle/ | [sim-battle](../../test/npc/sim-battle/README.md) |
 
-PS 原生测试保证"游戏规则没错"，NPC AI 测试保证"AI 决策合理"。两者独立，互不替代。
-
----
-
-## 待解决的问题
-
-当前缺少一个**自动化实战验证**环节：
-
-```
-单元测试 (逻辑正确) → ??? → 用户反馈 (实际可用)
-```
-
-中间的 gap 是：在真实 PS 协议环境中，用完整的 BattleStream 跑一场对战，观察 AI 的实际选择是否合理。PS 原生已提供全部基础设施（BattleStream、Runner、RandomPlayerAI 可继承），可以构建这一层。
-
-详见 [ps-native/battle-stream-api.md](./ps-native/battle-stream-api.md) 中的 API 参考。
+PS 原生测试保证"游戏规则没错"，NPC AI 单测保证"AI 决策逻辑按设计正确"，sim-battle 保证"AI 在真实协议环境里的行为可观察"。三者独立，互不替代。
 
 ---
 
-*最后更新: 2026-06-05*
+## 实战验证入口
+
+`test/npc/sim-battle/runner.ts` — 进程内启动一局 BattleStream，p1 可选 scripted / interactive / random 三种玩家，p2 直接实例化 `BasicAI` / `NormalAI`。协议日志 + AI 决策日志同一份输出，不再需要启服务 + 浏览器 + 复制聊天记录。使用方法见 [sim-battle README](../../test/npc/sim-battle/README.md)。
+
+---
+
+*最后更新: 2026-10-04*

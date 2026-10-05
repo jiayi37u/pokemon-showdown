@@ -2,6 +2,53 @@
 
 ## [已发布]
 
+### v1.2.22 - 攻击/防御特性 + 抵抗果 (2026-10-05)
+
+**目的**: NormalAI 的伤害估算正确性补齐。CFRU 迁移清单里 10+ 个常见特性/道具原来是 ❌，这些漏项在"用那种 Pokemon 的 NPC" 场景下会给出错误伤害，影响评分决策。
+
+**攻击方特性（basePower 修饰）**：
+| 特性 | 效果 |
+|---|---|
+| Water Bubble | 水招式 ×2 |
+| Punk Rock | 声音招式 ×1.3 |
+| Steelworker | 钢招式 ×1.5 |
+| Transistor | 电招式 ×1.5 |
+| Dragon's Maw | 龙招式 ×1.5 |
+| Analytic | 后手时 ×1.3（用 isFaster 判定） |
+
+**攻击方特性（post-effectiveness）**：
+| 特性 | 效果 |
+|---|---|
+| Tinted Lens | 被抵抗伤害 ×2 |
+| Neuroforce | 超效伤害 ×1.25 |
+
+**防御方特性（post-effectiveness）**：
+| 特性 | 效果 |
+|---|---|
+| Filter / Solid Rock / Prism Armor | 超效伤害 ×0.75 |
+| Fluffy | 火 ×2，接触 ×0.5（可叠加 → Flare Blitz 抵消为 ×1） |
+| Ice Scales | 特殊招 ×0.5 |
+| Punk Rock（defender） | 声音招 ×0.5 |
+
+**道具**：
+- 17 种抵抗果（Occa/Passho/.../Roseli）在被对应属性超效打到时 ×0.5，一次性消耗（感知 `defender.itemLost`）
+- Chilan Berry：Normal 招无条件 ×0.5
+
+**未处理（KNOWN LIMITATION）**：
+- Steely Spirit / Friend Guard：需要队友 ability，`calculateDamage` 签名目前没传入队友上下文
+- Metronome 道具：需要跨回合招式历史
+
+**文件变更**:
+| 文件 | 变更 |
+|------|------|
+| server/npc/ai/cfru/util/damage-calc.ts | +RESIST_BERRY_TYPES、+10 个攻击方分支、+8 个防御方/post-eff 分支，import isFaster |
+| test/npc/ai/ai-damage-calc.test.js | +18 个用例（新能力） |
+| docs/ai-logic/CFRU-Migration-Checklist.md | 11 个 ❌ → ✅ v1.2.22，M1 完成率 75% → 95% |
+
+**测试**: 385 unit tests 全过（+18 新），sim-battle 单打仍能跑完一局
+
+---
+
 ### v1.2.21 - 固定伤害招式 + Counter/Mirror Coat + Sucker Punch (2026-10-05)
 
 **新增能力**:

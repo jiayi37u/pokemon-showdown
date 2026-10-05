@@ -11,10 +11,37 @@
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions } from '../types';
 import { getTypeEffectiveness, getSTABMultiplier, getAbilityTypeImmunity, wonderGuardBlocks } from './type-calc';
+import { isFaster } from './speed';
 
 /** Damage roll range (0.85 to 1.0) */
 const MIN_ROLL = 0.85;
 const MAX_ROLL = 1.0;
+
+/**
+ * 半减果 / 抵抗果 → 对应 move.type 的映射（Gen 3+）。
+ * 用户带这个 berry，被该属性超效打到会一次性消耗，把这发伤害 ×0.5。
+ * AI 侧用 defender.itemLost 判断是否已消耗。
+ */
+const RESIST_BERRY_TYPES: { [berry: string]: string } = {
+	occaberry: 'Fire',
+	passhoberry: 'Water',
+	wacanberry: 'Electric',
+	rindoberry: 'Grass',
+	yacheberry: 'Ice',
+	chopleberry: 'Fighting',
+	kebiaberry: 'Poison',
+	shucaberry: 'Ground',
+	cobaberry: 'Flying',
+	payapaberry: 'Psychic',
+	tangaberry: 'Bug',
+	chartiberry: 'Rock',
+	kasibberry: 'Ghost',
+	habanberry: 'Dragon',
+	colburberry: 'Dark',
+	babiriberry: 'Steel',
+	roseliberry: 'Fairy',
+	// Chilan Berry：对 Normal 招式 ×0.5，无论是否超效。单独处理不走此表。
+};
 
 /**
  * Get expected hit count for multi-hit moves
@@ -429,6 +456,38 @@ export function getModifiedBasePower(
 	// Mega Launcher
 	if (attackerAbility === 'megalauncher' && move.flags['pulse']) {
 		basePower = Math.floor(basePower * 1.5);
+	}
+
+	// Water Bubble (attacker)：水招式 ×2（CFRU damage_calc.c:3990）
+	if (attackerAbility === 'waterbubble' && move.type === 'Water') {
+		basePower = Math.floor(basePower * 2);
+	}
+
+	// Punk Rock (attacker)：声音招式 ×1.3（CFRU damage_calc.c:4002）
+	if (attackerAbility === 'punkrock' && move.flags['sound']) {
+		basePower = Math.floor(basePower * 1.3);
+	}
+
+	// Steelworker：钢系招式 ×1.5（CFRU damage_calc.c:3983）
+	if (attackerAbility === 'steelworker' && move.type === 'Steel') {
+		basePower = Math.floor(basePower * 1.5);
+	}
+
+	// Transistor：电系招式 ×1.5（CFRU damage_calc.c:4008）
+	if (attackerAbility === 'transistor' && move.type === 'Electric') {
+		basePower = Math.floor(basePower * 1.5);
+	}
+
+	// Dragon's Maw：龙系招式 ×1.5（CFRU damage_calc.c:4013）
+	if (attackerAbility === 'dragonsmaw' && move.type === 'Dragon') {
+		basePower = Math.floor(basePower * 1.5);
+	}
+
+	// Analytic：后手时 ×1.3（CFRU damage_calc.c:3996）。
+	// 这里用 isFaster 的反向判定：如果 attacker 不是更快，就视作后手。
+	// AI 侧对"是否后手"的近似已经够用，Trick Room / priority 比较都在 isFaster 内。
+	if (attackerAbility === 'analytic' && !isFaster(attacker, defender, field)) {
+		basePower = Math.floor(basePower * 1.3);
 	}
 
 	// Weather effects on moves
@@ -881,6 +940,54 @@ export function calculateDamage(
 
 	// Type effectiveness
 	baseDamage = Math.floor(baseDamage * effectiveness);
+
+	// 以下这些乘数依赖 "是否超效 / 是否被抵抗" 的判断，必须在 effectiveness 相乘之后
+	const atkAbilityId = toID(attacker.ability);
+	const defAbilityId = toID(defender.ability);
+
+	// Tinted Lens (attacker)：抵抗招式伤害 ×2（CFRU damage_calc.c:3107）
+	if (atkAbilityId === 'tintedlens' && effectiveness < 1 && effectiveness > 0) {
+		baseDamage = Math.floor(baseDamage * 2);
+	}
+
+	// Neuroforce (attacker)：超效招式 ×1.25（CFRU damage_calc.c:3971）
+	if (atkAbilityId === 'neuroforce' && effectiveness > 1) {
+		baseDamage = Math.floor(baseDamage * 1.25);
+	}
+
+	// Filter / Solid Rock / Prism Armor (defender)：超效伤害 ×0.75（CFRU damage_calc.c:3136-3139）
+	if ((defAbilityId === 'filter' || defAbilityId === 'solidrock' || defAbilityId === 'prismarmor') && effectiveness > 1) {
+		baseDamage = Math.floor(baseDamage * 0.75);
+	}
+
+	// Fluffy (defender)：火招式 ×2 / 接触招式 ×0.5（两条可叠加，CFRU damage_calc.c:3159）
+	if (defAbilityId === 'fluffy') {
+		if (move.type === 'Fire') baseDamage = Math.floor(baseDamage * 2);
+		if (move.flags['contact']) baseDamage = Math.floor(baseDamage * 0.5);
+	}
+
+	// Ice Scales (defender)：特殊招式 ×0.5（CFRU damage_calc.c:3175）
+	if (defAbilityId === 'icescales' && move.category === 'Special') {
+		baseDamage = Math.floor(baseDamage * 0.5);
+	}
+
+	// Punk Rock (defender)：声音招式 ×0.5（CFRU damage_calc.c:3169）
+	if (defAbilityId === 'punkrock' && move.flags['sound']) {
+		baseDamage = Math.floor(baseDamage * 0.5);
+	}
+
+	// 半减果 / 抵抗果：对应属性超效时 ×0.5（CFRU damage_calc.c:3188）。
+	// 只有一发消耗型；defender.itemLost 为真说明道具已被打掉。
+	if (effectiveness > 1 && !defender.itemLost) {
+		const berry = toID(defender.item);
+		if (RESIST_BERRY_TYPES[berry] === move.type) {
+			baseDamage = Math.floor(baseDamage * 0.5);
+		}
+	}
+	// Chilan Berry 特殊：Normal 招式无条件 ×0.5（不要求超效）
+	if (!defender.itemLost && toID(defender.item) === 'chilanberry' && move.type === 'Normal') {
+		baseDamage = Math.floor(baseDamage * 0.5);
+	}
 
 	// Burn penalty (physical moves, except Guts/Facade)
 	if (attacker.status === 'brn' && move.category === 'Physical' &&

@@ -10,7 +10,7 @@
 
 | 文件 | 说明 | 里程碑 | 版本 | 迁移状态 | 完成率 |
 |------|------|--------|------|----------|--------|
-| ai_util.c, damage_calc.c | 工具函数 (伤害/速度) | M1 | v1.1 | ⚠️ 部分攻击/防御/双打特性遗漏 | ~75% |
+| ai_util.c, damage_calc.c | 工具函数 (伤害/速度) | M1 | v1.1 | ⚠️ Steely Spirit / Friend Guard / Metronome 跳过（跨对象/跨回合依赖） | ~95% |
 | ai_negatives.c | 负面评分 (~50 个 case) | M2 | v1.1 | ✅ 完成（Sucker Punch 简化版 v1.2.21） | ~100% |
 | ai_positives.c | 正面评分 (~30 个 case) | M3 | v1.1 | ✅ 完成 | ~100% |
 | - | NormalAI 整合 | M4 | v1.1 | ✅ 核心完成 | 100% |
@@ -162,16 +162,16 @@
 | ABILITY_GUTS | 毅力 | 异常状态时 ATK 1.5x | :3692 | ✅ |
 | ABILITY_SOLARPOWER | 太阳之力 | 晴天 SPA 1.5x | :3700 | ✅ |
 | ABILITY_SKILLLINK | 连续攻击 | 多段攻击保证5次 | - | ✅ |
-| ABILITY_ADAPTABILITY | 适应力 | STAB 2x (非1.5x) | :826, :1076 | ❌ |
-| ABILITY_TINTEDLENS | 有色眼镜 | 抵抗招式 2x | :3107 | ❌ |
-| ABILITY_NEUROFORCE | 脑核之力 | 超效招式 1.25x | :3971 | ❌ |
-| ABILITY_WATERBUBBLE | 水泡 (攻击) | 水招式 2x | :3990 | ❌ |
-| ABILITY_PUNKROCK | 朋克摇滚 (攻击) | 声音招式 1.3x | :4002 | ❌ |
-| ABILITY_STEELWORKER | 钢之意志 | 钢招式 1.5x | :3983 | ❌ |
-| ABILITY_STEELYSPIRIT | 钢之精神 | 钢招式 1.5x (双打) | :3984 | ❌ |
-| ABILITY_ANALYTIC | 分析 | 后手 1.3x | :3996 | ❌ |
-| ABILITY_TRANSISTOR | 电晶体 | 电招式 1.5x | :4008 | ❌ |
-| ABILITY_DRAGONSMAW | 龙颚 | 龙招式 1.5x | :4013 | ❌ |
+| ABILITY_ADAPTABILITY | 适应力 | STAB 2x (非1.5x) | :826, :1076 | ✅（type-calc.getSTABMultiplier） |
+| ABILITY_TINTEDLENS | 有色眼镜 | 抵抗招式 2x | :3107 | ✅ v1.2.22 |
+| ABILITY_NEUROFORCE | 脑核之力 | 超效招式 1.25x | :3971 | ✅ v1.2.22 |
+| ABILITY_WATERBUBBLE | 水泡 (攻击) | 水招式 2x | :3990 | ✅ v1.2.22 |
+| ABILITY_PUNKROCK | 朋克摇滚 (攻击) | 声音招式 1.3x | :4002 | ✅ v1.2.22 |
+| ABILITY_STEELWORKER | 钢之意志 | 钢招式 1.5x | :3983 | ✅ v1.2.22 |
+| ABILITY_STEELYSPIRIT | 钢之精神 | 钢招式 1.5x (双打) | :3984 | ⚠️ 跳过（需要队友 ability 上下文，calculateDamage 签名未传入） |
+| ABILITY_ANALYTIC | 分析 | 后手 1.3x | :3996 | ✅ v1.2.22（用 isFaster 近似） |
+| ABILITY_TRANSISTOR | 电晶体 | 电招式 1.5x | :4008 | ✅ v1.2.22 |
+| ABILITY_DRAGONSMAW | 龙颚 | 龙招式 1.5x | :4013 | ✅ v1.2.22 |
 
 ---
 
@@ -190,12 +190,12 @@
 | ABILITY_MULTISCALE | 多重鳞片 | 满HP 0.5x | :3152 | ✅ |
 | ABILITY_SHADOWSHIELD | 幻影守护 | 满HP 0.5x | :3153 | ✅ |
 | ABILITY_WONDERGUARD | 神奇守护 | 非超效免疫 | - | ✅ |
-| ABILITY_FILTER | 过滤 | 超效 0.75x | :3138 | ❌ |
-| ABILITY_SOLIDROCK | 坚硬岩石 | 超效 0.75x | :3136 | ❌ |
-| ABILITY_PRISMARMOR | 棱镜装甲 | 超效 0.75x | :3139 | ❌ |
-| ABILITY_FLUFFY | 毛茸茸 | 火 2x, 接触 0.5x | :3159 | ❌ |
-| ABILITY_ICESCALES | 冰鳞粉 | 特攻 0.5x | :3175 | ❌ |
-| ABILITY_PUNKROCK | 朋克摇滚 (防御) | 声音招式 0.5x | :3169 | ❌ |
+| ABILITY_FILTER | 过滤 | 超效 0.75x | :3138 | ✅ v1.2.22 |
+| ABILITY_SOLIDROCK | 坚硬岩石 | 超效 0.75x | :3136 | ✅ v1.2.22 |
+| ABILITY_PRISMARMOR | 棱镜装甲 | 超效 0.75x | :3139 | ✅ v1.2.22 |
+| ABILITY_FLUFFY | 毛茸茸 | 火 2x, 接触 0.5x | :3159 | ✅ v1.2.22 |
+| ABILITY_ICESCALES | 冰鳞粉 | 特攻 0.5x | :3175 | ✅ v1.2.22 |
+| ABILITY_PUNKROCK | 朋克摇滚 (防御) | 声音招式 0.5x | :3169 | ✅ v1.2.22 |
 
 ---
 
@@ -205,7 +205,7 @@
 
 | CFRU 特性 | 中文名 | 效果 | 代码位置 | 状态 |
 |-----------|--------|------|----------|------|
-| ABILITY_FRIENDGUARD | 友情防守 | 队友受伤 0.75x | :3183 | ❌ |
+| ABILITY_FRIENDGUARD | 友情防守 | 队友受伤 0.75x | :3183 | ⚠️ 跳过（需要队友上下文） |
 
 ---
 
@@ -225,8 +225,8 @@
 | Light Ball | Pikachu ATK/SPA 2x | :3007 | ✅ |
 | Eviolite | NFE DEF/SPD 1.5x | :3047 | ✅ |
 | Assault Vest | SPD 1.5x | :3052 | ✅ |
-| 半减果 (抵抗果) | 超效 0.5x | :3188 | ❌ |
-| Metronome | 连续使用 1.2x/次 | :3038 | ❌ |
+| 半减果 (抵抗果) | 超效 0.5x | :3188 | ✅ v1.2.22（RESIST_BERRY_TYPES + itemLost 感知；含 Chilan Berry 无条件对 Normal 的特殊处理） |
+| Metronome | 连续使用 1.2x/次 | :3038 | ⚠️ 跳过（需要跨回合招式历史） |
 
 ---
 
@@ -260,11 +260,12 @@
 
 ## 统计
 
-- **M1 工具函数**: 已实现 31 个，遗漏 ~18 个 (~75%)
+- **M1 工具函数**: 已实现 ~45 个，遗漏 3 个 (~95%)
   - v1.1.9: 新增重量招式计算 (getActualWeight, getWeightBasedPower, getWeightRatioPower)
   - v1.2.10: 新增 Spread Move 伤害递减
   - v1.2.21: 新增固定伤害招式（Seismic Toss / Night Shade / Dragon Rage / Sonic Boom / Super Fang / Endeavor / Final Gambit / Psywave / Counter / Mirror Coat / Metal Burst）
-  - 遗漏: 攻击特性 10 个, 防御特性 6 个, 道具 2 个
+  - v1.2.22: 新增攻击方 6 特性 + 后手 Analytic（Water Bubble / Punk Rock / Steelworker / Transistor / Dragon's Maw / Tinted Lens / Neuroforce / Analytic）、防御方 6 特性（Filter / Solid Rock / Prism Armor / Fluffy / Ice Scales / Punk Rock-def）、抵抗果 + Chilan Berry
+  - 跳过: Steely Spirit (需队友 ability) / Friend Guard (需队友 ability) / Metronome item (需跨回合招式历史)
 - **M2 Negative 评分**: 已实现 ~56 个，遗漏 ~3 个 (~98%)
   - v1.2.21: Sucker Punch 简化版（lastMove 近似，未等 M7 招式预测）
 - **M3 Positive 评分**: 已实现 19 个，遗漏 0 个 (~100%)
@@ -329,7 +330,7 @@
 
 ---
 
-*最后更新: 2026-10-05 (v1.2.21 固定伤害招式 + Counter/Mirror Coat/Metal Burst + Sucker Punch 简化)*
+*最后更新: 2026-10-05 (v1.2.22 攻击/防御特性 + 抵抗果)*
 
 **相关文档**:
 - Bug 详情见 [troubleshooting/known-issues.md](../npc-battle/troubleshooting/known-issues.md)

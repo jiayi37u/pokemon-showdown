@@ -321,6 +321,235 @@ function runAIDamageCalcTests() {
 		const r = calculateDamage(atk, def, makeMove('suckerpunch'), emptyField());
 		assert(r.min > 0, `Sucker Punch after attack should deal damage, got ${r.min}`);
 	});
+
+	// =============================================================================
+	// 攻击方特性（基准伤害相对关系）
+	// =============================================================================
+	section('AI 伤害计算：攻击方特性');
+
+	function cloneWithAbility(mon, ability) {
+		return { ...mon, ability };
+	}
+
+	test('Water Bubble: 水招式伤害翻倍', () => {
+		// 基准：没有 Water Bubble 的 Starmie Surf
+		const starmie = makePokemon('Starmie', {
+			ability: 'Natural Cure',
+			evs: { spa: 252, spe: 252, def: 4 },
+			nature: { plus: 'spe', minus: 'atk' },
+		});
+		const target = garchomp();
+		const surf = makeMove('surf');
+		const base = calculateDamage(starmie, target, surf, emptyField());
+		const boosted = calculateDamage(cloneWithAbility(starmie, 'Water Bubble'), target, surf, emptyField());
+		assert(boosted.min >= base.min * 1.9 && boosted.min <= base.min * 2.1,
+			`Water Bubble should ~2x base. base.min=${base.min}, boosted.min=${boosted.min}`);
+	});
+
+	test('Transistor: 电招式 1.5x', () => {
+		const koko = makePokemon('Tapu Koko', {
+			ability: 'Electric Surge',
+			evs: { spa: 244, spe: 252, hp: 8 },
+			nature: { plus: 'spe', minus: 'atk' },
+		});
+		const base = calculateDamage(koko, slowbro(), makeMove('thunderbolt'), emptyField());
+		const boosted = calculateDamage(cloneWithAbility(koko, 'Transistor'), slowbro(), makeMove('thunderbolt'), emptyField());
+		assert(boosted.min >= base.min * 1.45 && boosted.min <= base.min * 1.55,
+			`Transistor should ~1.5x. base.min=${base.min}, boosted.min=${boosted.min}`);
+	});
+
+	test('Dragon\'s Maw: 龙招式 1.5x', () => {
+		// 用一只有 Dragon Claw 可学、原特性对 Dragon Claw 没加成的 Pokemon
+		const dragonite = makePokemon('Dragonite', {
+			ability: 'Multiscale', // 防御向，对 Dragon Claw 伤害无影响
+			evs: { atk: 252, spe: 252, hp: 4 },
+			nature: { plus: 'atk', minus: 'spa' },
+		});
+		const base = calculateDamage(dragonite, slowbro(), makeMove('dragonclaw'), emptyField());
+		const boosted = calculateDamage(cloneWithAbility(dragonite, "Dragon's Maw"), slowbro(), makeMove('dragonclaw'), emptyField());
+		assert(boosted.min >= base.min * 1.45 && boosted.min <= base.min * 1.55,
+			`Dragon's Maw should ~1.5x. base.min=${base.min}, boosted.min=${boosted.min}`);
+	});
+
+	test('Steelworker: 钢招式 1.5x', () => {
+		const kartana = makePokemon('Kartana', {
+			ability: 'Beast Boost',
+			evs: { atk: 252, spe: 252, spd: 4 },
+			nature: { plus: 'spe', minus: 'spa' },
+		});
+		const base = calculateDamage(kartana, slowbro(), makeMove('smartstrike'), emptyField());
+		const boosted = calculateDamage(cloneWithAbility(kartana, 'Steelworker'), slowbro(), makeMove('smartstrike'), emptyField());
+		assert(boosted.min >= base.min * 1.45 && boosted.min <= base.min * 1.55,
+			`Steelworker should ~1.5x. base.min=${base.min}, boosted.min=${boosted.min}`);
+	});
+
+	test('Tinted Lens: 抵抗属性 2x（Grass vs Dragon = 0.5x → 1x）', () => {
+		// Ferrothorn Power Whip vs Garchomp (Grass vs Dragon/Ground = 0.5 * 2 = 1x)
+		// 测试里要有"抵抗"的目标。Grass vs Mega Char-X (Fire/Dragon) = 0.25
+		const ferro = makePokemon('Ferrothorn', {
+			ability: 'Iron Barbs',
+			evs: { hp: 252, def: 48, spd: 208 },
+			nature: { plus: 'spd', minus: 'spa' },
+		});
+		const base = calculateDamage(ferro, megaCharX(), makeMove('powerwhip'), emptyField());
+		const boosted = calculateDamage(cloneWithAbility(ferro, 'Tinted Lens'), megaCharX(), makeMove('powerwhip'), emptyField());
+		assert(boosted.min >= base.min * 1.9 && boosted.min <= base.min * 2.1,
+			`Tinted Lens should 2x resisted. base.min=${base.min}, boosted.min=${boosted.min}`);
+	});
+
+	test('Tinted Lens 不生效于常规或超效伤害', () => {
+		// Garchomp EQ vs Mega-X (Fire/Dragon)：Ground vs Fire = 2x
+		const atk = garchomp();
+		const base = calculateDamage(atk, megaCharX(), makeMove('earthquake'), emptyField());
+		const boosted = calculateDamage(cloneWithAbility(atk, 'Tinted Lens'), megaCharX(), makeMove('earthquake'), emptyField());
+		assertEqual(boosted.min, base.min, 'Tinted Lens should not affect super-effective');
+	});
+
+	test('Neuroforce: 超效 1.25x', () => {
+		const atk = garchomp();
+		const base = calculateDamage(atk, megaCharX(), makeMove('earthquake'), emptyField());
+		const boosted = calculateDamage(cloneWithAbility(atk, 'Neuroforce'), megaCharX(), makeMove('earthquake'), emptyField());
+		assert(boosted.min >= base.min * 1.2 && boosted.min <= base.min * 1.3,
+			`Neuroforce should ~1.25x super-effective. base.min=${base.min}, boosted.min=${boosted.min}`);
+	});
+
+	// =============================================================================
+	// 防御方特性
+	// =============================================================================
+	section('AI 伤害计算：防御方特性');
+
+	test('Filter: 超效伤害 ×0.75', () => {
+		const def = megaCharX();
+		const atk = garchomp();
+		const base = calculateDamage(atk, def, makeMove('earthquake'), emptyField());
+		const defFiltered = cloneWithAbility(def, 'Filter');
+		const reduced = calculateDamage(atk, defFiltered, makeMove('earthquake'), emptyField());
+		assert(reduced.min >= base.min * 0.7 && reduced.min <= base.min * 0.8,
+			`Filter should ~0.75x. base.min=${base.min}, reduced.min=${reduced.min}`);
+	});
+
+	test('Solid Rock: 超效伤害 ×0.75（和 Filter 一致）', () => {
+		const def = megaCharX();
+		const atk = garchomp();
+		const base = calculateDamage(atk, def, makeMove('earthquake'), emptyField());
+		const reduced = calculateDamage(atk, cloneWithAbility(def, 'Solid Rock'), makeMove('earthquake'), emptyField());
+		assert(reduced.min >= base.min * 0.7 && reduced.min <= base.min * 0.8,
+			`Solid Rock should ~0.75x. base.min=${base.min}, reduced.min=${reduced.min}`);
+	});
+
+	test('Fluffy: 火招式 ×2（接触无 Flare Blitz → 单纯火 ×2）', () => {
+		// Flare Blitz 本身是接触招，火 ×2 和 接触 ×0.5 叠加 = ×1，所以用 Fire Blast（非接触）
+		const atk = megaCharX();
+		const def = slowbro();
+		const fireBlast = makeMove('fireblast');
+		const base = calculateDamage(atk, def, fireBlast, emptyField());
+		const fluffy = calculateDamage(atk, cloneWithAbility(def, 'Fluffy'), fireBlast, emptyField());
+		assert(fluffy.min >= base.min * 1.9 && fluffy.min <= base.min * 2.1,
+			`Fluffy should 2x non-contact Fire. base.min=${base.min}, fluffy.min=${fluffy.min}`);
+	});
+
+	test('Fluffy: 接触招式 ×0.5（非火）', () => {
+		const atk = garchomp();
+		const def = slowbro();
+		const base = calculateDamage(atk, def, makeMove('earthquake'), emptyField());
+		// EQ 不是接触招，Fluffy 不该生效
+		const fluffyEq = calculateDamage(atk, cloneWithAbility(def, 'Fluffy'), makeMove('earthquake'), emptyField());
+		assertEqual(fluffyEq.min, base.min, 'Fluffy should not affect non-contact Earthquake');
+
+		// Dragon Claw 是接触招，非火 → ×0.5
+		const dc = makeMove('dragonclaw');
+		const dcBase = calculateDamage(atk, def, dc, emptyField());
+		const dcFluffy = calculateDamage(atk, cloneWithAbility(def, 'Fluffy'), dc, emptyField());
+		assert(dcFluffy.min >= dcBase.min * 0.45 && dcFluffy.min <= dcBase.min * 0.55,
+			`Fluffy should 0.5x contact non-Fire. base=${dcBase.min}, fluffy=${dcFluffy.min}`);
+	});
+
+	test('Fluffy: Flare Blitz 火+接触 → 抵消 ×1', () => {
+		const atk = megaCharX();
+		const def = garchomp();
+		const base = calculateDamage(atk, def, makeMove('flareblitz'), emptyField());
+		const fluffy = calculateDamage(atk, cloneWithAbility(def, 'Fluffy'), makeMove('flareblitz'), emptyField());
+		// 允许 ±5% 浮动（因 Math.floor 顺序）
+		assert(Math.abs(fluffy.min - base.min) <= Math.max(2, base.min * 0.05),
+			`Fluffy on Flare Blitz should cancel. base=${base.min}, fluffy=${fluffy.min}`);
+	});
+
+	test('Ice Scales: 特殊招 ×0.5', () => {
+		const atk = megaCharX();
+		const def = garchomp();
+		const base = calculateDamage(atk, def, makeMove('dragonpulse'), emptyField());
+		const ice = calculateDamage(atk, cloneWithAbility(def, 'Ice Scales'), makeMove('dragonpulse'), emptyField());
+		assert(ice.min >= base.min * 0.45 && ice.min <= base.min * 0.55,
+			`Ice Scales should 0.5x special. base=${base.min}, ice=${ice.min}`);
+	});
+
+	test('Ice Scales 不影响物理招', () => {
+		const atk = garchomp();
+		const def = slowbro();
+		const base = calculateDamage(atk, def, makeMove('earthquake'), emptyField());
+		const ice = calculateDamage(atk, cloneWithAbility(def, 'Ice Scales'), makeMove('earthquake'), emptyField());
+		assertEqual(ice.min, base.min, 'Ice Scales should not affect physical');
+	});
+
+	test('Punk Rock (defender): 声音招 ×0.5', () => {
+		const exploud = makePokemon('Exploud', {
+			ability: 'Scrappy',
+			evs: { spa: 252, spe: 252, def: 4 },
+			nature: { plus: 'spa', minus: 'atk' },
+		});
+		const def = slowbro();
+		const base = calculateDamage(exploud, def, makeMove('boomburst'), emptyField());
+		const pr = calculateDamage(exploud, cloneWithAbility(def, 'Punk Rock'), makeMove('boomburst'), emptyField());
+		assert(pr.min >= base.min * 0.45 && pr.min <= base.min * 0.55,
+			`Punk Rock def should 0.5x sound. base=${base.min}, pr=${pr.min}`);
+	});
+
+	// =============================================================================
+	// 道具：抵抗果
+	// =============================================================================
+	section('AI 伤害计算：抵抗果');
+
+	test('Yache Berry: Ice 招式超效 ×0.5', () => {
+		const atk = makePokemon('Weavile', {
+			ability: 'Pressure',
+			evs: { atk: 252, spe: 252, hp: 4 },
+			nature: { plus: 'spe', minus: 'spa' },
+		});
+		const def = garchomp();
+		const iceMove = makeMove('iciclecrash');
+		const base = calculateDamage(atk, def, iceMove, emptyField());
+		const defBerry = { ...def, item: 'Yache Berry' };
+		const berry = calculateDamage(atk, defBerry, iceMove, emptyField());
+		assert(berry.min >= base.min * 0.45 && berry.min <= base.min * 0.55,
+			`Yache Berry should 0.5x super-effective Ice. base=${base.min}, berry=${berry.min}`);
+	});
+
+	test('Yache Berry 已被 itemLost 则不生效', () => {
+		const atk = makePokemon('Weavile', {
+			ability: 'Pressure',
+			evs: { atk: 252, spe: 252, hp: 4 },
+			nature: { plus: 'spe', minus: 'spa' },
+		});
+		const def = garchomp();
+		const defBerryUsed = { ...def, item: 'Yache Berry', itemLost: true };
+		const base = calculateDamage(atk, def, makeMove('iciclecrash'), emptyField());
+		const used = calculateDamage(atk, defBerryUsed, makeMove('iciclecrash'), emptyField());
+		assertEqual(used.min, base.min, 'Yache Berry gone → no reduction');
+	});
+
+	test('Chilan Berry: Normal 招无条件 ×0.5', () => {
+		// Chansey Return 102 vs Garchomp (Normal × 1 for Garchomp)
+		const atk = chansey();
+		atk.baseStats.atk = 300; // 给 Chansey 足够的攻击让 Return 不是 0
+		const chan = { ...atk };
+		const def = garchomp();
+		const normalMove = makeMove('bodyslam');
+		const base = calculateDamage(chan, def, normalMove, emptyField());
+		const defBerry = { ...def, item: 'Chilan Berry' };
+		const berry = calculateDamage(chan, defBerry, normalMove, emptyField());
+		assert(berry.min >= base.min * 0.45 && berry.min <= base.min * 0.55,
+			`Chilan Berry should 0.5x any Normal. base=${base.min}, berry=${berry.min}`);
+	});
 }
 
 module.exports = { runAIDamageCalcTests };

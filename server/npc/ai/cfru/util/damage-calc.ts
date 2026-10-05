@@ -590,6 +590,111 @@ function getVariableBasePower(
 }
 
 /**
+ * 计算固定伤害招式（CFRU damage_calc.c:484-564）。
+ *
+ * PS 把这些招的 basePower 存成 0 并用 damageCallback 在运行时决定伤害；AI 侧
+ * 没有 damageCallback，所以必须自己识别招式 ID 并输出一个合理的"min/max 伤害估算"。
+ *
+ * 返回 null 表示"这不是固定伤害招，走常规公式"；返回数字对象表示"用这个 min/max 直接出结果"。
+ *
+ * 当前覆盖：
+ *   - Seismic Toss / Night Shade: 等于攻击方等级
+ *   - Dragon Rage: 固定 40
+ *   - Sonic Boom: 固定 20
+ *   - Super Fang: 对手当前 HP 的 50%
+ *   - Endeavor: 把对手 HP 降到和自己一样（即 defHp - atkHp，<=0 则不打）
+ *   - Final Gambit: 自己当前 HP（并且自己也会倒）
+ *   - Psywave: 等级 × [0.5, 1.5]，min=level/2，max=level*3/2
+ *   - Counter: 上一回合吃过物理伤害 × 2（通过 target.lastMove 判断对手是物理招）
+ *   - Mirror Coat: 上一回合吃过特殊伤害 × 2
+ *   - Metal Burst: 上一回合吃过任意伤害 × 1.5
+ *
+ * Counter/Mirror Coat/Metal Burst 的"上一回合伤害"按"对手上一招的平均估算伤害"反推——
+ * CFRU 走的是实际伤害记录，我们没有协议级 damage 记录，用 lastMove 的估算是近似。
+ */
+export function computeFixedDamage(
+	attacker: AIPokemon,
+	defender: AIPokemon,
+	move: AIMove,
+	cache?: AICache
+): { min: number; max: number } | null {
+	const moveId = toID(move.id);
+	const level = attacker.level || 100;
+	const defenderMaxHp = defender.maxHp || Math.floor(defender.hp / Math.max(defender.hpPercent, 1) * 100);
+	const defenderCurHp = Math.floor(defenderMaxHp * defender.hpPercent / 100);
+
+	switch (moveId) {
+	case 'seismictoss':
+	case 'nightshade':
+		return { min: level, max: level };
+	case 'dragonrage':
+		return { min: 40, max: 40 };
+	case 'sonicboom':
+		return { min: 20, max: 20 };
+	case 'superfang': {
+		const dmg = Math.max(1, Math.floor(defenderCurHp / 2));
+		return { min: dmg, max: dmg };
+	}
+	case 'endeavor': {
+		const attackerCurHp = attacker.hp;
+		if (defenderCurHp <= attackerCurHp) return { min: 0, max: 0 };
+		const dmg = defenderCurHp - attackerCurHp;
+		return { min: dmg, max: dmg };
+	}
+	case 'finalgambit':
+		// 用光自己当前 HP 等量伤害对手。对手类型豁免（Ghost 对 Final Gambit 不豁免，但 Normal 对 Ghost 系豁免）
+		return { min: attacker.hp, max: attacker.hp };
+	case 'psywave':
+		return { min: Math.max(1, Math.floor(level / 2)), max: Math.floor(level * 3 / 2) };
+	case 'counter':
+	case 'mirrorcoat':
+	case 'metalburst': {
+		// 对手上一回合必须用过对应类别的招式；否则按失败考虑
+		const targetLast = defender.lastMove;
+		if (!targetLast) return { min: 0, max: 0 };
+		const lastDex = Dex.moves.get(targetLast);
+		if (!lastDex.exists) return { min: 0, max: 0 };
+
+		const needPhysical = moveId === 'counter';
+		const needSpecial = moveId === 'mirrorcoat';
+		if (needPhysical && lastDex.category !== 'Physical') return { min: 0, max: 0 };
+		if (needSpecial && lastDex.category !== 'Special') return { min: 0, max: 0 };
+		if (moveId === 'metalburst' && lastDex.category === 'Status') return { min: 0, max: 0 };
+
+		// 估算对手上招打在自己身上的伤害：用对手当作 attacker、我方当作 defender 反向跑一次
+		// 为了避免无穷递归，这里直接构造一个"最小 AIMove"调常规公式，不走 fixed-damage 分支
+		const simulatedMove: AIMove = {
+			id: lastDex.id,
+			name: lastDex.name,
+			slot: 0,
+			type: lastDex.type,
+			category: lastDex.category as 'Physical' | 'Special' | 'Status',
+			basePower: lastDex.basePower,
+			accuracy: lastDex.accuracy,
+			pp: lastDex.pp,
+			maxPp: lastDex.pp,
+			priority: lastDex.priority || 0,
+			target: lastDex.target || 'normal',
+			flags: lastDex.flags || {},
+			secondaryChance: lastDex.secondary?.chance || 0,
+			disabled: false,
+			isZMove: false,
+			isMaxMove: false,
+			multihit: lastDex.multihit || null,
+		};
+		// 调常规计算：对手打自己上一招的伤害
+		// 不复用 cache（defender/attacker 对调会导致 cache key 碰撞）
+		const incoming = calculateDamage(defender, attacker, simulatedMove, { weather: '', weatherTurns: -1, terrain: '', terrainTurns: -1, trickroom: false, trickroomTurns: 0, gravity: false, magicroom: false, wonderroom: false });
+		const multiplier = moveId === 'metalburst' ? 1.5 : 2;
+		const min = Math.floor(incoming.min * multiplier);
+		const max = Math.floor(incoming.max * multiplier);
+		return { min, max };
+	}
+	}
+	return null;
+}
+
+/**
  * Calculate damage for a move
  * @param attacker - Attacking Pokemon
  * @param defender - Defending Pokemon
@@ -685,6 +790,49 @@ export function calculateDamage(
 			canKO: false,
 			guaranteedKO: false,
 			hitsToKO: Infinity,
+		};
+		if (cache) cache.damageCalc.set(cacheKey, result);
+		return result;
+	}
+
+	// Sucker Punch 失败判定（CFRU: ai_negatives.c SUCKER_PUNCH 分支）：
+	// 仅当对手本回合会出攻击招时才成功。我们没有真的预测，用 lastMove 近似：
+	//   - lastMove 为空（刚上场 / 首回合）→ 按失败考虑，伤害估成 0
+	//   - lastMove 是 Status 招 → 按失败考虑
+	//   - 其他情况 → 走常规公式（可能偏乐观，但对称于 CFRU 的简化）
+	if (toID(move.id) === 'suckerpunch') {
+		const defLast = defender.lastMove;
+		const defLastDex = defLast ? Dex.moves.get(defLast) : null;
+		if (!defLast || !defLastDex?.exists || defLastDex.category === 'Status') {
+			const defenderMaxHp = defender.maxHp || 1;
+			const result: DamageResult = {
+				min: 0, max: 0, average: 0,
+				minPercent: 0, maxPercent: 0, averagePercent: 0,
+				effectiveness,
+				canKO: false, guaranteedKO: false, hitsToKO: Infinity,
+			};
+			if (cache) cache.damageCalc.set(cacheKey, result);
+			return result;
+		}
+	}
+
+	// 固定伤害招式（Seismic Toss / Super Fang / Counter 等）在走常规公式前直接出结果
+	const fixed = computeFixedDamage(attacker, defender, move, cache);
+	if (fixed) {
+		const defenderMaxHp = defender.maxHp || Math.floor(defender.hp / Math.max(defender.hpPercent, 1) * 100);
+		const currentHp = Math.floor(defenderMaxHp * defender.hpPercent / 100);
+		const avg = Math.floor((fixed.min + fixed.max) / 2);
+		const result: DamageResult = {
+			min: fixed.min,
+			max: fixed.max,
+			average: avg,
+			minPercent: defenderMaxHp > 0 ? (fixed.min / defenderMaxHp) * 100 : 0,
+			maxPercent: defenderMaxHp > 0 ? (fixed.max / defenderMaxHp) * 100 : 0,
+			averagePercent: defenderMaxHp > 0 ? (avg / defenderMaxHp) * 100 : 0,
+			effectiveness, // 保留类型效果信息（Normal 对 Ghost 已在上面被豁免掉了）
+			canKO: fixed.max >= currentHp,
+			guaranteedKO: fixed.min >= currentHp,
+			hitsToKO: avg > 0 ? Math.ceil(currentHp / avg) : Infinity,
 		};
 		if (cache) cache.damageCalc.set(cacheKey, result);
 		return result;

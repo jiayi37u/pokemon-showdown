@@ -185,6 +185,142 @@ function runAIDamageCalcTests() {
 		const r = calculateDamage(atk, def, move, emptyField());
 		assertRange(r, 133, 157, 'Mega Char-X Flare Blitz vs Garchomp');
 	});
+
+	// =============================================================================
+	// 固定伤害招式 / Fixed-damage moves
+	// =============================================================================
+	section('AI 伤害计算：固定伤害招式');
+
+	const chansey = () => makePokemon('Chansey', {
+		ability: 'Natural Cure',
+		item: 'Eviolite',
+		evs: { hp: 240, def: 252, spe: 16 },
+		nature: { plus: 'def', minus: 'atk' },
+	});
+	const slowbro = () => makePokemon('Slowbro', {
+		ability: 'Regenerator',
+		item: 'Leftovers',
+		evs: { hp: 252, def: 252, spd: 4 },
+		nature: { plus: 'def', minus: 'atk' },
+	});
+	const megaGengar = () => makePokemon('Gengar-Mega', {
+		ability: 'Shadow Tag',
+		evs: { spa: 252, spe: 252, def: 4 },
+		nature: { plus: 'spe', minus: 'atk' },
+	});
+
+	test('Seismic Toss (Fighting) vs Garchomp → exactly 100 (level)', () => {
+		const r = calculateDamage(chansey(), garchomp(), makeMove('seismictoss'), emptyField());
+		assertEqual(r.min, 100, 'Seismic Toss min=level');
+		assertEqual(r.max, 100, 'Seismic Toss max=level');
+	});
+
+	test('Seismic Toss vs Ghost (Mega Gengar) → 0 (type immunity)', () => {
+		const r = calculateDamage(chansey(), megaGengar(), makeMove('seismictoss'), emptyField());
+		assertEqual(r.min, 0, 'Seismic Toss vs Ghost immune');
+		assertEqual(r.max, 0, 'Seismic Toss vs Ghost immune');
+	});
+
+	test('Night Shade (Ghost) vs Garchomp → exactly 100 (level)', () => {
+		const r = calculateDamage(chansey(), garchomp(), makeMove('nightshade'), emptyField());
+		assertEqual(r.min, 100, 'Night Shade min=level');
+		assertEqual(r.max, 100, 'Night Shade max=level');
+	});
+
+	test('Dragon Rage → fixed 40', () => {
+		const r = calculateDamage(chansey(), garchomp(), makeMove('dragonrage'), emptyField());
+		assertEqual(r.min, 40, 'Dragon Rage min');
+		assertEqual(r.max, 40, 'Dragon Rage max');
+	});
+
+	test('Sonic Boom → fixed 20', () => {
+		const r = calculateDamage(chansey(), garchomp(), makeMove('sonicboom'), emptyField());
+		assertEqual(r.min, 20, 'Sonic Boom min');
+		assertEqual(r.max, 20, 'Sonic Boom max');
+	});
+
+	test('Super Fang vs full HP Garchomp → half current HP (~178)', () => {
+		const r = calculateDamage(chansey(), garchomp(), makeMove('superfang'), emptyField());
+		// Garchomp max HP = 357 → 第一发 Super Fang = floor(357/2) = 178
+		assertEqual(r.min, 178, 'Super Fang min');
+		assertEqual(r.max, 178, 'Super Fang max');
+	});
+
+	test('Psywave min=level/2, max=level*3/2', () => {
+		const r = calculateDamage(chansey(), garchomp(), makeMove('psywave'), emptyField());
+		assertEqual(r.min, 50, 'Psywave min');
+		assertEqual(r.max, 150, 'Psywave max');
+	});
+
+	// =============================================================================
+	// Counter / Mirror Coat / Metal Burst
+	// =============================================================================
+	section('AI 伤害计算：Counter / Mirror Coat');
+
+	test('Counter 没有 lastMove 时返回 0', () => {
+		const def = megaCharX();
+		def.lastMove = '';
+		const r = calculateDamage(slowbro(), def, makeMove('counter'), emptyField());
+		assertEqual(r.min, 0, 'Counter without lastMove');
+	});
+
+	test('Counter: Mega-X 上回合用 Flare Blitz（物理）→ 伤害 > 0', () => {
+		const def = megaCharX();
+		def.lastMove = 'flareblitz';
+		const r = calculateDamage(slowbro(), def, makeMove('counter'), emptyField());
+		assert(r.min > 0, `Counter after physical should deal damage, got ${r.min}`);
+		assert(r.max > r.min * 0.9, 'Counter should return a range');
+	});
+
+	test('Counter: Mega-X 上回合用过 Dragon Pulse（特殊）→ 返回 0', () => {
+		const def = megaCharX();
+		def.lastMove = 'dragonpulse';
+		const r = calculateDamage(slowbro(), def, makeMove('counter'), emptyField());
+		assertEqual(r.min, 0, 'Counter after special should fail');
+	});
+
+	test('Mirror Coat: Mega-X 上回合用过 Dragon Pulse（特殊）→ 伤害 > 0', () => {
+		const def = megaCharX();
+		def.lastMove = 'dragonpulse';
+		const r = calculateDamage(slowbro(), def, makeMove('mirrorcoat'), emptyField());
+		assert(r.min > 0, `Mirror Coat after special should deal damage, got ${r.min}`);
+	});
+
+	test('Mirror Coat: 上回合物理招 → 返回 0', () => {
+		const def = megaCharX();
+		def.lastMove = 'flareblitz';
+		const r = calculateDamage(slowbro(), def, makeMove('mirrorcoat'), emptyField());
+		assertEqual(r.min, 0, 'Mirror Coat after physical should fail');
+	});
+
+	// =============================================================================
+	// Sucker Punch
+	// =============================================================================
+	section('AI 伤害计算：Sucker Punch');
+
+	test('Sucker Punch 没有 lastMove → 返回 0', () => {
+		const atk = megaCharX();
+		const def = garchomp();
+		def.lastMove = '';
+		const r = calculateDamage(atk, def, makeMove('suckerpunch'), emptyField());
+		assertEqual(r.min, 0, 'Sucker Punch without lastMove');
+	});
+
+	test('Sucker Punch 对手上回合用 Status（Swords Dance）→ 返回 0', () => {
+		const atk = megaCharX();
+		const def = garchomp();
+		def.lastMove = 'swordsdance';
+		const r = calculateDamage(atk, def, makeMove('suckerpunch'), emptyField());
+		assertEqual(r.min, 0, 'Sucker Punch vs Status user');
+	});
+
+	test('Sucker Punch 对手上回合用攻击招 → 走常规公式（> 0）', () => {
+		const atk = megaCharX();
+		const def = garchomp();
+		def.lastMove = 'earthquake';
+		const r = calculateDamage(atk, def, makeMove('suckerpunch'), emptyField());
+		assert(r.min > 0, `Sucker Punch after attack should deal damage, got ${r.min}`);
+	});
 }
 
 module.exports = { runAIDamageCalcTests };

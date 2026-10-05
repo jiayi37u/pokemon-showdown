@@ -2,6 +2,45 @@
 
 ## [已发布]
 
+### v1.2.21 - 固定伤害招式 + Counter/Mirror Coat + Sucker Punch (2026-10-05)
+
+**新增能力**:
+
+**M1 - 固定伤害招式**（原 P0 遗漏，basePower=0 一刀切 → 现按 CFRU 公式）：
+
+| 招式 | 伤害估算 |
+|------|---------|
+| Seismic Toss / Night Shade | 使用者等级（类型克制/免疫走常规类型检查） |
+| Dragon Rage | 40 |
+| Sonic Boom | 20 |
+| Super Fang | 对手当前 HP / 2 |
+| Endeavor | 对手 HP − 自己 HP（≤0 不打） |
+| Final Gambit | 自己当前 HP |
+| Psywave | min=level/2, max=level×3/2 |
+| Counter / Mirror Coat / Metal Burst | 对手 lastMove 匹配类别时，反向跑 `calculateDamage` 得到对手上招伤害 × {2, 2, 1.5}；不匹配返回 0 |
+
+**M2 - Sucker Punch 简化版**：对手 `lastMove` 空或类别为 Status → 伤害估成 0（按失败考虑）；否则走常规公式。等 M7 招式预测做完再升级到完整版。
+
+**实现要点**:
+- 固定伤害分支放在类型免疫 / Wonder Guard 之后、常规公式之前，不影响既有攻击招式的伤害链
+- Counter 系反向调用常规 `calculateDamage` 估伤——CFRU 用的是协议级实际伤害记录，我们没有，用 lastMove 估算是近似
+- Sucker Punch 直接在 damage-calc 入口判定，评分系统天然继承"伤害 = 0 → 分低"的既有规则，不需要新建 negatives case
+
+**文件变更**:
+| 文件 | 变更 |
+|------|------|
+| server/npc/ai/cfru/util/damage-calc.ts | +computeFixedDamage()，Sucker Punch 失败判定 |
+| test/npc/ai/ai-damage-calc.test.js | +15 用例（固定伤害 7 / Counter&Mirror 5 / Sucker Punch 3） |
+| docs/ai-logic/CFRU-Migration-Checklist.md | P0 固定伤害、P1 Sucker Punch 标✅ |
+
+**测试**: 367 unit tests 全过（+15 新用例），sim-battle 单打 mirror-npc 场景跑通 Chansey 两次 Seismic Toss
+
+**后续**:
+- M1 残留：Final Gambit 的"自己也会倒"影响评分里的后续回合（现在 damage-calc 不感知）
+- Sucker Punch 升级：等 M7 招式预测，当前用 lastMove 近似在"对手刚换上来 / 刚被 force-switched 回"的场景会判错
+
+---
+
 ### v1.2.20 - 重复代码重构 P1/P2/P3 (2026-10-05)
 
 **背景**: `docs/tmp.md` 里 P1/P2/P3 遗留，每次 bug 修复要改多处（v1.2.8/v1.2.9 的 Bug 根因）。

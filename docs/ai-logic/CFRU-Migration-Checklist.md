@@ -10,8 +10,8 @@
 
 | 文件 | 说明 | 里程碑 | 版本 | 迁移状态 | 完成率 |
 |------|------|--------|------|----------|--------|
-| ai_util.c, damage_calc.c | 工具函数 (伤害/速度) | M1 | v1.1 | ⚠️ 固定伤害招式缺失 | ~60% |
-| ai_negatives.c | 负面评分 (~50 个 case) | M2 | v1.1 | ⚠️ Sucker Punch 缺失 | ~95% |
+| ai_util.c, damage_calc.c | 工具函数 (伤害/速度) | M1 | v1.1 | ⚠️ 部分攻击/防御/双打特性遗漏 | ~75% |
+| ai_negatives.c | 负面评分 (~50 个 case) | M2 | v1.1 | ✅ 完成（Sucker Punch 简化版 v1.2.21） | ~100% |
 | ai_positives.c | 正面评分 (~30 个 case) | M3 | v1.1 | ✅ 完成 | ~100% |
 | - | NormalAI 整合 | M4 | v1.1 | ✅ 核心完成 | 100% |
 | ai_switching.c | 切换决策 | M5 | v1.2 | ⏳ 待开始 | 0% |
@@ -103,7 +103,7 @@
 | EFFECT_TERRAIN | 地形招式 | ✅ |
 | EFFECT_SLEEP_TALK | 梦话 (非睡眠时扣分) | ✅ v1.2.13 |
 | EFFECT_SNORE | 打鼾 (非睡眠时扣分) | ✅ v1.2.13 |
-| EFFECT_SUCKER_PUNCH | 突袭 (对手无攻击招式/用状态招式时扣分) | ❌ 缺失 |
+| EFFECT_SUCKER_PUNCH | 突袭 (对手无攻击招式/用状态招式时扣分) | ✅ v1.2.21（lastMove 近似，未等 M7 招式预测） |
 
 ## Negative 评分 - 道具检查
 
@@ -118,35 +118,28 @@
 
 ## 伤害计算 - 固定伤害招式
 
-> **严重遗漏**: 当前 `damage-calc.ts` 未处理 basePower=0 的固定伤害招式！
-> **CFRU 源文件**: `damage_calc.c` (第 484-564 行)
+**状态**: ✅ v1.2.21 完成（见 `computeFixedDamage` in `damage-calc.ts`）
 
-| 招式 | CFRU 伤害计算 | PS basePower | 状态 |
-|------|--------------|--------------|------|
-| Super Fang (愤怒门牙) | 对手当前 HP 的 50% | 0 (damageCallback) | ❌ 返回 0 |
-| Dragon Rage (龙之怒) | 固定 40 | 0 (damageCallback) | ❌ 返回 0 |
-| Sonic Boom (音爆) | 固定 20 | 0 (damageCallback) | ❌ 返回 0 |
-| Seismic Toss (地球上投) | 使用者等级 | 0 (damageCallback) | ❌ 返回 0 |
-| Night Shade (黑夜魔影) | 使用者等级 | 0 (damageCallback) | ❌ 返回 0 |
-| Psywave (精神波) | 等级 × (0.5~1.5) 平均 | 0 (damageCallback) | ❌ 返回 0 |
-| Endeavor (蛮干) | 对手HP - 自己HP | 0 (damageCallback) | ❌ 返回 0 |
-| Final Gambit (搏命) | 自己当前 HP | 0 (damageCallback) | ❌ 返回 0 |
-| Counter (双倍奉还) | 受到物理伤害 × 2 | 0 (damageCallback) | ❌ 返回 0 |
-| Mirror Coat (镜面反射) | 受到特殊伤害 × 2 | 0 (damageCallback) | ❌ 返回 0 |
-| Metal Burst (金属爆炸) | 受到伤害 × 1.5 | 0 (damageCallback) | ❌ 返回 0 |
+| 招式 | AI 伤害估算 | 状态 |
+|------|------|------|
+| Super Fang (愤怒门牙) | 对手当前 HP 的 50% | ✅ v1.2.21 |
+| Dragon Rage (龙之怒) | 固定 40 | ✅ v1.2.21 |
+| Sonic Boom (音爆) | 固定 20 | ✅ v1.2.21 |
+| Seismic Toss (地球上投) | 使用者等级（Fighting，Ghost 免疫） | ✅ v1.2.21 |
+| Night Shade (黑夜魔影) | 使用者等级（Ghost） | ✅ v1.2.21 |
+| Psywave (精神波) | min=level/2, max=level*3/2 | ✅ v1.2.21 |
+| Endeavor (蛮干) | 对手HP - 自己HP（≤0 不打） | ✅ v1.2.21 |
+| Final Gambit (搏命) | 自己当前 HP | ✅ v1.2.21 |
+| Counter (双倍奉还) | 对手上招（物理）伤害 × 2，否则 0 | ✅ v1.2.21 |
+| Mirror Coat (镜面反射) | 对手上招（特殊）伤害 × 2，否则 0 | ✅ v1.2.21 |
+| Metal Burst (金属爆炸) | 对手上招（任意伤害）× 1.5，否则 0 | ✅ v1.2.21 |
 
-**问题**: 当前代码在 `basePower === 0` 时直接返回 0 伤害，没有检查 `damageCallback`。
-
-**CFRU 实现** (`damage_calc.c:484-488`):
-```c
-case EFFECT_SUPER_FANG:
-    damage = GetBaseCurrentHP(bankDef) / 2;  // 50% 当前 HP
-    if (parentalBond)
-        damage += GetBaseCurrentHP(bankDef) / 4;  // Parental Bond: 共 75%
-    return damage;
-```
-
-**修复方案**: 在 `calculateDamage()` 函数开头添加固定伤害招式的特殊处理。
+**实现要点**:
+- 固定伤害分支放在类型免疫 / Wonder Guard 之后，常规公式之前
+- Counter/Mirror Coat/Metal Burst 的"受到伤害"用 `defender.lastMove` 反向跑一次常规 `calculateDamage`
+  估算（CFRU 走的是实际伤害记录，我们没有协议级 damage 记录，用 lastMove 的估算是近似）
+- 对手 `lastMove` 空或类别不匹配 → 返回 0，避免 AI 空读
+- 回归测试：`test/npc/ai/ai-damage-calc.test.js`（11 个固定伤害用例）
 
 ---
 
@@ -267,13 +260,13 @@ case EFFECT_SUPER_FANG:
 
 ## 统计
 
-- **M1 工具函数**: 已实现 20 个，遗漏 17 个 (~65%)
+- **M1 工具函数**: 已实现 31 个，遗漏 ~18 个 (~75%)
   - v1.1.9: 新增重量招式计算 (getActualWeight, getWeightBasedPower, getWeightRatioPower)
   - v1.2.10: 新增 Spread Move 伤害递减
-  - **严重遗漏**: 固定伤害招式 (Super Fang, Dragon Rage, Night Shade 等) 返回 0 伤害
+  - v1.2.21: 新增固定伤害招式（Seismic Toss / Night Shade / Dragon Rage / Sonic Boom / Super Fang / Endeavor / Final Gambit / Psywave / Counter / Mirror Coat / Metal Burst）
   - 遗漏: 攻击特性 10 个, 防御特性 6 个, 道具 2 个
-- **M2 Negative 评分**: 已实现 ~55 个，遗漏 ~4 个 (~95%)
-  - **遗漏**: Sucker Punch 评分逻辑（需要招式预测系统）
+- **M2 Negative 评分**: 已实现 ~56 个，遗漏 ~3 个 (~98%)
+  - v1.2.21: Sucker Punch 简化版（lastMove 近似，未等 M7 招式预测）
 - **M3 Positive 评分**: 已实现 19 个，遗漏 0 个 (~100%)
 
 ### P0 级别遗漏 (高优先级修复)
@@ -284,7 +277,7 @@ case EFFECT_SUPER_FANG:
 | 光墙/反射壁重复检查 | M2 | 避免浪费回合 | ✅ 已完成 |
 | GetSecondaryEffectDamage | M1 | 准确评估击杀能力 | ✅ 已完成 |
 | 双打目标选择 | M3 | 双打 AI 基本功能 | ✅ 已完成 |
-| **固定伤害招式计算** | M1 | Super Fang/Dragon Rage 等返回 0 伤害 | ❌ **待修复** |
+| 固定伤害招式计算 | M1 | Super Fang/Dragon Rage 等返回 0 伤害 | ✅ v1.2.21 |
 
 ### P1 级别遗漏
 
@@ -296,7 +289,7 @@ case EFFECT_SUPER_FANG:
 | 控制招式评分 | M3 | 合理使用 Encore/Disable | ✅ 已完成 |
 | Counter/Mirror Coat | M2 | 避免错误使用反击招式 | ✅ 已完成 |
 | Belly Drum HP 检查 | M2 | <50% HP 时不用腹鼓 | ✅ 已完成 |
-| **Sucker Punch 评分** | M2 | 对手无攻击招式/用状态招式时误用突袭 | ❌ **待实现** (依赖 M7 预测) |
+| Sucker Punch 评分 | M2 | 对手无攻击招式/用状态招式时误用突袭 | ✅ v1.2.21（lastMove 近似版） |
 
 ### P2 级别遗漏 - 伤害计算特性/道具 (待实现)
 
@@ -336,7 +329,7 @@ case EFFECT_SUPER_FANG:
 
 ---
 
-*最后更新: 2026-01-25 (发现固定伤害招式/Sucker Punch 评分缺失)*
+*最后更新: 2026-10-05 (v1.2.21 固定伤害招式 + Counter/Mirror Coat/Metal Burst + Sucker Punch 简化)*
 
 **相关文档**:
 - Bug 详情见 [troubleshooting/known-issues.md](../npc-battle/troubleshooting/known-issues.md)

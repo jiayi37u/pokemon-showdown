@@ -2,6 +2,43 @@
 
 ## [已发布]
 
+### v1.2.23 - 对手 preset 覆盖伤害估算 (2026-10-05)
+
+**背景**: NormalAI 之前把对手一律按 IV=31 / EV=85 / 无性格 估算，和竞技练度（252/252/修正性格）系统性偏差 ~9-10%。影响到 Garchomp / Tyranitar 这类对手时伤害估低。
+
+**改动**：
+- 新建 `data/npc/opponent-presets.json`，按 `toID(species)` 为 key 存一个"主流练度"
+- `trackedPokemonToAIPokemon` 优先查 preset，命中则用 preset 的 EV + nature + （可选）item 计算 stats；未命中回退既有默认估算
+- item 处理：**协议暴露的 item** > preset.item > 空字符串。`itemLost=true` 时不回退 preset.item（避免 Eviolite 已消耗后还按 ×1.5 算）
+- 本版 preset 只填 4 只（按用户指定）：Garchomp / Hydreigon / Tyranitar / Chansey。只处理有伤害影响的道具（仅 Eviolite）
+
+**第一批 preset**：
+| 精灵 | Nature | EVs | Item |
+|---|---|---|---|
+| Garchomp | Jolly | 252 Atk / 252 Spe / 4 HP | — |
+| Hydreigon | Timid | 252 SpA / 252 Spe / 4 HP (Atk IV 0) | — |
+| Tyranitar | Adamant | 252 HP / 252 Atk / 4 SpD | — |
+| Chansey | Bold | 252 HP / 252 Def / 4 SpD (Atk IV 0) | Eviolite |
+
+**不做的事**（本版明确跳过，和用户对齐过）：
+- 其他 Pokemon preset：等用户逐只给
+- 大部分道具（Life Orb / Choice X / 讲究道具）：这版只开 Eviolite
+- 速度推断 / 协议级 Scarf 检测
+- 伤害反推 EV/Nature（留 HardAI）
+
+**文件变更**:
+| 文件 | 变更 |
+|------|------|
+| data/npc/opponent-presets.json | 新建，4 只 preset |
+| server/npc/ai/cfru/util/opponent-presets.ts | 新建，loader + stats 计算 |
+| server/npc/ai/cfru/state-builder.ts | trackedPokemonToAIPokemon 接入 preset |
+| test/npc/ai/opponent-presets.test.js | 新建 13 个用例 |
+| test/npc/ai/run-tests.js | 挂新测试 |
+
+**测试**: 398 unit tests 全过（+13 新）；sim-battle 单打跑完一局无异常。
+
+---
+
 ### v1.2.22 - 攻击/防御特性 + 抵抗果 (2026-10-05)
 
 **目的**: NormalAI 的伤害估算正确性补齐。CFRU 迁移清单里 10+ 个常见特性/道具原来是 ❌，这些漏项在"用那种 Pokemon 的 NPC" 场景下会给出错误伤害，影响评分决策。

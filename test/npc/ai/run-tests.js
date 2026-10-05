@@ -29,6 +29,7 @@ const testModules = {
 	'multi-hit': () => require('./multi-hit.test').runMultiHitTests(),
 	'damage-calc': () => require('./damage-calc.test').runDamageCalcTests(),
 	'ai-damage-calc': () => require('./ai-damage-calc.test').runAIDamageCalcTests(),
+	'opponent-presets': () => require('./opponent-presets.test').runOpponentPresetTests(),
 	'doubles-partner': () => require('./doubles-partner.test').runDoublesPartnerTests(),
 	'contact-moves': () => require('./contact-moves.test').runContactMoveTests(),
 	'positives': () => require('./positives.test').runPositivesScoringTests(),

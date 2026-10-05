@@ -25,6 +25,7 @@ import {
 	speciesDefaults,
 	makeAIPokemonSkeleton,
 } from './util/pokemon-builder';
+import { getOpponentPreset, computeStatsFromPreset } from './util/opponent-presets';
 
 /**
  * Build BattleState from Pokemon Showdown request and battle data
@@ -708,27 +709,34 @@ export function trackedPokemonToAIPokemon(
 	// This ensures opponent level matches the actual level parsed from protocol messages
 	// Previously resolveLevel could return 100 for unrecognized formats, causing level mismatch
 	const level = tracked.level || 100;
-
-	// Calculate stats using IV=31, EV=85 (average effort value), no nature modifier
-	// Formula: stat = ((2 * base + IV + EV/4) * level / 100) + 5
-	// For HP: stat = ((2 * base + IV + EV/4) * level / 100) + level + 10
-	const IV = 31;
-	const EV = 85;
 	const { baseStats } = speciesDefaults(tracked.species);
 
-	// Calculate actual stat values for opponent
-	const calculatedStats = {
-		hp: Math.floor((2 * baseStats.hp + IV + Math.floor(EV / 4)) * level / 100) + level + 10,
-		atk: Math.floor((2 * baseStats.atk + IV + Math.floor(EV / 4)) * level / 100) + 5,
-		def: Math.floor((2 * baseStats.def + IV + Math.floor(EV / 4)) * level / 100) + 5,
-		spa: Math.floor((2 * baseStats.spa + IV + Math.floor(EV / 4)) * level / 100) + 5,
-		spd: Math.floor((2 * baseStats.spd + IV + Math.floor(EV / 4)) * level / 100) + 5,
-		spe: Math.floor((2 * baseStats.spe + IV + Math.floor(EV / 4)) * level / 100) + 5,
-	};
+	// 优先使用 opponent-presets.json 的常见练度；未命中回退到 IV=31 / EV=85 / 无性格的默认估算
+	// 协议里暴露的道具（tracked.item）优先于 preset.item：对手已经被观察到持有某物就以观察为准
+	const preset = getOpponentPreset(tracked.species);
+	let calculatedStats: AIPokemon['baseStats'];
+	let presetItem: string | undefined;
+	if (preset) {
+		calculatedStats = computeStatsFromPreset(baseStats, level, preset);
+		presetItem = preset.item;
+	} else {
+		const IV = 31;
+		const EV = 85;
+		calculatedStats = {
+			hp: Math.floor((2 * baseStats.hp + IV + Math.floor(EV / 4)) * level / 100) + level + 10,
+			atk: Math.floor((2 * baseStats.atk + IV + Math.floor(EV / 4)) * level / 100) + 5,
+			def: Math.floor((2 * baseStats.def + IV + Math.floor(EV / 4)) * level / 100) + 5,
+			spa: Math.floor((2 * baseStats.spa + IV + Math.floor(EV / 4)) * level / 100) + 5,
+			spd: Math.floor((2 * baseStats.spd + IV + Math.floor(EV / 4)) * level / 100) + 5,
+			spe: Math.floor((2 * baseStats.spe + IV + Math.floor(EV / 4)) * level / 100) + 5,
+		};
+	}
 
 	const estimatedMaxHp = calculatedStats.hp;
 	const estimatedHp = Math.floor(estimatedMaxHp * tracked.hpPercent / 100);
 	const fainted = tracked.hpPercent <= 0;
+	// item 的来源优先级：协议暴露的（tracked.item） > preset.item > 空字符串
+	const effectiveItem = tracked.item || (tracked.itemLost ? '' : (presetItem || ''));
 
 	return makeAIPokemonSkeleton({
 		slot,
@@ -740,7 +748,7 @@ export function trackedPokemonToAIPokemon(
 		fainted,
 		types: tracked.types,
 		ability: tracked.ability || '',
-		item: tracked.item || '',
+		item: effectiveItem,
 		itemLost: tracked.itemLost || false,
 		moves: tracked.knownMoves,
 		lastMove: tracked.lastMove || '',

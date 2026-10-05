@@ -1,0 +1,28 @@
+{
+  "_description": "对手精灵的默认 EV/Nature/道具 预设，用于 NormalAI 的伤害估算。未命中的 species 回退到现有的 IV=31 / EV=85 / 性格无修正公式。只处理有伤害影响的道具（现版本仅 Eviolite）。key 使用 PS toID(species) 规则。",
+  "_schema": {
+    "nature": "Pokemon 性格名",
+    "evs": "{ hp?: 0-252, atk?, def?, spa?, spd?, spe?: }",
+    "ivs": "可选，覆盖 IV（例：Timid 常减 Atk IV 到 0）",
+    "item": "可选，仅限对伤害有影响的道具（Eviolite / Choice X / Life Orb 等）"
+  },
+  "garchomp": {
+    "nature": "Jolly",
+    "evs": { "atk": 252, "spe": 252, "hp": 4 }
+  },
+  "hydreigon": {
+    "nature": "Timid",
+    "evs": { "spa": 252, "spe": 252, "hp": 4 },
+    "ivs": { "atk": 0 }
+  },
+  "tyranitar": {
+    "nature": "Adamant",
+    "evs": { "hp": 252, "atk": 252, "spd": 4 }
+  },
+  "chansey": {
+    "nature": "Bold",
+    "evs": { "hp": 252, "def": 252, "spd": 4 },
+    "ivs": { "atk": 0 },
+    "item": "Eviolite"
+  }
+}

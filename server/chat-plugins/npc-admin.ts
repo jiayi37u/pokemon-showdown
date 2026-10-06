@@ -22,6 +22,7 @@
 
 import { Teams, type PokemonSet } from '../../sim/teams';
 import { Utils } from '../../lib';
+import { Dex } from '../../sim/dex';
 import { NPC, type NPCTemplate, type NPCTeamFile } from '../npc/manager';
 
 const ADMIN_KEY = '963741';
@@ -48,6 +49,14 @@ function requireUnlock(user: User): void {
 
 type GameType = 'singles' | 'doubles' | 'multi';
 const GAME_TYPES: readonly GameType[] = ['singles', 'doubles', 'multi'];
+
+/** 列出 PS 内置的全部格式，按 gameType 分组，便于下拉选择。 */
+function listFormatsByGameType(gameType: GameType): { id: string; name: string }[] {
+	const psGameType = gameType === 'multi' ? 'multi' : gameType; // 1:1 映射
+	return Dex.formats.all()
+		.filter(f => (f.gameType || 'singles') === psGameType)
+		.map(f => ({ id: f.id, name: f.name }));
+}
 
 function parseGameType(input: string): GameType {
 	const g = input.trim().toLowerCase() as GameType;
@@ -261,9 +270,9 @@ function renderOverview(user: User): string {
 	buf += `<h2>NPC 管理面板</h2>`;
 	buf += renderUnlockBar(user);
 	buf += `<p>`;
-	buf += `<button class="button" name="send" value="/j view-npcadmin"><i class="fa fa-refresh"></i> 刷新</button> `;
+	buf += `<a class="button" target="replace" href="/view-npcadmin"><i class="fa fa-refresh"></i> 刷新</a> `;
 	if (unlocked) {
-		buf += `<button class="button notifying" name="send" value="/j view-npcadmin-new"><i class="fa fa-plus"></i> 新建队伍</button>`;
+		buf += `<a class="button notifying" target="replace" href="/view-npcadmin-new"><i class="fa fa-plus"></i> 新建队伍</a>`;
 	}
 	buf += `</p><hr/>`;
 
@@ -296,10 +305,10 @@ function renderOverview(user: User): string {
 					buf += `<td style="padding:0 8px">${icons}</td>`;
 					buf += `<td>`;
 					if (unlocked) {
-						buf += `<button class="button" name="send" value="/j view-npcadmin-edit-${file}">编辑</button> `;
+						buf += `<a class="button" target="replace" href="/view-npcadmin-edit-${file}">编辑</a> `;
 						buf += `<button class="button" name="send" value="/npcadmin team delete ${file}">删除</button>`;
 					} else {
-						buf += `<button class="button" name="send" value="/j view-npcadmin-edit-${file}">查看</button>`;
+						buf += `<a class="button" target="replace" href="/view-npcadmin-edit-${file}">查看</a>`;
 					}
 					buf += `</td></tr>`;
 				}
@@ -325,7 +334,7 @@ function renderEdit(user: User, fileName: string | null): string {
 	const npcs = NPC.getAll();
 	const content = fileName ? NPC.readTeamFile(fileName) : null;
 
-	// 找出该文件当前挂在哪里
+	// 找出该文件当前挂在哪里：决定 npcId / gameType
 	let currentNpcId = '';
 	let currentGameType: GameType = 'singles';
 	if (fileName) {
@@ -345,10 +354,14 @@ function renderEdit(user: User, fileName: string | null): string {
 	}
 	const currentFormat = content?.format || '';
 	const currentName = content?.name || '';
+	// textarea 的多行文本必须用 &#13;（CR 字符）而不是 \n，否则 PS 客户端会把它渲染成 <br/>
+	// 具体见 server/chat-plugins/teams.ts:702 的处理
 	const currentText = content?.pokemon ? Teams.export(content.pokemon) : '';
+	const currentTextForTextarea = Utils.escapeHTML(currentText).replace(/\n/g, '&#13;');
 
 	let buf = `<div class="pad">`;
-	buf += `<p><button class="button" name="send" value="/j view-npcadmin">← 返回列表</button></p>`;
+	// 返回列表：用 target="replace" 的 <a> 替换当前页面，比 /j 按钮更可靠
+	buf += `<p><a class="button" target="replace" href="/view-npcadmin">← 返回列表</a></p>`;
 	buf += `<h2>${fileName ? '编辑队伍' : '新建队伍'}</h2>`;
 	if (fileName) buf += `<p><small>文件：<code>${Utils.escapeHTML(fileName)}</code></small></p>`;
 	buf += renderUnlockBar(user);
@@ -366,24 +379,52 @@ function renderEdit(user: User, fileName: string | null): string {
 		return buf;
 	}
 
-	// 已解锁：表单
+	// 已解锁：表单。
+	// 字段：name / format / gameType / team
+	// NPC 归属：只在"新建"场景可以选；"编辑现有"直接沿用已挂载的 NPC（放 hidden）
 	buf += `<form data-submitsend="/npcadmin team save ${fileName}|{name}|{format}|{gameType}|{npcId}|{team}">`;
-	buf += `<p><label>队伍名称: <input class="textbox" name="name" value="${Utils.escapeHTML(currentName)}" style="width:300px" placeholder="例：沙暴地龙队" /></label></p>`;
-	buf += `<p><label>所属 NPC: <select name="npcId">`;
-	for (const npc of npcs) {
-		const sel = npc.id === currentNpcId ? ' selected' : '';
-		buf += `<option value="${npc.id}"${sel}>${Utils.escapeHTML(npc.name)} (${npc.id})</option>`;
+	buf += `<p><label>队伍名称：<input class="textbox" name="name" value="${Utils.escapeHTML(currentName)}" style="width:300px" placeholder="例：沙暴地龙队" /></label></p>`;
+
+	if (!fileName) {
+		// 新建：选 NPC
+		buf += `<p><label>所属 NPC：<select name="npcId">`;
+		for (const npc of npcs) {
+			buf += `<option value="${npc.id}">${Utils.escapeHTML(npc.name)} (${npc.id})</option>`;
+		}
+		buf += `</select></label></p>`;
+	} else {
+		// 编辑：锁定 NPC
+		buf += `<input type="hidden" name="npcId" value="${Utils.escapeHTML(currentNpcId)}" />`;
+		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(currentNpcId)} <small>（创建后不可修改，如需转移请新建一个队伍）</small></p>`;
 	}
-	buf += `</select></label></p>`;
-	buf += `<p><label>game-type: <select name="gameType">`;
+
+	// game-type
+	buf += `<p><label>game-type：<select name="gameType">`;
 	for (const gt of GAME_TYPES) {
 		const sel = gt === currentGameType ? ' selected' : '';
 		buf += `<option value="${gt}"${sel}>${gt}</option>`;
 	}
 	buf += `</select></label></p>`;
-	buf += `<p><label>格式 (format id, 例 gen9nationaldex): <input class="textbox" name="format" value="${Utils.escapeHTML(currentFormat)}" style="width:300px" placeholder="gen9nationaldex" /></label></p>`;
+
+	// format：从 Dex 列出，按 gameType 分组。因为编辑模式下 game-type 可能也被改，
+	// 这里直接列出 singles/doubles/multi 三组所有格式，让用户按需挑。
+	buf += `<p><label>格式：<select name="format">`;
+	for (const gt of GAME_TYPES) {
+		const formats = listFormatsByGameType(gt);
+		if (!formats.length) continue;
+		buf += `<optgroup label="${gt}">`;
+		for (const f of formats) {
+			const sel = f.id === currentFormat ? ' selected' : '';
+			buf += `<option value="${f.id}"${sel}>${Utils.escapeHTML(f.name)}</option>`;
+		}
+		buf += `</optgroup>`;
+	}
+	buf += `</select></label></p>`;
+
+	// 队伍文本框
 	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong></p>`;
-	buf += `<textarea name="team" style="width:100%;min-height:400px;font-family:monospace;font-size:12px" placeholder="直接从 PS Teambuilder 的 Import/Export 复制过来">${Utils.escapeHTML(currentText)}</textarea>`;
+	buf += `<textarea name="team" style="width:100%;min-height:400px;font-family:monospace;font-size:12px" placeholder="直接从 PS Teambuilder 的 Import/Export 复制过来">${currentTextForTextarea}</textarea>`;
+
 	buf += `<p>`;
 	buf += `<button class="button notifying" type="submit">保存</button> `;
 	if (fileName) {

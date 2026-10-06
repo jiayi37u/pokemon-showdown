@@ -250,9 +250,23 @@ function validateMultiTeamShape(pokemon: AnyObject[], format: string): void {
 /**
  * 验证一支队伍在给定格式下是否合法。
  * 返回 null 代表通过；返回字符串数组代表违规描述。
+ *
+ * Multi 特殊：PS 的 TeamValidator 对 multi 格式只接受 **3 只**（因为玩家视角一人只带 3）。
+ * 我们的 NPC multi 队伍存 6 只（前 3 → p2，后 3 → p4），直接验证会报 "You may only bring
+ * up to 3 Pokémon"。拆成两半分别校验。
  */
 function validateTeamForFormat(pokemon: AnyObject[], format: string): string[] | null {
 	try {
+		const fmt = Dex.formats.get(format);
+		if (fmt.gameType === 'multi' && pokemon.length === 6) {
+			const validator = TeamValidator.get(format);
+			const errA = validator.validateTeam(pokemon.slice(0, 3) as any);
+			const errB = validator.validateTeam(pokemon.slice(3, 6) as any);
+			const merged: string[] = [];
+			if (errA?.length) merged.push(...errA.map(e => `[前 3 只] ${e}`));
+			if (errB?.length) merged.push(...errB.map(e => `[后 3 只] ${e}`));
+			return merged.length ? merged : null;
+		}
 		const validator = TeamValidator.get(format);
 		const errors = validator.validateTeam(pokemon as any);
 		return errors && errors.length ? errors : null;
@@ -359,16 +373,27 @@ export const commands: Chat.ChatCommands = {
 					return this.errorReply(err.message || String(err));
 				}
 
+				const formatName = Dex.formats.get(format).name || format;
 				const errors = validateTeamForFormat(content.pokemon as any, format);
 				if (errors) {
 					this.sendReplyBox(
-						`<strong>❌ 不兼容 ${Utils.escapeHTML(Dex.formats.get(format).name || format)}</strong><br/>` +
+						`<strong>❌ 不兼容 ${Utils.escapeHTML(formatName)}</strong><br/>` +
 						errors.map(e => `• ${Utils.escapeHTML(e)}`).join('<br/>')
 					);
 				} else {
+					// 验证通过 → 直接给用户一个"添加该分级"按钮，省去再去上面选同一格式的步骤
+					const already = content.formats.includes(format);
+					let addButton: string;
+					if (already) {
+						addButton = `<small>（已挂在该队伍上）</small>`;
+					} else {
+						addButton = `<button class="button notifying" name="send" ` +
+							`value="/npcadmin team addformat ${fileName}, ${format}">` +
+							`添加该分级</button>`;
+					}
 					this.sendReplyBox(
-						`<strong style="color:#060">✓ 兼容 ${Utils.escapeHTML(Dex.formats.get(format).name || format)}</strong>` +
-						`<br/>可以点 "添加分级" 把它挂到这支队伍。`
+						`<strong style="color:#060">✓ 兼容 ${Utils.escapeHTML(formatName)}</strong> ` +
+						addButton
 					);
 				}
 			},
@@ -518,7 +543,7 @@ function renderOverview(user: User): string {
 				const formats = content?.formats || [];
 				buf += `<tr>`;
 				buf += `<td style="min-width:160px;padding:2px 8px"><strong>${Utils.escapeHTML(name)}</strong></td>`;
-				buf += `<td style="padding:2px 8px">${icons}</td>`;
+				buf += `<td style="padding:2px 8px;white-space:nowrap">${icons}</td>`;
 				buf += `<td style="padding:2px 8px">`;
 				if (formats.length) {
 					buf += formats.map(f => renderFormatChip(f)).join(' ');
@@ -632,24 +657,14 @@ function renderEdit(user: User, fileName: string | null): string {
 			buf += `<p><small>还没有挂任何分级。玩家无法在任何分级下用到这支队伍。</small></p>`;
 		}
 
-		// 添加新分级：formatselect 按钮 + 验证 + 添加 两个按钮
-		// 两个按钮共享同一个 button[name="format"]；但 button 不能有两个 formaction 行为，所以
-		// 需要两个 form。为了不重复 formatselect，用两个 form 都 submit 同一个 target 行就得了，
-		// 做法：一个 form 两个 submit 按钮，用 formaction 区分（但 data-submitsend 不是 formaction）
-		// 简化：两个独立 form，每个 form 自己的 formatselect，用户点谁用谁。
+		// 添加新分级：只保留一个 form，验证通过后在聊天框里得到"添加该分级"按钮。
 		buf += `<h4>添加新分级</h4>`;
-		buf += `<p>先用 "验证" 看能不能通过（PS 原生 TeamValidator），通过了再点 "添加"。</p>`;
+		buf += `<p>选择一个分级点"验证"：通过后聊天区会出现"添加该分级"按钮；不通过会列出具体违规。</p>`;
 		buf += `<form data-submitsend="/npcadmin team validate ${fileName}, {format}">`;
 		buf += `<p><label>选择分级：<button type="button" name="format" value="" ` +
 			`class="select formatselect" data-href="/formatdropdown" data-selecttype="teambuilder">` +
 			`<i class="fa fa-folder-o"></i> (点击选择)</button></label> `;
-		buf += `<button class="button" type="submit">验证</button></p>`;
-		buf += `</form>`;
-		buf += `<form data-submitsend="/npcadmin team addformat ${fileName}, {format}">`;
-		buf += `<p><label>或直接添加（会先自动验证一次）：<button type="button" name="format" value="" ` +
-			`class="select formatselect" data-href="/formatdropdown" data-selecttype="teambuilder">` +
-			`<i class="fa fa-folder-o"></i> (点击选择)</button></label> `;
-		buf += `<button class="button notifying" type="submit">验证并添加</button></p>`;
+		buf += `<button class="button notifying" type="submit">验证</button></p>`;
 		buf += `</form>`;
 	} else {
 		buf += `<hr/><p><small>保存后在编辑页里添加分级。</small></p>`;

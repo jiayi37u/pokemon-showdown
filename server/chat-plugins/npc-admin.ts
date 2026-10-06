@@ -28,6 +28,13 @@ import { NPC, type NPCTemplate, type NPCTeamFile } from '../npc/manager';
 const ADMIN_KEY = '963741';
 const UNLOCK_TTL = 30 * 60 * 1000;
 
+// `/npcadmin team save` 的参数会带整段 Teambuilder Export（多行）。PS 默认把多行消息判为 spam
+// 并弹窗 "You're sending too many lines at once"，必须显式注册到 multiLinePattern 白名单。
+// 见 server/chat-commands/core.ts:1822 的类似注册。
+process.nextTick(() => {
+	Chat.multiLinePattern.register('/npcadmin team save ');
+});
+
 /** userid → unlockTimestamp */
 const unlockedUsers = new Map<string, number>();
 
@@ -444,34 +451,41 @@ function renderEdit(user: User, fileName: string | null): string {
 	}
 	buf += `</select></label></p>`;
 
-	// format：从 Dex 列出，先按 game-type 分组，再按世代倒序分 optgroup。
-	// 全量展示太长，默认只展开"当前 game-type 匹配 + 当前世代"的那组；其他折叠在下方说明。
-	// 实际上下拉里的 optgroup 由浏览器统一渲染，这里的"折叠"用 details 包起整个 select 更清晰。
-	const currentGen = extractGenNumber(Dex.formats.get(currentFormat).name || '') || 9;
-	buf += `<p><strong>格式：</strong><br/>`;
-	buf += `<details${currentFormat ? '' : ' open'}><summary>` +
-		(currentFormat ? `已选：${Utils.escapeHTML(Dex.formats.get(currentFormat).name || currentFormat)}（点击展开切换）` : `点击选择格式`) +
-		`</summary>`;
-	buf += `<select name="format" size="12" style="min-width:360px">`;
+	// 格式选择：每个 game-type 一个可折叠的 <details>，内含 radio 列表。
+	// 原生 <select> 的 optgroup 不能折叠；radio 按 game-type → 世代（新→旧）分组后放在 <details>
+	// 里，用户只需展开自己关心的那一组。所有 radio 共享 name="format"，form 提交时只传选中那一个。
+	const currentFormatName = currentFormat ? (Dex.formats.get(currentFormat).name || currentFormat) : '';
+	buf += `<p><strong>格式：</strong>`;
+	buf += currentFormatName ?
+		`<span style="margin-left:8px">已选：<code>${Utils.escapeHTML(currentFormatName)}</code></span>` :
+		`<span style="margin-left:8px;color:#c00">未选</span>`;
+	buf += `</p>`;
 	for (const gt of GAME_TYPES) {
 		const formats = listFormatsByGameType(gt);
 		if (!formats.length) continue;
 		const grouped = groupFormatsByGen(formats);
+		const containsCurrent = formats.some(f => f.id === currentFormat);
+		buf += `<details${containsCurrent ? ' open' : ''} style="margin-left:12px">`;
+		buf += `<summary><strong>${gt}</strong> <small>(${formats.length} 个格式)</small></summary>`;
+		buf += `<div style="margin:4px 0 8px 20px;max-height:300px;overflow:auto">`;
 		for (const { gen, list } of grouped) {
-			const genLabel = gen > 0 ? `Gen ${gen} · ${gt}` : `other · ${gt}`;
-			buf += `<optgroup label="${genLabel}">`;
+			const genLabel = gen > 0 ? `Gen ${gen}` : `其他`;
+			buf += `<details${list.some(f => f.id === currentFormat) ? ' open' : ''}>`;
+			buf += `<summary>${genLabel} <small>(${list.length})</small></summary>`;
+			buf += `<ul style="list-style:none;margin:4px 0;padding-left:16px">`;
 			for (const f of list) {
-				const sel = f.id === currentFormat ? ' selected' : '';
-				buf += `<option value="${f.id}"${sel}>${Utils.escapeHTML(f.name)}</option>`;
+				const checked = f.id === currentFormat ? ' checked' : '';
+				buf += `<li><label style="font-weight:normal">`;
+				buf += `<input type="radio" name="format" value="${Utils.escapeHTML(f.id)}"${checked} /> `;
+				buf += Utils.escapeHTML(f.name);
+				buf += `</label></li>`;
 			}
-			buf += `</optgroup>`;
+			buf += `</ul>`;
+			buf += `</details>`;
 		}
+		buf += `</div>`;
+		buf += `</details>`;
 	}
-	buf += `</select>`;
-	buf += `<small style="display:block;color:#888;margin-top:4px">` +
-		`当前 Gen：${currentGen}。optgroup 已按 game-type → 世代（新→旧）分组。` +
-		`</small>`;
-	buf += `</details></p>`;
 
 	// 队伍文本框
 	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong></p>`;

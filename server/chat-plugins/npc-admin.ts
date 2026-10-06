@@ -427,7 +427,7 @@ function renderEdit(user: User, fileName: string | null): string {
 	// 已解锁：表单。
 	// 字段：name / format / gameType / team
 	// NPC 归属：只在"新建"场景可以选；"编辑现有"直接沿用已挂载的 NPC（放 hidden）
-	buf += `<form data-submitsend="/npcadmin team save ${fileName}|{name}|{format}|{gameType}|{npcId}|{team}">`;
+	buf += `<form data-submitsend="/npcadmin team save ${fileName || ''}|{name}|{format}|{gameType}|{npcId}|{team}">`;
 	buf += `<p><label>队伍名称：<input class="textbox" name="name" value="${Utils.escapeHTML(currentName)}" style="width:300px" placeholder="例：沙暴地龙队" /></label></p>`;
 
 	if (!fileName) {
@@ -451,40 +451,71 @@ function renderEdit(user: User, fileName: string | null): string {
 	}
 	buf += `</select></label></p>`;
 
-	// 格式选择：每个 game-type 一个可折叠的 <details>，内含 radio 列表。
-	// 原生 <select> 的 optgroup 不能折叠；radio 按 game-type → 世代（新→旧）分组后放在 <details>
-	// 里，用户只需展开自己关心的那一组。所有 radio 共享 name="format"，form 提交时只传选中那一个。
-	const currentFormatName = currentFormat ? (Dex.formats.get(currentFormat).name || currentFormat) : '';
+	// 格式选择：参照 PS 自带 teambuilder 的做法：按 game-type → 世代（新→旧） → section 分组。
+	// 原生 PS 用一排 Gen 按钮 + flyout 面板实现"点哪个展开哪个"，我们静态 HTML 用嵌套 <details>
+	// 模拟：game-type 一层、世代一层、section 一层，含当前格式的那条链路自动展开。
+	// 所有 radio 共享 name="format"，form 提交只传选中那一个。
+	const currentFormatObj = currentFormat ? Dex.formats.get(currentFormat) : null;
+	const currentFormatName = currentFormatObj?.name || currentFormat;
+	const currentSection = (currentFormatObj as AnyObject)?.section || '';
+	const currentGen = currentFormatObj ? extractGenNumber(currentFormatObj.name) : 0;
+
 	buf += `<p><strong>格式：</strong>`;
 	buf += currentFormatName ?
 		`<span style="margin-left:8px">已选：<code>${Utils.escapeHTML(currentFormatName)}</code></span>` :
 		`<span style="margin-left:8px;color:#c00">未选</span>`;
 	buf += `</p>`;
+
 	for (const gt of GAME_TYPES) {
 		const formats = listFormatsByGameType(gt);
 		if (!formats.length) continue;
-		const grouped = groupFormatsByGen(formats);
+
+		// 按世代分：Map<gen, Map<section, formats[]>>
+		const byGen = new Map<number, Map<string, { id: string; name: string }[]>>();
+		for (const f of formats) {
+			const gen = extractGenNumber(f.name);
+			const section = (Dex.formats.get(f.id) as AnyObject).section || '(其他)';
+			if (!byGen.has(gen)) byGen.set(gen, new Map());
+			const sections = byGen.get(gen)!;
+			if (!sections.has(section)) sections.set(section, []);
+			sections.get(section)!.push(f);
+		}
+
 		const containsCurrent = formats.some(f => f.id === currentFormat);
 		buf += `<details${containsCurrent ? ' open' : ''} style="margin-left:12px">`;
-		buf += `<summary><strong>${gt}</strong> <small>(${formats.length} 个格式)</small></summary>`;
-		buf += `<div style="margin:4px 0 8px 20px;max-height:300px;overflow:auto">`;
-		for (const { gen, list } of grouped) {
-			const genLabel = gen > 0 ? `Gen ${gen}` : `其他`;
-			buf += `<details${list.some(f => f.id === currentFormat) ? ' open' : ''}>`;
-			buf += `<summary>${genLabel} <small>(${list.length})</small></summary>`;
-			buf += `<ul style="list-style:none;margin:4px 0;padding-left:16px">`;
-			for (const f of list) {
-				const checked = f.id === currentFormat ? ' checked' : '';
-				buf += `<li><label style="font-weight:normal">`;
-				buf += `<input type="radio" name="format" value="${Utils.escapeHTML(f.id)}"${checked} /> `;
-				buf += Utils.escapeHTML(f.name);
-				buf += `</label></li>`;
+		buf += `<summary><strong>${gt}</strong></summary>`;
+		buf += `<div style="margin-left:16px">`;
+
+		// 世代从大到小
+		const gens = [...byGen.keys()].sort((a, b) => b - a);
+		for (const gen of gens) {
+			const sections = byGen.get(gen)!;
+			const genContainsCurrent = containsCurrent && gen === currentGen;
+			buf += `<details${genContainsCurrent ? ' open' : ''}>`;
+			buf += `<summary>Gen ${gen > 0 ? gen : '?'}</summary>`;
+			buf += `<div style="margin-left:16px">`;
+
+			// section 字典序
+			const sectionNames = [...sections.keys()].sort();
+			for (const sec of sectionNames) {
+				const list = sections.get(sec)!;
+				const secContainsCurrent = genContainsCurrent && sec === currentSection;
+				buf += `<details${secContainsCurrent ? ' open' : ''}>`;
+				buf += `<summary>${Utils.escapeHTML(sec)} <small>(${list.length})</small></summary>`;
+				buf += `<ul style="list-style:none;margin:4px 0;padding-left:16px">`;
+				for (const f of list) {
+					const checked = f.id === currentFormat ? ' checked' : '';
+					buf += `<li><label style="font-weight:normal">`;
+					buf += `<input type="radio" name="format" value="${Utils.escapeHTML(f.id)}"${checked} /> `;
+					buf += Utils.escapeHTML(f.name);
+					buf += `</label></li>`;
+				}
+				buf += `</ul>`;
+				buf += `</details>`;
 			}
-			buf += `</ul>`;
-			buf += `</details>`;
+			buf += `</div></details>`;
 		}
-		buf += `</div>`;
-		buf += `</details>`;
+		buf += `</div></details>`;
 	}
 
 	// 队伍文本框

@@ -1,5 +1,5 @@
 {
-  "format": "gen9nationaldex",
+  "formats": ["gen9nationaldex"],
   "pokemon": [
     {
       "species": "Vigoroth",
@@ -60,4 +60,3 @@
     }
   ]
 }
-

@@ -1,5 +1,5 @@
 {
-  "format": "gen9nationaldexuu",
+  "formats": ["gen9nationaldexuu"],
   "pokemon": [
     {
       "species": "Rhyperior",

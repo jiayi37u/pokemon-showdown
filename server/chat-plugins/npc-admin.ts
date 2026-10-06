@@ -1,26 +1,24 @@
 /**
  * NPC Admin —— 网页端管理 NPC 队伍。
  *
- * 入口：`/npcadmin` 页面；写操作要先用密钥解锁本 session。
+ * 页面：
+ *   view-npcadmin                 —— 概览，列出所有 NPC + 其队伍
+ *   view-npcadmin-edit-FILENAME   —— 编辑单个队伍
+ *   view-npcadmin-new             —— 新建队伍
  *
- * 页面结构：
- *   view-npcadmin                  —— 概览，列出所有 NPC + 队伍（队伍名+psicon）
- *   view-npcadmin-edit-FILENAME    —— 编辑单个队伍（队伍名、格式、所属 NPC + Teambuilder 文本）
- *   view-npcadmin-new              —— 新建队伍
+ * 新 schema：一支队伍文件自己带 formats: string[]（可以同时属于多个分级）。
+ *   - 保存（name + pokemon）走 /npcadmin team save
+ *   - 验证某个分级是否兼容走 /npcadmin team validate
+ *   - 把验证通过的分级挂到队伍走 /npcadmin team addformat
+ *   - 从队伍摘掉某个分级走 /npcadmin team removeformat
  *
- * 命令（都要先 unlock）：
- *   /npcadmin unlock KEY           —— 解锁，30 分钟
- *   /npcadmin lock                 —— 立即锁回去
- *   /npcadmin reload               —— 重读 templates.json + teams/*.json
- *   /npcadmin team save fileName|name|format|gameType|npcId|teamText
- *                                   —— 保存（fileName 为空 → 新建；非空 → 编辑原文件）
- *   /npcadmin team delete fileName —— 从磁盘删掉 + 从 templates 摘掉
+ * 新建队伍时需要指定一个"所属 NPC"；队伍绑定 NPC 后不可换。
  *
- * 参数用 '|' 分隔是因为 team 文本里会有逗号；'|' 在 PS Export 里不出现。
  * 密钥硬编码 `963741`，仅适合单机开发；生产部署前应改成 Config / 权限系统。
  */
 
 import { Teams, type PokemonSet } from '../../sim/teams';
+import { TeamValidator } from '../../sim/team-validator';
 import { Utils } from '../../lib';
 import { Dex } from '../../sim/dex';
 import { NPC, type NPCTemplate, type NPCTeamFile } from '../npc/manager';
@@ -28,14 +26,12 @@ import { NPC, type NPCTemplate, type NPCTeamFile } from '../npc/manager';
 const ADMIN_KEY = '963741';
 const UNLOCK_TTL = 30 * 60 * 1000;
 
-// `/npcadmin team save` 的参数会带整段 Teambuilder Export（多行）。PS 默认把多行消息判为 spam
-// 并弹窗 "You're sending too many lines at once"，必须显式注册到 multiLinePattern 白名单。
-// 见 server/chat-commands/core.ts:1822 的类似注册。
+// `/npcadmin team save` 的参数带整段 Teambuilder Export（多行）。PS 对多行命令默认当 spam，
+// 必须显式注册到 multiLinePattern 白名单。见 server/chat-commands/core.ts:1822 的类似注册。
 process.nextTick(() => {
 	Chat.multiLinePattern.register('/npcadmin team save ');
 });
 
-/** userid → unlockTimestamp */
 const unlockedUsers = new Map<string, number>();
 
 function isUnlocked(user: User): boolean {
@@ -68,17 +64,13 @@ function escapeForTextarea(text: string): string {
 		.replace(/\n/g, '&#13;');
 }
 
-type GameType = 'singles' | 'doubles' | 'multi';
-const GAME_TYPES: readonly GameType[] = ['singles', 'doubles', 'multi'];
+// =============================================================================
+// Pokemon set normalization / serialization —— 保持 git-diff 友好
+// =============================================================================
 
 /**
- * 把 Teams.import 的输出压回最紧凑形态，保持和 data/npc/teams/*.json 既有文件一致。
- * Teams.import 会填满默认字段（gender=''、ivs 全 31、level=100、evs 补 0），直接写盘会显得噪
- * 杂且让 git diff 爆炸，这里逐字段清理。
- *
- * 保留字段：species, ability, item, nature, teraType, happiness(非 255), moves, slot（Multi 用）
- *          evs（只留非 0）, ivs（只留非 31）, level（非 100）, gender（非空且非 N）, shiny（true）
- * 丢弃字段：name=='' 或等于 species；evs 全 0；ivs 全 31；happiness==255；
+ * 把 Teams.import 的输出压回最紧凑形态，和手工文件一致。Teams.import 会填满默认字段，
+ * 直接写盘会显得噪杂且让 git diff 爆炸。
  */
 function normalizeSet(set: AnyObject): AnyObject {
 	const out: AnyObject = {};
@@ -96,7 +88,6 @@ function normalizeSet(set: AnyObject): AnyObject {
 	if (set.dynamaxLevel !== undefined && set.dynamaxLevel !== 10) out.dynamaxLevel = set.dynamaxLevel;
 	if (set.gigantamax) out.gigantamax = set.gigantamax;
 
-	// EVs：只留非零
 	if (set.evs) {
 		const trimmed: AnyObject = {};
 		for (const k of ['hp', 'atk', 'def', 'spa', 'spd', 'spe']) {
@@ -104,7 +95,6 @@ function normalizeSet(set: AnyObject): AnyObject {
 		}
 		if (Object.keys(trimmed).length) out.evs = trimmed;
 	}
-	// IVs：只留非 31
 	if (set.ivs) {
 		const trimmed: AnyObject = {};
 		for (const k of ['hp', 'atk', 'def', 'spa', 'spd', 'spe']) {
@@ -114,8 +104,6 @@ function normalizeSet(set: AnyObject): AnyObject {
 	}
 
 	if (set.moves?.length) out.moves = set.moves.filter((m: string) => !!m);
-	if (set.slot) out.slot = set.slot; // multi battle 槽位
-
 	return out;
 }
 
@@ -123,47 +111,6 @@ function normalizeTeam(pokemon: AnyObject[]): AnyObject[] {
 	return pokemon.map(normalizeSet);
 }
 
-/**
- * 格式化 NPCTeamFile 为仓库里既有文件相同的 JSON：
- *   - 顶层 { "format": "...", "pokemon": [ ... ] }，缩进 2 空格
- *   - 每只精灵的 evs / ivs / moves 字段**单行内联**，和手工文件一致
- *   - 其他字段按两空格缩进展开
- *   - 文件以单个换行结尾
- * 保留此函数的目的：让从管理面板保存的队伍 git-diff 友好、人眼可读
- */
-function formatTeamJson(team: NPCTeamFile): string {
-	const inlineKeys = new Set(['evs', 'ivs', 'moves']);
-	const indent2 = '  ';
-	const indent4 = '    ';
-	const indent6 = '      ';
-
-	const monLines: string[] = [];
-	for (const mon of team.pokemon) {
-		const fieldLines: string[] = [];
-		for (const key of Object.keys(mon)) {
-			const val = (mon as AnyObject)[key];
-			if (inlineKeys.has(key)) {
-				// 单行紧凑：{"hp":252,"atk":252} 风格会被 JSON.stringify 省掉空格；这里用 2 参数版本
-				// 自己拼。保持 "{ "hp": 252, "atk": 252 }" 的风格。
-				fieldLines.push(`${indent6}${JSON.stringify(key)}: ${inlineStringify(val)}`);
-			} else {
-				fieldLines.push(`${indent6}${JSON.stringify(key)}: ${JSON.stringify(val)}`);
-			}
-		}
-		monLines.push(`${indent4}{\n${fieldLines.join(',\n')}\n${indent4}}`);
-	}
-
-	let buf = `{\n`;
-	buf += `${indent2}${JSON.stringify('format')}: ${JSON.stringify(team.format)},\n`;
-	if (team.name) {
-		buf += `${indent2}${JSON.stringify('name')}: ${JSON.stringify(team.name)},\n`;
-	}
-	buf += `${indent2}${JSON.stringify('pokemon')}: [\n${monLines.join(',\n')}\n${indent2}]\n`;
-	buf += `}\n`;
-	return buf;
-}
-
-/** 行内 JSON：{"a":1,"b":2} → "{ \"a\": 1, \"b\": 2 }"；数组 ["x","y"] → "[\"x\", \"y\"]"。 */
 function inlineStringify(val: AnyObject | AnyObject[]): string {
 	if (Array.isArray(val)) {
 		return `[${val.map(v => JSON.stringify(v)).join(', ')}]`;
@@ -178,50 +125,54 @@ function inlineStringify(val: AnyObject | AnyObject[]): string {
 	return JSON.stringify(val);
 }
 
+/**
+ * 格式化 NPCTeamFile 为仓库里既有文件相同的 JSON：
+ *   - 顶层 { name?, formats, pokemon }，缩进 2 空格
+ *   - 每只精灵的 evs / ivs / moves 字段**单行内联**，和手工文件一致
+ *   - formats 数组也单行内联
+ *   - 文件以单个换行结尾
+ */
+function formatTeamJson(team: NPCTeamFile): string {
+	const inlineKeys = new Set(['evs', 'ivs', 'moves']);
+	const indent2 = '  ';
+	const indent4 = '    ';
+	const indent6 = '      ';
 
-function parseGameType(input: string): GameType {
-	const g = input.trim().toLowerCase() as GameType;
-	if (!GAME_TYPES.includes(g)) {
-		throw new Chat.ErrorMessage(`游戏类型必须是 singles / doubles / multi，收到 "${input}"`);
-	}
-	return g;
-}
-
-function nextTeamFileName(npcId: string, format: string, existing: string[]): string {
-	const base = `${npcId}-${format}`;
-	const used = new Set(existing);
-	for (let i = 1; i < 1000; i++) {
-		const name = `${base}-${i}.json`;
-		if (!used.has(name)) return name;
-	}
-	throw new Error('team filename counter overflow');
-}
-
-function getTeamSlot(template: NPCTemplate, gameType: GameType, format: string): string[] {
-	if (!template.teams[gameType]) template.teams[gameType] = {};
-	const bucket = template.teams[gameType]!;
-	if (!bucket[format]) bucket[format] = [];
-	return bucket[format];
-}
-
-function removeTeamFromAllTemplates(templates: { [id: string]: NPCTemplate }, teamFile: string): string[] {
-	const affected: string[] = [];
-	for (const id of Object.keys(templates)) {
-		const t = templates[id];
-		for (const gt of GAME_TYPES) {
-			const bucket = t.teams[gt];
-			if (!bucket) continue;
-			for (const format of Object.keys(bucket)) {
-				const idx = bucket[format].indexOf(teamFile);
-				if (idx >= 0) {
-					bucket[format].splice(idx, 1);
-					affected.push(`${id}/${gt}/${format}`);
-					if (bucket[format].length === 0) delete bucket[format];
-				}
+	const monLines: string[] = [];
+	for (const mon of team.pokemon) {
+		const fieldLines: string[] = [];
+		for (const key of Object.keys(mon)) {
+			const val = (mon as AnyObject)[key];
+			if (inlineKeys.has(key)) {
+				fieldLines.push(`${indent6}${JSON.stringify(key)}: ${inlineStringify(val)}`);
+			} else {
+				fieldLines.push(`${indent6}${JSON.stringify(key)}: ${JSON.stringify(val)}`);
 			}
 		}
+		monLines.push(`${indent4}{\n${fieldLines.join(',\n')}\n${indent4}}`);
 	}
-	return affected;
+
+	let buf = `{\n`;
+	if (team.name) {
+		buf += `${indent2}${JSON.stringify('name')}: ${JSON.stringify(team.name)},\n`;
+	}
+	buf += `${indent2}${JSON.stringify('formats')}: ${inlineStringify(team.formats)},\n`;
+	buf += `${indent2}${JSON.stringify('pokemon')}: [\n${monLines.join(',\n')}\n${indent2}]\n`;
+	buf += `}\n`;
+	return buf;
+}
+
+// =============================================================================
+// 文件名生成 & templates 操作
+// =============================================================================
+
+function nextTeamFileName(npcId: string, baseHint: string, existing: Set<string>): string {
+	const safe = (baseHint || 'team').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'team';
+	for (let i = 1; i < 1000; i++) {
+		const name = `${npcId}-${safe}-${i}.json`;
+		if (!existing.has(name)) return name;
+	}
+	throw new Error('team filename counter overflow');
 }
 
 function parseImportedTeam(text: string): PokemonSet[] {
@@ -232,45 +183,82 @@ function parseImportedTeam(text: string): PokemonSet[] {
 	return sets;
 }
 
-/** 在 templates 里挂上/移动 teamFile 到指定 NPC / gameType / format，顺手把其他地方的同名引用清掉 */
-function reattachTeamFile(
-	templates: { [id: string]: NPCTemplate },
-	teamFile: string,
-	npcId: string,
-	gameType: GameType,
-	format: string
-): void {
-	// 先清掉所有旧挂载
-	removeTeamFromAllTemplates(templates, teamFile);
-	const template = templates[npcId];
-	if (!template) throw new Chat.ErrorMessage(`NPC 不存在：${npcId}`);
-	const slot = getTeamSlot(template, gameType, format);
-	slot.push(teamFile);
-}
-
-/** 用 '|' 拆分 team save 的参数。前 5 段 | 为元数据，之后全是 team body（body 自己可以含 |）。 */
+/** 用 '|' 拆分 team save 的参数：fileName|name|npcId|teamText(可能含 |) */
 function parseSaveTarget(target: string): {
-	fileName: string; name: string; format: string; gameType: GameType; npcId: string; teamText: string;
+	fileName: string; name: string; npcId: string; teamText: string;
 } {
-	// 用 '|' 分段：fileName|name|format|gameType|npcId|teamText...
 	const parts: string[] = [];
 	let rest = target;
-	for (let i = 0; i < 5; i++) {
+	for (let i = 0; i < 3; i++) {
 		const idx = rest.indexOf('|');
-		if (idx < 0) throw new Chat.ErrorMessage(`参数格式错误：期望 6 段以 '|' 分隔`);
+		if (idx < 0) throw new Chat.ErrorMessage(`参数格式错误：期望 4 段以 '|' 分隔`);
 		parts.push(rest.slice(0, idx));
 		rest = rest.slice(idx + 1);
 	}
-	parts.push(rest); // teamText 可能自身含 '|'，整段取
-	const [fileName, name, format, gameTypeRaw, npcId, teamText] = parts.map(s => s.trim());
+	parts.push(rest);
+	const [fileName, name, npcId, teamText] = parts.map(s => s);
 	return {
 		fileName: fileName.trim(),
 		name: name.trim(),
-		format: toID(format),
-		gameType: parseGameType(gameTypeRaw),
-		npcId: toID(npcId),
+		npcId: toID(npcId.trim()),
 		teamText,
 	};
+}
+
+/** 把 fileName 从所有 template 的 teams 里清掉；返回受影响的 npc id 列表。 */
+function unlinkFromAllTemplates(templates: { [id: string]: NPCTemplate }, fileName: string): string[] {
+	const affected: string[] = [];
+	for (const id of Object.keys(templates)) {
+		const t = templates[id];
+		const list = Array.isArray(t.teams) ? t.teams : [];
+		const idx = list.indexOf(fileName);
+		if (idx >= 0) {
+			list.splice(idx, 1);
+			affected.push(id);
+		}
+	}
+	return affected;
+}
+
+function linkToTemplate(templates: { [id: string]: NPCTemplate }, fileName: string, npcId: string): void {
+	const t = templates[npcId];
+	if (!t) throw new Chat.ErrorMessage(`NPC 不存在：${npcId}`);
+	if (!Array.isArray(t.teams)) (t as AnyObject).teams = [];
+	if (!t.teams.includes(fileName)) t.teams.push(fileName);
+}
+
+/** 从磁盘上收集所有 team 文件名，用于生成唯一文件名 */
+function collectAllTeamFileNames(templates: { [id: string]: NPCTemplate }): Set<string> {
+	const seen = new Set<string>();
+	for (const id of Object.keys(templates)) {
+		const t = templates[id];
+		for (const f of (t.teams || [])) seen.add(f);
+	}
+	return seen;
+}
+
+/** 校验 Multi 格式的硬性要求：整队必须正好 6 只。 */
+function validateMultiTeamShape(pokemon: AnyObject[], format: string): void {
+	const fmt = Dex.formats.get(format);
+	if (fmt.gameType === 'multi' && pokemon.length !== 6) {
+		throw new Chat.ErrorMessage(
+			`Multi 格式 ${fmt.name} 要求整支队伍正好 6 只（前 3 → p2，后 3 → p4），现在是 ${pokemon.length} 只。`
+		);
+	}
+}
+
+/**
+ * 验证一支队伍在给定格式下是否合法。
+ * 返回 null 代表通过；返回字符串数组代表违规描述。
+ */
+function validateTeamForFormat(pokemon: AnyObject[], format: string): string[] | null {
+	try {
+		const validator = TeamValidator.get(format);
+		const errors = validator.validateTeam(pokemon as any);
+		return errors && errors.length ? errors : null;
+	} catch (err: any) {
+		return [`验证器出错：${err?.message || err}`];
+	}
 }
 
 // =============================================================================
@@ -304,63 +292,156 @@ export const commands: Chat.ChatCommands = {
 		},
 
 		team: {
+			/**
+			 * 保存队伍（队名 + pokemon）。不涉及 formats；formats 通过 addformat 另加。
+			 * target 格式: fileName|name|npcId|teamText
+			 */
 			save(target, room, user) {
 				requireUnlock(user);
-				const { fileName, name, format, gameType, npcId, teamText } = parseSaveTarget(target);
+				const { fileName, name, npcId, teamText } = parseSaveTarget(target);
 				if (!npcId) return this.errorReply(`请先选择 "所属 NPC"。`);
-				if (!format) return this.errorReply(`请先选择 "格式"。`);
+
 				const pokemon = parseImportedTeam(teamText);
+				const normalized = normalizeTeam(pokemon);
 
 				const templates = NPC.readTemplatesRaw();
 				const template = templates[npcId];
 				if (!template) return this.errorReply(`NPC 不存在：${npcId}`);
 
-				// Multi 场景的 slot 字段（p2/p4）不走 PS Teambuilder，Teams.import 会丢失。
-				// 规则：multi 下**前 3 只分配 p2，后 3 只分配 p4**，顺序由用户自己在 Export 文本里控制。
-				// 其他 gameType 不管 slot。
-				const normalized = normalizeTeam(pokemon);
-				if (gameType === 'multi') {
-					if (normalized.length !== 6) {
-						return this.errorReply(
-							`Multi 格式要求整支队伍正好 6 只精灵（前 3 → p2，后 3 → p4），现在是 ${normalized.length} 只。`
-						);
-					}
-					for (let i = 0; i < normalized.length; i++) {
-						normalized[i].slot = i < 3 ? 'p2' : 'p4';
-					}
-				}
+				// 保留原有 formats（如果是编辑）；新建的话从空列表开始
+				const prevContent = fileName ? NPC.readTeamFile(fileName) : null;
+				const existingFormats = prevContent?.formats || [];
 
-				// 决定文件名：空 → 新建；非空 → 覆盖已有
+				// 决定最终文件名
 				let finalFileName = fileName;
 				if (!finalFileName) {
-					const slot = getTeamSlot(template, gameType, format);
-					finalFileName = nextTeamFileName(npcId, format, slot);
-				} else {
-					// 既有文件：如果 npc/format/gameType 变了，要重新挂载
+					const allFiles = collectAllTeamFileNames(templates);
+					finalFileName = nextTeamFileName(npcId, 'team', allFiles);
 				}
 
-				const content: NPCTeamFile = { format, pokemon: normalized as any };
+				// 写盘
+				const content: NPCTeamFile = { formats: existingFormats, pokemon: normalized as any };
 				if (name) content.name = name;
 				NPC.writeTeamFile(finalFileName, formatTeamJson(content));
 
-				reattachTeamFile(templates, finalFileName, npcId, gameType, format);
+				// 更新 templates：把文件挂到选定 NPC，摘掉原来可能挂着的其他 NPC
+				unlinkFromAllTemplates(templates, finalFileName);
+				linkToTemplate(templates, finalFileName, npcId);
 				NPC.writeTemplates(templates);
 				NPC.reload();
 
 				this.sendReply(
-					`✓ 已保存 ${finalFileName}（${template.name} · ${gameType}/${format}` +
-					`${name ? ` · ${name}` : ''}，${pokemon.length} 只精灵）。`
+					`✓ 已保存 ${finalFileName}（${template.name}${name ? ` · ${name}` : ''}，${pokemon.length} 只精灵` +
+					`${existingFormats.length ? `，已挂 ${existingFormats.length} 个分级` : '；记得点"添加分级"'})`
 				);
-				return this.parse(`/j view-npcadmin`);
+				// 新建的话跳回编辑页，方便接着加分级
+				return this.parse(`/j view-npcadmin-edit-${finalFileName}`);
 			},
 
+			/**
+			 * 验证一个分级对当前文件的队伍是否兼容。只验证，不改任何东西。
+			 * target: fileName,format
+			 */
+			validate(target, room, user) {
+				requireUnlock(user);
+				const [fileNameRaw, formatRaw] = target.split(',').map(s => s.trim());
+				const fileName = fileNameRaw;
+				const format = toID(formatRaw);
+				if (!fileName) return this.errorReply(`用法：/npcadmin team validate fileName, format`);
+				if (!format) return this.errorReply(`请先选择一个要验证的分级。`);
+
+				const content = NPC.readTeamFile(fileName);
+				if (!content) return this.errorReply(`文件不存在：${fileName}`);
+
+				try {
+					validateMultiTeamShape(content.pokemon as any, format);
+				} catch (err: any) {
+					return this.errorReply(err.message || String(err));
+				}
+
+				const errors = validateTeamForFormat(content.pokemon as any, format);
+				if (errors) {
+					this.sendReplyBox(
+						`<strong>❌ 不兼容 ${Utils.escapeHTML(Dex.formats.get(format).name || format)}</strong><br/>` +
+						errors.map(e => `• ${Utils.escapeHTML(e)}`).join('<br/>')
+					);
+				} else {
+					this.sendReplyBox(
+						`<strong style="color:#060">✓ 兼容 ${Utils.escapeHTML(Dex.formats.get(format).name || format)}</strong>` +
+						`<br/>可以点 "添加分级" 把它挂到这支队伍。`
+					);
+				}
+			},
+
+			/**
+			 * 把一个格式添加到队伍文件的 formats（添加前再验证一次）。
+			 * target: fileName,format
+			 */
+			addformat(target, room, user) {
+				requireUnlock(user);
+				const [fileNameRaw, formatRaw] = target.split(',').map(s => s.trim());
+				const fileName = fileNameRaw;
+				const format = toID(formatRaw);
+				if (!fileName) return this.errorReply(`用法：/npcadmin team addformat fileName, format`);
+				if (!format) return this.errorReply(`请先选择一个要添加的分级。`);
+
+				const content = NPC.readTeamFile(fileName);
+				if (!content) return this.errorReply(`文件不存在：${fileName}`);
+				if (content.formats.includes(format)) {
+					return this.errorReply(`${format} 已经在该队伍的分级列表里了。`);
+				}
+
+				try {
+					validateMultiTeamShape(content.pokemon as any, format);
+				} catch (err: any) {
+					return this.errorReply(err.message || String(err));
+				}
+
+				const errors = validateTeamForFormat(content.pokemon as any, format);
+				if (errors) {
+					return this.errorReply(`不兼容 ${format}：${errors.join('；')}`);
+				}
+
+				content.formats.push(format);
+				NPC.writeTeamFile(fileName, formatTeamJson(content));
+				NPC.reload();
+				this.sendReply(`✓ 已把分级 ${format} 加到 ${fileName}。`);
+				return this.parse(`/j view-npcadmin-edit-${fileName}`);
+			},
+
+			/**
+			 * 从队伍文件的 formats 列表里移除一个分级。
+			 * target: fileName,format
+			 */
+			removeformat(target, room, user) {
+				requireUnlock(user);
+				const [fileNameRaw, formatRaw] = target.split(',').map(s => s.trim());
+				const fileName = fileNameRaw;
+				const format = toID(formatRaw);
+				if (!fileName || !format) return this.errorReply(`用法：/npcadmin team removeformat fileName, format`);
+
+				const content = NPC.readTeamFile(fileName);
+				if (!content) return this.errorReply(`文件不存在：${fileName}`);
+				const idx = content.formats.indexOf(format);
+				if (idx < 0) return this.errorReply(`${format} 不在该队伍的分级列表里。`);
+				content.formats.splice(idx, 1);
+				NPC.writeTeamFile(fileName, formatTeamJson(content));
+				NPC.reload();
+				this.sendReply(`✓ 已从 ${fileName} 移除分级 ${format}。`);
+				return this.parse(`/j view-npcadmin-edit-${fileName}`);
+			},
+
+			/**
+			 * 删除队伍文件 + 从 templates 摘掉。
+			 * target: fileName
+			 */
 			delete(target, room, user) {
 				requireUnlock(user);
 				const fileName = target.trim();
 				if (!fileName) return this.errorReply(`用法：/npcadmin team delete fileName`);
 
 				const templates = NPC.readTemplatesRaw();
-				const affected = removeTeamFromAllTemplates(templates, fileName);
+				const affected = unlinkFromAllTemplates(templates, fileName);
 				NPC.writeTemplates(templates);
 				const deleted = NPC.deleteTeamFile(fileName);
 				NPC.reload();
@@ -386,6 +467,11 @@ function renderPsicons(pokemon: PokemonSet[]): string {
 	return pokemon.map(p => `<psicon pokemon="${Utils.escapeHTML(p.species)}" />`).join('');
 }
 
+function renderFormatChip(format: string): string {
+	const name = Dex.formats.get(format).name || format;
+	return `<code>${Utils.escapeHTML(name)}</code>`;
+}
+
 function renderUnlockBar(user: User): string {
 	const unlocked = isUnlocked(user);
 	let buf = ``;
@@ -401,7 +487,6 @@ function renderUnlockBar(user: User): string {
 	return buf;
 }
 
-/** 概览页：所有 NPC + 其队伍 */
 function renderOverview(user: User): string {
 	const unlocked = isUnlocked(user);
 	let buf = `<div class="pad">`;
@@ -421,40 +506,37 @@ function renderOverview(user: User): string {
 	}
 
 	for (const npc of npcs) {
-		buf += `<details open><summary><strong>${Utils.escapeHTML(npc.name)}</strong>`;
-		buf += ` <small>(${npc.id})</small>`;
-		if (npc.title) buf += ` <small>— ${Utils.escapeHTML(npc.title)}</small>`;
-		buf += `</summary>`;
-
-		for (const gt of GAME_TYPES) {
-			const bucket = npc.teams[gt];
-			if (!bucket) continue;
-			for (const format of Object.keys(bucket)) {
-				const files = bucket[format];
-				if (!files?.length) continue;
-				buf += `<div style="margin:4px 0 4px 12px"><em>${gt} / ${Utils.escapeHTML(format)}</em>`;
-				buf += `<table style="margin-left:12px"><tbody>`;
-				for (const file of files) {
-					const content = NPC.readTeamFile(file);
-					const name = content?.name || '(未命名)';
-					const icons = content?.pokemon ? renderPsicons(content.pokemon) : '';
-					buf += `<tr>`;
-					buf += `<td style="min-width:160px"><strong>${Utils.escapeHTML(name)}</strong></td>`;
-					buf += `<td style="padding:0 8px">${icons}</td>`;
-					buf += `<td>`;
-					if (unlocked) {
-						buf += `<a class="button" target="replace" href="/view-npcadmin-edit-${file}">编辑</a> `;
-						buf += `<button class="button" name="send" value="/npcadmin team delete ${file}">删除</button>`;
-					} else {
-						buf += `<a class="button" target="replace" href="/view-npcadmin-edit-${file}">查看</a>`;
-					}
-					buf += `</td></tr>`;
+		buf += `<details open><summary><strong>${Utils.escapeHTML(npc.name)}</strong> <small>(${npc.id})</small></summary>`;
+		if (!npc.teams.length) {
+			buf += `<div style="margin-left:16px;color:#888">还没有队伍</div>`;
+		} else {
+			buf += `<table style="margin:4px 0 4px 12px"><tbody>`;
+			for (const file of npc.teams) {
+				const content = NPC.readTeamFile(file);
+				const name = content?.name || '(未命名)';
+				const icons = content?.pokemon ? renderPsicons(content.pokemon) : '';
+				const formats = content?.formats || [];
+				buf += `<tr>`;
+				buf += `<td style="min-width:160px;padding:2px 8px"><strong>${Utils.escapeHTML(name)}</strong></td>`;
+				buf += `<td style="padding:2px 8px">${icons}</td>`;
+				buf += `<td style="padding:2px 8px">`;
+				if (formats.length) {
+					buf += formats.map(f => renderFormatChip(f)).join(' ');
+				} else {
+					buf += `<small style="color:#c00">尚未挂任何分级，玩家无法用到</small>`;
 				}
-				buf += `</tbody></table></div>`;
+				buf += `</td>`;
+				buf += `<td style="padding:2px 8px">`;
+				if (unlocked) {
+					buf += `<a class="button" target="replace" href="/view-npcadmin-edit-${file}">编辑</a> `;
+					buf += `<button class="button" name="send" value="/npcadmin team delete ${file}">删除</button>`;
+				} else {
+					buf += `<a class="button" target="replace" href="/view-npcadmin-edit-${file}">查看</a>`;
+				}
+				buf += `</td></tr>`;
 			}
+			buf += `</tbody></table>`;
 		}
-
-		// randombattle 没有对应的队伍文件（PS 自动生成），不在管理面板里展示
 		buf += `</details>`;
 	}
 
@@ -468,33 +550,22 @@ function renderEdit(user: User, fileName: string | null): string {
 	const npcs = NPC.getAll();
 	const content = fileName ? NPC.readTeamFile(fileName) : null;
 
-	// 找出该文件当前挂在哪里：决定 npcId / gameType
+	// 找出该文件当前挂在哪个 NPC（遍历所有 npc.teams）
 	let currentNpcId = '';
-	let currentGameType: GameType = 'singles';
 	if (fileName) {
 		for (const npc of npcs) {
-			for (const gt of GAME_TYPES) {
-				const bucket = npc.teams[gt];
-				if (!bucket) continue;
-				for (const format of Object.keys(bucket)) {
-					if (bucket[format].includes(fileName)) {
-						currentNpcId = npc.id;
-						currentGameType = gt;
-						break;
-					}
-				}
+			if (npc.teams.includes(fileName)) {
+				currentNpcId = npc.id;
+				break;
 			}
 		}
 	}
-	const currentFormat = content?.format || '';
 	const currentName = content?.name || '';
-	// textarea 的多行文本：必须用 &#13;（CR）作换行；Utils.escapeHTML 默认把 \n 转成 <br/>（见
-	// lib/utils.ts:55），不能用，自己写一个只转义 HTML 特殊字符的版本。
+	const currentFormats = content?.formats || [];
 	const currentText = content?.pokemon ? Teams.export(content.pokemon) : '';
 	const currentTextForTextarea = escapeForTextarea(currentText);
 
 	let buf = `<div class="pad">`;
-	// 返回列表：用 target="replace" 的 <a> 替换当前页面，比 /j 按钮更可靠
 	buf += `<p><a class="button" target="replace" href="/view-npcadmin">← 返回列表</a></p>`;
 	buf += `<h2>${fileName ? '编辑队伍' : '新建队伍'}</h2>`;
 	if (fileName) buf += `<p><small>文件：<code>${Utils.escapeHTML(fileName)}</code></small></p>`;
@@ -503,24 +574,25 @@ function renderEdit(user: User, fileName: string | null): string {
 	if (!unlocked) {
 		// 只读显示
 		buf += `<p><strong>队伍名称：</strong>${Utils.escapeHTML(currentName || '(未命名)')}</p>`;
-		buf += `<p><strong>格式：</strong>${Utils.escapeHTML(currentFormat)}</p>`;
-		buf += `<p><strong>game-type：</strong>${currentGameType}</p>`;
 		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(currentNpcId || '(未关联)')}</p>`;
+		buf += `<p><strong>支持的分级：</strong>${
+			currentFormats.length ? currentFormats.map(f => renderFormatChip(f)).join(' ') : '(无)'
+		}</p>`;
 		buf += `<pre style="background:#f0f0f0;padding:8px;max-height:600px;overflow:auto">${
 			Utils.escapeHTML(currentText) || '(无内容)'
-		}</pre>`;
-		buf += `</div>`;
+		}</pre></div>`;
 		return buf;
 	}
 
-	// 已解锁：表单。
-	// 字段：name / format / gameType / team
-	// NPC 归属：只在"新建"场景可以选；"编辑现有"直接沿用已挂载的 NPC（放 hidden）
-	buf += `<form data-submitsend="/npcadmin team save ${fileName || ''}|{name}|{format}|{gameType}|{npcId}|{team}">`;
+	// ======== 已解锁：编辑表单 ========
+
+	// 1. 保存"队名 + 阵容"的 form
+	buf += `<h3>基础信息</h3>`;
+	buf += `<form data-submitsend="/npcadmin team save ${fileName || ''}|{name}|{npcId}|{team}">`;
 	buf += `<p><label>队伍名称：<input class="textbox" name="name" value="${Utils.escapeHTML(currentName)}" style="width:300px" placeholder="例：沙暴地龙队" /></label></p>`;
 
 	if (!fileName) {
-		// 新建：选 NPC。放一个占位 option 强制用户显式选择，避免误用默认（首个 NPC）保存。
+		// 新建：选 NPC（强制选）
 		buf += `<p><label>所属 NPC：<select name="npcId" required>`;
 		buf += `<option value="" selected disabled>-- 请选择 NPC --</option>`;
 		for (const npc of npcs) {
@@ -528,48 +600,61 @@ function renderEdit(user: User, fileName: string | null): string {
 		}
 		buf += `</select></label></p>`;
 	} else {
-		// 编辑：锁定 NPC
 		buf += `<input type="hidden" name="npcId" value="${Utils.escapeHTML(currentNpcId)}" />`;
-		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(currentNpcId)} <small>（创建后不可修改，如需转移请新建一个队伍）</small></p>`;
+		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(currentNpcId)} <small>（创建后不可修改）</small></p>`;
 	}
 
-	// game-type：从当前已选 format 自动推断，不让用户单独选（降低误配概率）。
-	// 保留 hidden input 以便 save 时后端拿到；渲染时根据 format 实时推断。
-	// 实际上后端 save 处理里会再次校验 format 对应的 gameType，这里只是让 UI 保持简单。
-	const inferredGameType = (() => {
-		if (!currentFormat) return currentGameType;
-		const f = Dex.formats.get(currentFormat);
-		const gt = (f.gameType as GameType) || 'singles';
-		return gt === 'multi' || gt === 'doubles' || gt === 'singles' ? gt : 'singles';
-	})();
-	buf += `<input type="hidden" name="gameType" value="${inferredGameType}" />`;
-
-	// 格式：复用 PS 原生 Teambuilder 的 formatselect 按钮（panel-teambuilder-team.tsx:342）。
-	// `class="select formatselect"` + `data-href="/formatdropdown"` 让 PS 客户端在点击时
-	// 弹出官方格式选择面板。按钮本身 `name="format"` + `value=currentFormat`，form 提交时
-	// 自动把 value 作为 format 字段发给我们。
-	const currentFormatObj = currentFormat ? Dex.formats.get(currentFormat) : null;
-	const currentFormatName = currentFormatObj?.name || currentFormat || '(未选)';
-	buf += `<p><label>格式：<button type="button" name="format" value="${Utils.escapeHTML(currentFormat)}" ` +
-		`class="select formatselect" data-href="/formatdropdown" data-selecttype="teambuilder">` +
-		`<i class="fa fa-folder-o"></i> ${Utils.escapeHTML(currentFormatName)}</button>` +
-		`</label></p>`;
-
-	// 队伍文本框
-	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong>`;
-	if (inferredGameType === 'multi') {
-		buf += ` <small style="color:#060">Multi 规则：整队必须正好 6 只，前 3 只分配给 p2，后 3 只分配给 p4，顺序由你把握。</small>`;
-	}
-	buf += `</p>`;
-	buf += `<textarea name="team" style="width:100%;min-height:400px;font-family:monospace;font-size:12px" placeholder="直接从 PS Teambuilder 的 Import/Export 复制过来">${currentTextForTextarea}</textarea>`;
-
+	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong> ` +
+		`<small>Multi 分级下整队必须正好 6 只；前 3 分到 p2，后 3 分到 p4。</small></p>`;
+	buf += `<textarea name="team" style="width:100%;min-height:400px;font-family:monospace;font-size:12px" ` +
+		`placeholder="直接从 PS Teambuilder 的 Import/Export 复制过来">${currentTextForTextarea}</textarea>`;
 	buf += `<p>`;
-	buf += `<button class="button notifying" type="submit">保存</button> `;
+	buf += `<button class="button notifying" type="submit">保存基础信息</button>`;
 	if (fileName) {
 		buf += ` <button class="button" name="send" value="/npcadmin team delete ${fileName}" style="color:#c00">删除此队伍</button>`;
 	}
 	buf += `</p>`;
 	buf += `</form>`;
+
+	// 2. 已经挂了的分级列表 + 添加分级
+	if (fileName) {
+		buf += `<hr/>`;
+		buf += `<h3>支持的分级</h3>`;
+		if (currentFormats.length) {
+			buf += `<ul>`;
+			for (const f of currentFormats) {
+				buf += `<li>${renderFormatChip(f)} ` +
+					`<button class="button" style="margin-left:8px" name="send" ` +
+					`value="/npcadmin team removeformat ${fileName}, ${f}">移除</button></li>`;
+			}
+			buf += `</ul>`;
+		} else {
+			buf += `<p><small>还没有挂任何分级。玩家无法在任何分级下用到这支队伍。</small></p>`;
+		}
+
+		// 添加新分级：formatselect 按钮 + 验证 + 添加 两个按钮
+		// 两个按钮共享同一个 button[name="format"]；但 button 不能有两个 formaction 行为，所以
+		// 需要两个 form。为了不重复 formatselect，用两个 form 都 submit 同一个 target 行就得了，
+		// 做法：一个 form 两个 submit 按钮，用 formaction 区分（但 data-submitsend 不是 formaction）
+		// 简化：两个独立 form，每个 form 自己的 formatselect，用户点谁用谁。
+		buf += `<h4>添加新分级</h4>`;
+		buf += `<p>先用 "验证" 看能不能通过（PS 原生 TeamValidator），通过了再点 "添加"。</p>`;
+		buf += `<form data-submitsend="/npcadmin team validate ${fileName}, {format}">`;
+		buf += `<p><label>选择分级：<button type="button" name="format" value="" ` +
+			`class="select formatselect" data-href="/formatdropdown" data-selecttype="teambuilder">` +
+			`<i class="fa fa-folder-o"></i> (点击选择)</button></label> `;
+		buf += `<button class="button" type="submit">验证</button></p>`;
+		buf += `</form>`;
+		buf += `<form data-submitsend="/npcadmin team addformat ${fileName}, {format}">`;
+		buf += `<p><label>或直接添加（会先自动验证一次）：<button type="button" name="format" value="" ` +
+			`class="select formatselect" data-href="/formatdropdown" data-selecttype="teambuilder">` +
+			`<i class="fa fa-folder-o"></i> (点击选择)</button></label> `;
+		buf += `<button class="button notifying" type="submit">验证并添加</button></p>`;
+		buf += `</form>`;
+	} else {
+		buf += `<hr/><p><small>保存后在编辑页里添加分级。</small></p>`;
+	}
+
 	buf += `</div>`;
 	return buf;
 }

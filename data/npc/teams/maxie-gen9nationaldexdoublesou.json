@@ -1,5 +1,5 @@
 {
-  "format": "gen9doulesou",
+  "formats": ["gen9doulesou"],
   "pokemon": [
     {
       "species": "Camerupt",

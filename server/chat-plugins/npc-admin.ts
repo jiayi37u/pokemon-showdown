@@ -71,37 +71,113 @@ function escapeForTextarea(text: string): string {
 type GameType = 'singles' | 'doubles' | 'multi';
 const GAME_TYPES: readonly GameType[] = ['singles', 'doubles', 'multi'];
 
-/** 列出 PS 内置的全部格式，按 gameType 分组，便于下拉选择。 */
-function listFormatsByGameType(gameType: GameType): { id: string; name: string }[] {
-	const psGameType = gameType === 'multi' ? 'multi' : gameType; // 1:1 映射
-	return Dex.formats.all()
-		.filter(f => (f.gameType || 'singles') === psGameType)
-		.map(f => ({ id: f.id, name: f.name }));
-}
-
 /**
- * 从 Format 的 "[Gen N] Name" 名字里抽世代号。失败回退到 0。
+ * 把 Teams.import 的输出压回最紧凑形态，保持和 data/npc/teams/*.json 既有文件一致。
+ * Teams.import 会填满默认字段（gender=''、ivs 全 31、level=100、evs 补 0），直接写盘会显得噪
+ * 杂且让 git diff 爆炸，这里逐字段清理。
+ *
+ * 保留字段：species, ability, item, nature, teraType, happiness(非 255), moves, slot（Multi 用）
+ *          evs（只留非 0）, ivs（只留非 31）, level（非 100）, gender（非空且非 N）, shiny（true）
+ * 丢弃字段：name=='' 或等于 species；evs 全 0；ivs 全 31；happiness==255；
  */
-function extractGenNumber(formatName: string): number {
-	const m = formatName.match(/\[Gen (\d+)\]/);
-	return m ? parseInt(m[1], 10) : 0;
-}
+function normalizeSet(set: AnyObject): AnyObject {
+	const out: AnyObject = {};
+	if (set.species) out.species = set.species;
+	if (set.ability) out.ability = set.ability;
+	if (set.item) out.item = set.item;
+	if (set.nature) out.nature = set.nature;
+	if (set.teraType) out.teraType = set.teraType;
+	if (set.name && set.name !== set.species) out.name = set.name;
+	if (set.gender && set.gender !== 'N') out.gender = set.gender;
+	if (set.level && set.level !== 100) out.level = set.level;
+	if (set.happiness !== undefined && set.happiness !== 255) out.happiness = set.happiness;
+	if (set.shiny) out.shiny = set.shiny;
+	if (set.hpType) out.hpType = set.hpType;
+	if (set.dynamaxLevel !== undefined && set.dynamaxLevel !== 10) out.dynamaxLevel = set.dynamaxLevel;
+	if (set.gigantamax) out.gigantamax = set.gigantamax;
 
-/**
- * 按世代倒序分组：{ '9': [...], '8': [...], ..., '0': [...] }。
- */
-function groupFormatsByGen(formats: { id: string; name: string }[]): { gen: number; list: { id: string; name: string }[] }[] {
-	const buckets = new Map<number, { id: string; name: string }[]>();
-	for (const f of formats) {
-		const gen = extractGenNumber(f.name);
-		if (!buckets.has(gen)) buckets.set(gen, []);
-		buckets.get(gen)!.push(f);
+	// EVs：只留非零
+	if (set.evs) {
+		const trimmed: AnyObject = {};
+		for (const k of ['hp', 'atk', 'def', 'spa', 'spd', 'spe']) {
+			if (set.evs[k]) trimmed[k] = set.evs[k];
+		}
+		if (Object.keys(trimmed).length) out.evs = trimmed;
 	}
-	// 世代从大到小
-	return Array.from(buckets.keys())
-		.sort((a, b) => b - a)
-		.map(gen => ({ gen, list: buckets.get(gen)! }));
+	// IVs：只留非 31
+	if (set.ivs) {
+		const trimmed: AnyObject = {};
+		for (const k of ['hp', 'atk', 'def', 'spa', 'spd', 'spe']) {
+			if (set.ivs[k] !== undefined && set.ivs[k] !== 31) trimmed[k] = set.ivs[k];
+		}
+		if (Object.keys(trimmed).length) out.ivs = trimmed;
+	}
+
+	if (set.moves?.length) out.moves = set.moves.filter((m: string) => !!m);
+	if (set.slot) out.slot = set.slot; // multi battle 槽位
+
+	return out;
 }
+
+function normalizeTeam(pokemon: AnyObject[]): AnyObject[] {
+	return pokemon.map(normalizeSet);
+}
+
+/**
+ * 格式化 NPCTeamFile 为仓库里既有文件相同的 JSON：
+ *   - 顶层 { "format": "...", "pokemon": [ ... ] }，缩进 2 空格
+ *   - 每只精灵的 evs / ivs / moves 字段**单行内联**，和手工文件一致
+ *   - 其他字段按两空格缩进展开
+ *   - 文件以单个换行结尾
+ * 保留此函数的目的：让从管理面板保存的队伍 git-diff 友好、人眼可读
+ */
+function formatTeamJson(team: NPCTeamFile): string {
+	const inlineKeys = new Set(['evs', 'ivs', 'moves']);
+	const indent2 = '  ';
+	const indent4 = '    ';
+	const indent6 = '      ';
+
+	const monLines: string[] = [];
+	for (const mon of team.pokemon) {
+		const fieldLines: string[] = [];
+		for (const key of Object.keys(mon)) {
+			const val = (mon as AnyObject)[key];
+			if (inlineKeys.has(key)) {
+				// 单行紧凑：{"hp":252,"atk":252} 风格会被 JSON.stringify 省掉空格；这里用 2 参数版本
+				// 自己拼。保持 "{ "hp": 252, "atk": 252 }" 的风格。
+				fieldLines.push(`${indent6}${JSON.stringify(key)}: ${inlineStringify(val)}`);
+			} else {
+				fieldLines.push(`${indent6}${JSON.stringify(key)}: ${JSON.stringify(val)}`);
+			}
+		}
+		monLines.push(`${indent4}{\n${fieldLines.join(',\n')}\n${indent4}}`);
+	}
+
+	let buf = `{\n`;
+	buf += `${indent2}${JSON.stringify('format')}: ${JSON.stringify(team.format)},\n`;
+	if (team.name) {
+		buf += `${indent2}${JSON.stringify('name')}: ${JSON.stringify(team.name)},\n`;
+	}
+	buf += `${indent2}${JSON.stringify('pokemon')}: [\n${monLines.join(',\n')}\n${indent2}]\n`;
+	buf += `}\n`;
+	return buf;
+}
+
+/** 行内 JSON：{"a":1,"b":2} → "{ \"a\": 1, \"b\": 2 }"；数组 ["x","y"] → "[\"x\", \"y\"]"。 */
+function inlineStringify(val: AnyObject | AnyObject[]): string {
+	if (Array.isArray(val)) {
+		return `[${val.map(v => JSON.stringify(v)).join(', ')}]`;
+	}
+	if (val && typeof val === 'object') {
+		const parts: string[] = [];
+		for (const k of Object.keys(val)) {
+			parts.push(`${JSON.stringify(k)}: ${JSON.stringify((val as AnyObject)[k])}`);
+		}
+		return `{ ${parts.join(', ')} }`;
+	}
+	return JSON.stringify(val);
+}
+
 
 function parseGameType(input: string): GameType {
 	const g = input.trim().toLowerCase() as GameType;
@@ -239,6 +315,16 @@ export const commands: Chat.ChatCommands = {
 				const template = templates[npcId];
 				if (!template) return this.errorReply(`NPC 不存在：${npcId}`);
 
+				// Multi 场景的 slot 字段是我们自定义的，不走 PS Teambuilder，所以 Teams.import
+				// 后会丢失。编辑现有文件时按索引搬运旧 slot；新文件则没有 slot（Multi 新建需要
+				// 后续另行处理）。
+				const prevContent = fileName ? NPC.readTeamFile(fileName) : null;
+				const prevSlots = (prevContent?.pokemon || []).map((p: AnyObject) => (p as AnyObject).slot);
+				const normalized = normalizeTeam(pokemon);
+				for (let i = 0; i < normalized.length; i++) {
+					if (prevSlots[i]) normalized[i].slot = prevSlots[i];
+				}
+
 				// 决定文件名：空 → 新建；非空 → 覆盖已有
 				let finalFileName = fileName;
 				if (!finalFileName) {
@@ -248,9 +334,9 @@ export const commands: Chat.ChatCommands = {
 					// 既有文件：如果 npc/format/gameType 变了，要重新挂载
 				}
 
-				const content: NPCTeamFile = { format, pokemon };
+				const content: NPCTeamFile = { format, pokemon: normalized as any };
 				if (name) content.name = name;
-				NPC.writeTeamFile(finalFileName, content);
+				NPC.writeTeamFile(finalFileName, formatTeamJson(content));
 
 				reattachTeamFile(templates, finalFileName, npcId, gameType, format);
 				NPC.writeTemplates(templates);
@@ -331,7 +417,7 @@ function renderOverview(user: User): string {
 
 	for (const npc of npcs) {
 		buf += `<details open><summary><strong>${Utils.escapeHTML(npc.name)}</strong>`;
-		buf += ` <small>(${npc.id}) · ${npc.difficulty}</small>`;
+		buf += ` <small>(${npc.id})</small>`;
 		if (npc.title) buf += ` <small>— ${Utils.escapeHTML(npc.title)}</small>`;
 		buf += `</summary>`;
 
@@ -363,11 +449,7 @@ function renderOverview(user: User): string {
 			}
 		}
 
-		if (npc.teams.randombattle?.length) {
-			buf += `<div style="margin:4px 0 4px 12px"><em>randombattle</em>: ${
-				npc.teams.randombattle.map(f => Utils.escapeHTML(f)).join(', ')
-			}（PS 自带生成，无文件可编辑）</div>`;
-		}
+		// randombattle 没有对应的队伍文件（PS 自动生成），不在管理面板里展示
 		buf += `</details>`;
 	}
 

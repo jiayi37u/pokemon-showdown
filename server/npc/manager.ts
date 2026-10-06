@@ -366,13 +366,18 @@ export class NPCManager {
 
 	/**
 	 * Admin：写一个队伍文件。只校验 teamFile 不含 "/" 等路径分隔符，避免逃逸。
+	 * 第二参数支持两种形态：
+	 *   - NPCTeamFile 对象：按 JSON.stringify(..., null, 2) 默认序列化
+	 *   - 字符串：直接作为文件内容写入（调用方自定义格式；用于保持仓库里既有
+	 *     文件的"evs/ivs/moves 单行内联"风格）
 	 */
-	writeTeamFile(teamFile: string, content: NPCTeamFile): void {
+	writeTeamFile(teamFile: string, content: NPCTeamFile | string): void {
 		if (!/^[a-zA-Z0-9._-]+\.json$/.test(teamFile)) {
 			throw new Error(`invalid team filename: ${teamFile}`);
 		}
 		const teamPath = `${this.dataPath}/teams/${teamFile}`;
-		FS(teamPath).writeSync(JSON.stringify(content, null, 2) + '\n');
+		const text = typeof content === 'string' ? content : (JSON.stringify(content, null, 2) + '\n');
+		FS(teamPath).writeSync(text);
 	}
 
 	/**

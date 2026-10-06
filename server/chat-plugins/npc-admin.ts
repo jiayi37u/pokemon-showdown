@@ -231,6 +231,8 @@ export const commands: Chat.ChatCommands = {
 			save(target, room, user) {
 				requireUnlock(user);
 				const { fileName, name, format, gameType, npcId, teamText } = parseSaveTarget(target);
+				if (!npcId) return this.errorReply(`请先选择 "所属 NPC"。`);
+				if (!format) return this.errorReply(`请先选择 "格式"。`);
 				const pokemon = parseImportedTeam(teamText);
 
 				const templates = NPC.readTemplatesRaw();
@@ -315,7 +317,7 @@ function renderOverview(user: User): string {
 	buf += `<h2>NPC 管理面板</h2>`;
 	buf += renderUnlockBar(user);
 	buf += `<p>`;
-	buf += `<a class="button" target="replace" href="/view-npcadmin"><i class="fa fa-refresh"></i> 刷新</a> `;
+	buf += `<button class="button" name="send" value="/npcadmin"><i class="fa fa-refresh"></i> 刷新</button> `;
 	if (unlocked) {
 		buf += `<a class="button notifying" target="replace" href="/view-npcadmin-new"><i class="fa fa-plus"></i> 新建队伍</a>`;
 	}
@@ -431,8 +433,9 @@ function renderEdit(user: User, fileName: string | null): string {
 	buf += `<p><label>队伍名称：<input class="textbox" name="name" value="${Utils.escapeHTML(currentName)}" style="width:300px" placeholder="例：沙暴地龙队" /></label></p>`;
 
 	if (!fileName) {
-		// 新建：选 NPC
-		buf += `<p><label>所属 NPC：<select name="npcId">`;
+		// 新建：选 NPC。放一个占位 option 强制用户显式选择，避免误用默认（首个 NPC）保存。
+		buf += `<p><label>所属 NPC：<select name="npcId" required>`;
+		buf += `<option value="" selected disabled>-- 请选择 NPC --</option>`;
 		for (const npc of npcs) {
 			buf += `<option value="${npc.id}">${Utils.escapeHTML(npc.name)} (${npc.id})</option>`;
 		}
@@ -443,80 +446,27 @@ function renderEdit(user: User, fileName: string | null): string {
 		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(currentNpcId)} <small>（创建后不可修改，如需转移请新建一个队伍）</small></p>`;
 	}
 
-	// game-type
-	buf += `<p><label>game-type：<select name="gameType">`;
-	for (const gt of GAME_TYPES) {
-		const sel = gt === currentGameType ? ' selected' : '';
-		buf += `<option value="${gt}"${sel}>${gt}</option>`;
-	}
-	buf += `</select></label></p>`;
+	// game-type：从当前已选 format 自动推断，不让用户单独选（降低误配概率）。
+	// 保留 hidden input 以便 save 时后端拿到；渲染时根据 format 实时推断。
+	// 实际上后端 save 处理里会再次校验 format 对应的 gameType，这里只是让 UI 保持简单。
+	const inferredGameType = (() => {
+		if (!currentFormat) return currentGameType;
+		const f = Dex.formats.get(currentFormat);
+		const gt = (f.gameType as GameType) || 'singles';
+		return gt === 'multi' || gt === 'doubles' || gt === 'singles' ? gt : 'singles';
+	})();
+	buf += `<input type="hidden" name="gameType" value="${inferredGameType}" />`;
 
-	// 格式选择：参照 PS 自带 teambuilder 的做法：按 game-type → 世代（新→旧） → section 分组。
-	// 原生 PS 用一排 Gen 按钮 + flyout 面板实现"点哪个展开哪个"，我们静态 HTML 用嵌套 <details>
-	// 模拟：game-type 一层、世代一层、section 一层，含当前格式的那条链路自动展开。
-	// 所有 radio 共享 name="format"，form 提交只传选中那一个。
+	// 格式：复用 PS 原生 Teambuilder 的 formatselect 按钮（panel-teambuilder-team.tsx:342）。
+	// `class="select formatselect"` + `data-href="/formatdropdown"` 让 PS 客户端在点击时
+	// 弹出官方格式选择面板。按钮本身 `name="format"` + `value=currentFormat`，form 提交时
+	// 自动把 value 作为 format 字段发给我们。
 	const currentFormatObj = currentFormat ? Dex.formats.get(currentFormat) : null;
-	const currentFormatName = currentFormatObj?.name || currentFormat;
-	const currentSection = (currentFormatObj as AnyObject)?.section || '';
-	const currentGen = currentFormatObj ? extractGenNumber(currentFormatObj.name) : 0;
-
-	buf += `<p><strong>格式：</strong>`;
-	buf += currentFormatName ?
-		`<span style="margin-left:8px">已选：<code>${Utils.escapeHTML(currentFormatName)}</code></span>` :
-		`<span style="margin-left:8px;color:#c00">未选</span>`;
-	buf += `</p>`;
-
-	for (const gt of GAME_TYPES) {
-		const formats = listFormatsByGameType(gt);
-		if (!formats.length) continue;
-
-		// 按世代分：Map<gen, Map<section, formats[]>>
-		const byGen = new Map<number, Map<string, { id: string; name: string }[]>>();
-		for (const f of formats) {
-			const gen = extractGenNumber(f.name);
-			const section = (Dex.formats.get(f.id) as AnyObject).section || '(其他)';
-			if (!byGen.has(gen)) byGen.set(gen, new Map());
-			const sections = byGen.get(gen)!;
-			if (!sections.has(section)) sections.set(section, []);
-			sections.get(section)!.push(f);
-		}
-
-		const containsCurrent = formats.some(f => f.id === currentFormat);
-		buf += `<details${containsCurrent ? ' open' : ''} style="margin-left:12px">`;
-		buf += `<summary><strong>${gt}</strong></summary>`;
-		buf += `<div style="margin-left:16px">`;
-
-		// 世代从大到小
-		const gens = [...byGen.keys()].sort((a, b) => b - a);
-		for (const gen of gens) {
-			const sections = byGen.get(gen)!;
-			const genContainsCurrent = containsCurrent && gen === currentGen;
-			buf += `<details${genContainsCurrent ? ' open' : ''}>`;
-			buf += `<summary>Gen ${gen > 0 ? gen : '?'}</summary>`;
-			buf += `<div style="margin-left:16px">`;
-
-			// section 字典序
-			const sectionNames = [...sections.keys()].sort();
-			for (const sec of sectionNames) {
-				const list = sections.get(sec)!;
-				const secContainsCurrent = genContainsCurrent && sec === currentSection;
-				buf += `<details${secContainsCurrent ? ' open' : ''}>`;
-				buf += `<summary>${Utils.escapeHTML(sec)} <small>(${list.length})</small></summary>`;
-				buf += `<ul style="list-style:none;margin:4px 0;padding-left:16px">`;
-				for (const f of list) {
-					const checked = f.id === currentFormat ? ' checked' : '';
-					buf += `<li><label style="font-weight:normal">`;
-					buf += `<input type="radio" name="format" value="${Utils.escapeHTML(f.id)}"${checked} /> `;
-					buf += Utils.escapeHTML(f.name);
-					buf += `</label></li>`;
-				}
-				buf += `</ul>`;
-				buf += `</details>`;
-			}
-			buf += `</div></details>`;
-		}
-		buf += `</div></details>`;
-	}
+	const currentFormatName = currentFormatObj?.name || currentFormat || '(未选)';
+	buf += `<p><label>格式：<button type="button" name="format" value="${Utils.escapeHTML(currentFormat)}" ` +
+		`class="select formatselect" data-href="/formatdropdown" data-selecttype="teambuilder">` +
+		`<i class="fa fa-folder-o"></i> ${Utils.escapeHTML(currentFormatName)}</button>` +
+		`</label></p>`;
 
 	// 队伍文本框
 	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong></p>`;

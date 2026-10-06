@@ -47,6 +47,20 @@ function requireUnlock(user: User): void {
 	}
 }
 
+/**
+ * 转义 HTML 特殊字符用于 textarea 的 value，保留 \n 作为 &#13;（CR）而不是 Utils.escapeHTML
+ * 默认把 \n 转成 <br/>（见 lib/utils.ts:55）。多行要维持原样显示。
+ */
+function escapeForTextarea(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&apos;')
+		.replace(/\n/g, '&#13;');
+}
+
 type GameType = 'singles' | 'doubles' | 'multi';
 const GAME_TYPES: readonly GameType[] = ['singles', 'doubles', 'multi'];
 
@@ -56,6 +70,30 @@ function listFormatsByGameType(gameType: GameType): { id: string; name: string }
 	return Dex.formats.all()
 		.filter(f => (f.gameType || 'singles') === psGameType)
 		.map(f => ({ id: f.id, name: f.name }));
+}
+
+/**
+ * 从 Format 的 "[Gen N] Name" 名字里抽世代号。失败回退到 0。
+ */
+function extractGenNumber(formatName: string): number {
+	const m = formatName.match(/\[Gen (\d+)\]/);
+	return m ? parseInt(m[1], 10) : 0;
+}
+
+/**
+ * 按世代倒序分组：{ '9': [...], '8': [...], ..., '0': [...] }。
+ */
+function groupFormatsByGen(formats: { id: string; name: string }[]): { gen: number; list: { id: string; name: string }[] }[] {
+	const buckets = new Map<number, { id: string; name: string }[]>();
+	for (const f of formats) {
+		const gen = extractGenNumber(f.name);
+		if (!buckets.has(gen)) buckets.set(gen, []);
+		buckets.get(gen)!.push(f);
+	}
+	// 世代从大到小
+	return Array.from(buckets.keys())
+		.sort((a, b) => b - a)
+		.map(gen => ({ gen, list: buckets.get(gen)! }));
 }
 
 function parseGameType(input: string): GameType {
@@ -354,10 +392,10 @@ function renderEdit(user: User, fileName: string | null): string {
 	}
 	const currentFormat = content?.format || '';
 	const currentName = content?.name || '';
-	// textarea 的多行文本必须用 &#13;（CR 字符）而不是 \n，否则 PS 客户端会把它渲染成 <br/>
-	// 具体见 server/chat-plugins/teams.ts:702 的处理
+	// textarea 的多行文本：必须用 &#13;（CR）作换行；Utils.escapeHTML 默认把 \n 转成 <br/>（见
+	// lib/utils.ts:55），不能用，自己写一个只转义 HTML 特殊字符的版本。
 	const currentText = content?.pokemon ? Teams.export(content.pokemon) : '';
-	const currentTextForTextarea = Utils.escapeHTML(currentText).replace(/\n/g, '&#13;');
+	const currentTextForTextarea = escapeForTextarea(currentText);
 
 	let buf = `<div class="pad">`;
 	// 返回列表：用 target="replace" 的 <a> 替换当前页面，比 /j 按钮更可靠
@@ -406,20 +444,34 @@ function renderEdit(user: User, fileName: string | null): string {
 	}
 	buf += `</select></label></p>`;
 
-	// format：从 Dex 列出，按 gameType 分组。因为编辑模式下 game-type 可能也被改，
-	// 这里直接列出 singles/doubles/multi 三组所有格式，让用户按需挑。
-	buf += `<p><label>格式：<select name="format">`;
+	// format：从 Dex 列出，先按 game-type 分组，再按世代倒序分 optgroup。
+	// 全量展示太长，默认只展开"当前 game-type 匹配 + 当前世代"的那组；其他折叠在下方说明。
+	// 实际上下拉里的 optgroup 由浏览器统一渲染，这里的"折叠"用 details 包起整个 select 更清晰。
+	const currentGen = extractGenNumber(Dex.formats.get(currentFormat).name || '') || 9;
+	buf += `<p><strong>格式：</strong><br/>`;
+	buf += `<details${currentFormat ? '' : ' open'}><summary>` +
+		(currentFormat ? `已选：${Utils.escapeHTML(Dex.formats.get(currentFormat).name || currentFormat)}（点击展开切换）` : `点击选择格式`) +
+		`</summary>`;
+	buf += `<select name="format" size="12" style="min-width:360px">`;
 	for (const gt of GAME_TYPES) {
 		const formats = listFormatsByGameType(gt);
 		if (!formats.length) continue;
-		buf += `<optgroup label="${gt}">`;
-		for (const f of formats) {
-			const sel = f.id === currentFormat ? ' selected' : '';
-			buf += `<option value="${f.id}"${sel}>${Utils.escapeHTML(f.name)}</option>`;
+		const grouped = groupFormatsByGen(formats);
+		for (const { gen, list } of grouped) {
+			const genLabel = gen > 0 ? `Gen ${gen} · ${gt}` : `other · ${gt}`;
+			buf += `<optgroup label="${genLabel}">`;
+			for (const f of list) {
+				const sel = f.id === currentFormat ? ' selected' : '';
+				buf += `<option value="${f.id}"${sel}>${Utils.escapeHTML(f.name)}</option>`;
+			}
+			buf += `</optgroup>`;
 		}
-		buf += `</optgroup>`;
 	}
-	buf += `</select></label></p>`;
+	buf += `</select>`;
+	buf += `<small style="display:block;color:#888;margin-top:4px">` +
+		`当前 Gen：${currentGen}。optgroup 已按 game-type → 世代（新→旧）分组。` +
+		`</small>`;
+	buf += `</details></p>`;
 
 	// 队伍文本框
 	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong></p>`;

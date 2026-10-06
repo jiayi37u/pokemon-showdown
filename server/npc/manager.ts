@@ -48,8 +48,12 @@ export interface NPCTemplate {
 
 /** NPC team file format */
 export interface NPCTeamFile {
+	/** 格式 id（gen9nationaldex 等） */
 	format: string;
+	/** 队伍阵容 */
 	pokemon: PokemonSet[];
+	/** 可选的中文队伍名，用于管理页面显示（例："沙暴地龙"）；不参与业务逻辑 */
+	name?: string;
 }
 
 /**
@@ -342,6 +346,65 @@ export class NPCManager {
 		}
 
 		return formats;
+	}
+
+	/**
+	 * Admin：读单个队伍文件的完整内容（含可选的 name 字段）。
+	 * 返回 null 代表文件不存在或解析失败。
+	 */
+	readTeamFile(teamFile: string): NPCTeamFile | null {
+		try {
+			const teamPath = `${this.dataPath}/teams/${teamFile}`;
+			const data = FS(teamPath).readIfExistsSync();
+			if (!data) return null;
+			return JSON.parse(data) as NPCTeamFile;
+		} catch (err) {
+			console.error(`[NPC] readTeamFile(${teamFile}) failed:`, err);
+			return null;
+		}
+	}
+
+	/**
+	 * Admin：写一个队伍文件。只校验 teamFile 不含 "/" 等路径分隔符，避免逃逸。
+	 */
+	writeTeamFile(teamFile: string, content: NPCTeamFile): void {
+		if (!/^[a-zA-Z0-9._-]+\.json$/.test(teamFile)) {
+			throw new Error(`invalid team filename: ${teamFile}`);
+		}
+		const teamPath = `${this.dataPath}/teams/${teamFile}`;
+		FS(teamPath).writeSync(JSON.stringify(content, null, 2) + '\n');
+	}
+
+	/**
+	 * Admin：删除一个队伍文件。
+	 */
+	deleteTeamFile(teamFile: string): boolean {
+		if (!/^[a-zA-Z0-9._-]+\.json$/.test(teamFile)) {
+			throw new Error(`invalid team filename: ${teamFile}`);
+		}
+		const teamPath = `${this.dataPath}/teams/${teamFile}`;
+		const fs = FS(teamPath);
+		if (!fs.existsSync()) return false;
+		fs.unlinkIfExistsSync();
+		return true;
+	}
+
+	/**
+	 * Admin：覆盖写 templates.json（整体保存）。
+	 */
+	writeTemplates(templates: { [id: string]: NPCTemplate }): void {
+		const templatesPath = `${this.dataPath}/templates.json`;
+		FS(templatesPath).writeSync(JSON.stringify(templates, null, 2) + '\n');
+	}
+
+	/**
+	 * Admin：读 templates.json 的原始对象（含注释/完整结构）。
+	 */
+	readTemplatesRaw(): { [id: string]: NPCTemplate } {
+		const templatesPath = `${this.dataPath}/templates.json`;
+		const data = FS(templatesPath).readIfExistsSync();
+		if (!data) return {};
+		return JSON.parse(data) as { [id: string]: NPCTemplate };
 	}
 
 	/**

@@ -2,6 +2,55 @@
 
 ## [已发布]
 
+### v1.2.24 - NPC 管理面板（网页端队伍 CRUD） (2026-10-06)
+
+**背景**: 以前新建 / 修改 NPC 队伍必须直接编辑项目文件，重启服务才生效。现在接入 PS 页面系统，玩家在 Teambuilder 里编好队伍 → Export 文本 → 粘到管理页面即可保存。
+
+**新增命令**（走密钥解锁，30 分钟 session）:
+| 命令 | 说明 |
+|---|---|
+| `/npcadmin unlock KEY` | 用密钥（硬编码 `963741`）解锁本 session 的管理权限 |
+| `/npcadmin lock` | 立即锁回去 |
+| `/npcadmin reload` | 重读 templates.json + teams/*.json，不用重启 |
+| `/npcadmin team import NPC,格式,游戏类型,队伍名称 ⏎ <粘贴 Teambuilder 文本>` | 保存队伍文件 + 更新 templates.json |
+| `/npcadmin team delete NPC,格式,游戏类型,文件名` | 删除队伍文件 + 从 templates 摘掉 |
+| `/npcadmin team rename NPC,格式,游戏类型,文件名,新名称` | 只改 team.json 的 name 字段 |
+
+**页面**: `/npcadmin` 或 `/j view-npcadmin`
+- 列出所有 NPC + 其队伍（按 game-type / format 分组）
+- 每个队伍显示：**队伍名称（中文）+ 6 只精灵 psicon 图标**（PS 原生 20×20 像素图标）
+- 解锁后每个队伍带 [删除] / [改名] 按钮
+- 页面顶部的用法说明可以折叠展开
+
+**NPC team file schema 扩展**:
+```typescript
+interface NPCTeamFile {
+  format: string;
+  pokemon: PokemonSet[];
+  name?: string;  // 新增：中文显示名（例"沙暴地龙队"），不影响业务逻辑
+}
+```
+
+**NPCManager 加 CRUD 方法**（避免 chat plugin 乱碰 FS）:
+- `readTeamFile(fileName)` / `writeTeamFile(fileName, content)` / `deleteTeamFile(fileName)`
+- `readTemplatesRaw()` / `writeTemplates(all)`
+- 文件名校验正则：`^[a-zA-Z0-9._-]+\.json$`，拒绝 `../` 等逃逸
+
+**不做的事（KNOWN LIMITATION）**:
+- NPC 本身的 CRUD（新建 NPC / 删除 NPC / 改 avatar/title）：下一版本做
+- 单只精灵级别的编辑（替换单只不用重传整队）：工作量太大，依赖玩家在 PS Teambuilder 里编
+- 真正的权限系统：现在用硬编码密钥，适合单机开发；生产部署前应改成 Config / 全局权限
+
+**文件变更**:
+| 文件 | 变更 |
+|------|------|
+| server/npc/manager.ts | NPCTeamFile 加 name 字段；新增 readTeamFile / writeTeamFile / deleteTeamFile / readTemplatesRaw / writeTemplates |
+| server/chat-plugins/npc-admin.ts | 新建，commands + pages |
+
+**测试**: `node -e` 冒烟验证了 read/write/delete 往返、文件名逃逸拒绝；398 unit tests 不受影响全过。
+
+---
+
 ### v1.2.23 - 对手 preset 覆盖伤害估算 (2026-10-05)
 
 **背景**: NormalAI 之前把对手一律按 IV=31 / EV=85 / 无性格 估算，和竞技练度（252/252/修正性格）系统性偏差 ~9-10%。影响到 Garchomp / Tyranitar 这类对手时伤害估低。

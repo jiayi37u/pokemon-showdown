@@ -315,14 +315,19 @@ export const commands: Chat.ChatCommands = {
 				const template = templates[npcId];
 				if (!template) return this.errorReply(`NPC 不存在：${npcId}`);
 
-				// Multi 场景的 slot 字段是我们自定义的，不走 PS Teambuilder，所以 Teams.import
-				// 后会丢失。编辑现有文件时按索引搬运旧 slot；新文件则没有 slot（Multi 新建需要
-				// 后续另行处理）。
-				const prevContent = fileName ? NPC.readTeamFile(fileName) : null;
-				const prevSlots = (prevContent?.pokemon || []).map((p: AnyObject) => (p as AnyObject).slot);
+				// Multi 场景的 slot 字段（p2/p4）不走 PS Teambuilder，Teams.import 会丢失。
+				// 规则：multi 下**前 3 只分配 p2，后 3 只分配 p4**，顺序由用户自己在 Export 文本里控制。
+				// 其他 gameType 不管 slot。
 				const normalized = normalizeTeam(pokemon);
-				for (let i = 0; i < normalized.length; i++) {
-					if (prevSlots[i]) normalized[i].slot = prevSlots[i];
+				if (gameType === 'multi') {
+					if (normalized.length !== 6) {
+						return this.errorReply(
+							`Multi 格式要求整支队伍正好 6 只精灵（前 3 → p2，后 3 → p4），现在是 ${normalized.length} 只。`
+						);
+					}
+					for (let i = 0; i < normalized.length; i++) {
+						normalized[i].slot = i < 3 ? 'p2' : 'p4';
+					}
 				}
 
 				// 决定文件名：空 → 新建；非空 → 覆盖已有
@@ -551,7 +556,11 @@ function renderEdit(user: User, fileName: string | null): string {
 		`</label></p>`;
 
 	// 队伍文本框
-	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong></p>`;
+	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong>`;
+	if (inferredGameType === 'multi') {
+		buf += ` <small style="color:#060">Multi 规则：整队必须正好 6 只，前 3 只分配给 p2，后 3 只分配给 p4，顺序由你把握。</small>`;
+	}
+	buf += `</p>`;
 	buf += `<textarea name="team" style="width:100%;min-height:400px;font-family:monospace;font-size:12px" placeholder="直接从 PS Teambuilder 的 Import/Export 复制过来">${currentTextForTextarea}</textarea>`;
 
 	buf += `<p>`;

@@ -356,6 +356,11 @@ export const commands: Chat.ChatCommands = {
 			 * 验证一个分级对当前文件的队伍是否兼容。只验证，不改任何东西。
 			 * target: fileName,format
 			 */
+			/**
+			 * 验证一个分级对当前文件的队伍是否兼容。只验证，不改任何东西。
+			 * 结果渲染到 /view-npcadmin-validate-FILE-FORMAT 页面，不写入聊天区。
+			 * target: fileName,format
+			 */
 			validate(target, room, user) {
 				requireUnlock(user);
 				const [fileNameRaw, formatRaw] = target.split(',').map(s => s.trim());
@@ -363,39 +368,10 @@ export const commands: Chat.ChatCommands = {
 				const format = toID(formatRaw);
 				if (!fileName) return this.errorReply(`用法：/npcadmin team validate fileName, format`);
 				if (!format) return this.errorReply(`请先选择一个要验证的分级。`);
-
 				const content = NPC.readTeamFile(fileName);
 				if (!content) return this.errorReply(`文件不存在：${fileName}`);
-
-				try {
-					validateMultiTeamShape(content.pokemon as any, format);
-				} catch (err: any) {
-					return this.errorReply(err.message || String(err));
-				}
-
-				const formatName = Dex.formats.get(format).name || format;
-				const errors = validateTeamForFormat(content.pokemon as any, format);
-				if (errors) {
-					this.sendReplyBox(
-						`<strong>❌ 不兼容 ${Utils.escapeHTML(formatName)}</strong><br/>` +
-						errors.map(e => `• ${Utils.escapeHTML(e)}`).join('<br/>')
-					);
-				} else {
-					// 验证通过 → 直接给用户一个"添加该分级"按钮，省去再去上面选同一格式的步骤
-					const already = content.formats.includes(format);
-					let addButton: string;
-					if (already) {
-						addButton = `<small>（已挂在该队伍上）</small>`;
-					} else {
-						addButton = `<button class="button notifying" name="send" ` +
-							`value="/npcadmin team addformat ${fileName}, ${format}">` +
-							`添加该分级</button>`;
-					}
-					this.sendReplyBox(
-						`<strong style="color:#060">✓ 兼容 ${Utils.escapeHTML(formatName)}</strong> ` +
-						addButton
-					);
-				}
+				// 跳到验证结果页；页面渲染时自己再跑一次 validate 得到结果
+				return this.parse(`/j view-npcadmin-validate-${fileName}-${format}`);
 			},
 
 			/**
@@ -540,18 +516,10 @@ function renderOverview(user: User): string {
 				const content = NPC.readTeamFile(file);
 				const name = content?.name || '(未命名)';
 				const icons = content?.pokemon ? renderPsicons(content.pokemon) : '';
-				const formats = content?.formats || [];
 				buf += `<tr>`;
 				buf += `<td style="min-width:160px;padding:2px 8px"><strong>${Utils.escapeHTML(name)}</strong></td>`;
 				buf += `<td style="padding:2px 8px;white-space:nowrap">${icons}</td>`;
-				buf += `<td style="padding:2px 8px">`;
-				if (formats.length) {
-					buf += formats.map(f => renderFormatChip(f)).join(' ');
-				} else {
-					buf += `<small style="color:#c00">尚未挂任何分级，玩家无法用到</small>`;
-				}
-				buf += `</td>`;
-				buf += `<td style="padding:2px 8px">`;
+				buf += `<td style="padding:2px 8px;white-space:nowrap">`;
 				if (unlocked) {
 					buf += `<a class="button" target="replace" href="/view-npcadmin-edit-${file}">编辑</a> `;
 					buf += `<button class="button" name="send" value="/npcadmin team delete ${file}">删除</button>`;
@@ -674,6 +642,64 @@ function renderEdit(user: User, fileName: string | null): string {
 	return buf;
 }
 
+/** 验证结果页：显示某个 fileName 在某个 format 下的兼容情况，附带页面内"添加"按钮。 */
+function renderValidate(user: User, fileName: string, format: string): string {
+	const unlocked = isUnlocked(user);
+	const content = NPC.readTeamFile(fileName);
+	const fmt = Dex.formats.get(format);
+	const formatName = fmt.name || format;
+
+	let buf = `<div class="pad">`;
+	buf += `<p><a class="button" target="replace" href="/view-npcadmin-edit-${fileName}">← 返回编辑</a></p>`;
+	buf += `<h2>验证分级</h2>`;
+	buf += `<p><small>文件：<code>${Utils.escapeHTML(fileName)}</code> · 分级：<code>${Utils.escapeHTML(formatName)}</code></small></p>`;
+
+	if (!content) {
+		buf += `<p style="color:#c00">文件不存在。</p></div>`;
+		return buf;
+	}
+	if (!fmt.exists) {
+		buf += `<p style="color:#c00">分级 id 无效：${Utils.escapeHTML(format)}</p></div>`;
+		return buf;
+	}
+
+	// 先过 Multi 整队大小检查
+	try {
+		validateMultiTeamShape(content.pokemon as any, format);
+	} catch (err: any) {
+		buf += `<p style="color:#c00"><strong>❌ 不兼容</strong><br/>${Utils.escapeHTML(err.message || String(err))}</p>`;
+		buf += `</div>`;
+		return buf;
+	}
+
+	const errors = validateTeamForFormat(content.pokemon as any, format);
+	if (errors) {
+		buf += `<div style="padding:8px;background:#fee;border:1px solid #c66;border-radius:4px">`;
+		buf += `<strong style="color:#c00">❌ 不兼容 ${Utils.escapeHTML(formatName)}</strong>`;
+		buf += `<ul>`;
+		for (const e of errors) buf += `<li>${Utils.escapeHTML(e)}</li>`;
+		buf += `</ul>`;
+		buf += `</div>`;
+	} else {
+		buf += `<div style="padding:8px;background:#efe;border:1px solid #6c6;border-radius:4px">`;
+		buf += `<strong style="color:#060">✓ 兼容 ${Utils.escapeHTML(formatName)}</strong>`;
+		buf += `</div>`;
+		buf += `<p>`;
+		const already = content.formats.includes(format);
+		if (already) {
+			buf += `<small>（已挂在该队伍上）</small>`;
+		} else if (unlocked) {
+			buf += `<button class="button notifying" name="send" ` +
+				`value="/npcadmin team addformat ${fileName}, ${format}">添加该分级</button>`;
+		} else {
+			buf += `<small>（解锁后可添加）</small>`;
+		}
+		buf += `</p>`;
+	}
+	buf += `</div>`;
+	return buf;
+}
+
 export const pages: Chat.PageTable = {
 	npcadmin(query, user) {
 		this.title = '[NPC 管理]';
@@ -681,8 +707,16 @@ export const pages: Chat.PageTable = {
 		if (!sub) return renderOverview(user);
 		if (sub === 'new') return renderEdit(user, null);
 		if (sub === 'edit') {
+			// 文件名可能含 '-'，整段 join 回来
 			const fileName = rest.join('-');
 			return renderEdit(user, fileName);
+		}
+		if (sub === 'validate') {
+			// 格式 id 由 toID 产生，必为纯 alphanum，所以是最后一段；前面全是文件名
+			if (rest.length < 2) return renderOverview(user);
+			const format = rest[rest.length - 1];
+			const fileName = rest.slice(0, -1).join('-');
+			return renderValidate(user, fileName, format);
 		}
 		return renderOverview(user);
 	},

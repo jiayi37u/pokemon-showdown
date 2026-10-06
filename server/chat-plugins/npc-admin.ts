@@ -1,35 +1,33 @@
 /**
- * NPC Admin —— 管理 NPC 和它们的队伍，不走命令行改源文件。
+ * NPC Admin —— 网页端管理 NPC 队伍。
  *
- * 入口：`/npcadmin` 页面；所有改写操作都需要先用密钥解锁本 session。
+ * 入口：`/npcadmin` 页面；写操作要先用密钥解锁本 session。
  *
- * 核心命令（全部要先 unlock）：
- *   /npcadmin unlock KEY           - 解锁，30 分钟内有效
- *   /npcadmin lock                 - 立即锁回去
- *   /npcadmin reload               - 重新读取 templates.json 和所有 teams/*.json
- *   /npcadmin team import NPC,格式,游戏类型,[队伍名称]
- *                                     [换行]
- *                                     PS 导出的 team 文本...
- *                                 - 把粘贴的 Teambuilder 文本保存成 teams/*.json
- *                                   并把文件名挂到 templates.json 对应槽位里
- *   /npcadmin team delete NPC,格式,游戏类型,文件名
- *                                 - 从磁盘删掉 team.json 并从 templates 里摘掉
- *   /npcadmin team rename NPC,格式,游戏类型,文件名,新名称
- *                                 - 只改 team.json 内的 name 字段
+ * 页面结构：
+ *   view-npcadmin                  —— 概览，列出所有 NPC + 队伍（队伍名+psicon）
+ *   view-npcadmin-edit-FILENAME    —— 编辑单个队伍（队伍名、格式、所属 NPC + Teambuilder 文本）
+ *   view-npcadmin-new              —— 新建队伍
  *
- * 对所有玩家开放，但解锁密钥硬编码。生产部署前应改成 Config 读取或者走管理员权限。
+ * 命令（都要先 unlock）：
+ *   /npcadmin unlock KEY           —— 解锁，30 分钟
+ *   /npcadmin lock                 —— 立即锁回去
+ *   /npcadmin reload               —— 重读 templates.json + teams/*.json
+ *   /npcadmin team save fileName|name|format|gameType|npcId|teamText
+ *                                   —— 保存（fileName 为空 → 新建；非空 → 编辑原文件）
+ *   /npcadmin team delete fileName —— 从磁盘删掉 + 从 templates 摘掉
+ *
+ * 参数用 '|' 分隔是因为 team 文本里会有逗号；'|' 在 PS Export 里不出现。
+ * 密钥硬编码 `963741`，仅适合单机开发；生产部署前应改成 Config / 权限系统。
  */
 
 import { Teams, type PokemonSet } from '../../sim/teams';
 import { Utils } from '../../lib';
 import { NPC, type NPCTemplate, type NPCTeamFile } from '../npc/manager';
 
-// 硬编码的 session 密钥
 const ADMIN_KEY = '963741';
-// 解锁有效时间（毫秒）
 const UNLOCK_TTL = 30 * 60 * 1000;
 
-/** 已解锁的用户 → 解锁时间戳 */
+/** userid → unlockTimestamp */
 const unlockedUsers = new Map<string, number>();
 
 function isUnlocked(user: User): boolean {
@@ -42,24 +40,23 @@ function isUnlocked(user: User): boolean {
 	return true;
 }
 
-function requireUnlock(this: Chat.CommandContext, user: User): void {
+function requireUnlock(user: User): void {
 	if (!isUnlocked(user)) {
 		throw new Chat.ErrorMessage(`管理功能已锁定，先用 \`/npcadmin unlock KEY\` 解锁（30 分钟有效）。`);
 	}
 }
 
-type GameType = 'singles' | 'doubles' | 'multi' | 'randombattle';
-const GAME_TYPES: readonly GameType[] = ['singles', 'doubles', 'multi', 'randombattle'];
+type GameType = 'singles' | 'doubles' | 'multi';
+const GAME_TYPES: readonly GameType[] = ['singles', 'doubles', 'multi'];
 
 function parseGameType(input: string): GameType {
-	const g = input.trim().toLowerCase();
-	if (!GAME_TYPES.includes(g as GameType)) {
-		throw new Chat.ErrorMessage(`游戏类型必须是 singles | doubles | multi | randombattle，收到 "${input}"`);
+	const g = input.trim().toLowerCase() as GameType;
+	if (!GAME_TYPES.includes(g)) {
+		throw new Chat.ErrorMessage(`游戏类型必须是 singles / doubles / multi，收到 "${input}"`);
 	}
-	return g as GameType;
+	return g;
 }
 
-/** 生成一个新的 team 文件名，形如 "npcId-format-N.json"，N 自动递增避免覆盖。 */
 function nextTeamFileName(npcId: string, format: string, existing: string[]): string {
 	const base = `${npcId}-${format}`;
 	const used = new Set(existing);
@@ -70,39 +67,33 @@ function nextTeamFileName(npcId: string, format: string, existing: string[]): st
 	throw new Error('team filename counter overflow');
 }
 
-/**
- * 把 templates 对应 slot 的队伍文件列表拿出来；如果层级不存在就一路创建。
- * randombattle 槽位结构不同（string[]），用别的函数处理。
- */
-function getTeamSlot(
-	template: NPCTemplate,
-	gameType: 'singles' | 'doubles' | 'multi',
-	format: string
-): string[] {
+function getTeamSlot(template: NPCTemplate, gameType: GameType, format: string): string[] {
 	if (!template.teams[gameType]) template.teams[gameType] = {};
 	const bucket = template.teams[gameType]!;
 	if (!bucket[format]) bucket[format] = [];
 	return bucket[format];
 }
 
-function removeTeamFromTemplate(
-	template: NPCTemplate,
-	gameType: 'singles' | 'doubles' | 'multi',
-	format: string,
-	teamFile: string
-): boolean {
-	const slot = template.teams[gameType]?.[format];
-	if (!slot) return false;
-	const idx = slot.indexOf(teamFile);
-	if (idx < 0) return false;
-	slot.splice(idx, 1);
-	if (slot.length === 0) {
-		delete template.teams[gameType]![format];
+function removeTeamFromAllTemplates(templates: { [id: string]: NPCTemplate }, teamFile: string): string[] {
+	const affected: string[] = [];
+	for (const id of Object.keys(templates)) {
+		const t = templates[id];
+		for (const gt of GAME_TYPES) {
+			const bucket = t.teams[gt];
+			if (!bucket) continue;
+			for (const format of Object.keys(bucket)) {
+				const idx = bucket[format].indexOf(teamFile);
+				if (idx >= 0) {
+					bucket[format].splice(idx, 1);
+					affected.push(`${id}/${gt}/${format}`);
+					if (bucket[format].length === 0) delete bucket[format];
+				}
+			}
+		}
 	}
-	return true;
+	return affected;
 }
 
-/** 把 PS 导出文本转成 PokemonSet[]。失败抛错。 */
 function parseImportedTeam(text: string): PokemonSet[] {
 	const sets = Teams.import(text.trim());
 	if (!sets?.length) {
@@ -111,6 +102,51 @@ function parseImportedTeam(text: string): PokemonSet[] {
 	return sets;
 }
 
+/** 在 templates 里挂上/移动 teamFile 到指定 NPC / gameType / format，顺手把其他地方的同名引用清掉 */
+function reattachTeamFile(
+	templates: { [id: string]: NPCTemplate },
+	teamFile: string,
+	npcId: string,
+	gameType: GameType,
+	format: string
+): void {
+	// 先清掉所有旧挂载
+	removeTeamFromAllTemplates(templates, teamFile);
+	const template = templates[npcId];
+	if (!template) throw new Chat.ErrorMessage(`NPC 不存在：${npcId}`);
+	const slot = getTeamSlot(template, gameType, format);
+	slot.push(teamFile);
+}
+
+/** 用 '|' 拆分 team save 的参数。前 5 段 | 为元数据，之后全是 team body（body 自己可以含 |）。 */
+function parseSaveTarget(target: string): {
+	fileName: string; name: string; format: string; gameType: GameType; npcId: string; teamText: string;
+} {
+	// 用 '|' 分段：fileName|name|format|gameType|npcId|teamText...
+	const parts: string[] = [];
+	let rest = target;
+	for (let i = 0; i < 5; i++) {
+		const idx = rest.indexOf('|');
+		if (idx < 0) throw new Chat.ErrorMessage(`参数格式错误：期望 6 段以 '|' 分隔`);
+		parts.push(rest.slice(0, idx));
+		rest = rest.slice(idx + 1);
+	}
+	parts.push(rest); // teamText 可能自身含 '|'，整段取
+	const [fileName, name, format, gameTypeRaw, npcId, teamText] = parts.map(s => s.trim());
+	return {
+		fileName: fileName.trim(),
+		name: name.trim(),
+		format: toID(format),
+		gameType: parseGameType(gameTypeRaw),
+		npcId: toID(npcId),
+		teamText,
+	};
+}
+
+// =============================================================================
+// Commands
+// =============================================================================
+
 export const commands: Chat.ChatCommands = {
 	npcadmin: {
 		''(target, room, user) {
@@ -118,12 +154,11 @@ export const commands: Chat.ChatCommands = {
 		},
 
 		unlock(target, room, user) {
-			const key = target.trim();
-			if (key !== ADMIN_KEY) {
+			if (target.trim() !== ADMIN_KEY) {
 				return this.errorReply(`密钥不正确。`);
 			}
 			unlockedUsers.set(user.id, Date.now());
-			this.sendReply(`✓ NPC 管理已解锁，30 分钟内可执行管理命令。打开 /npcadmin 面板。`);
+			this.sendReply(`✓ NPC 管理已解锁（30 分钟）。`);
 			return this.parse(`/j view-npcadmin`);
 		},
 
@@ -133,196 +168,80 @@ export const commands: Chat.ChatCommands = {
 		},
 
 		reload(target, room, user) {
-			requireUnlock.call(this, user);
+			requireUnlock(user);
 			NPC.reload();
 			this.sendReply(`✓ NPC 配置已重载（共 ${NPC.count} 个 NPC）。`);
 		},
 
 		team: {
-			import(target, room, user) {
-				requireUnlock.call(this, user);
-				// 用户输入格式：npcId, format, gameType, teamName \n Teambuilder export text
-				// chat 层的 target 已经把参数行传过来。为了允许多行队伍文本，我们按首行作参数，
-				// 剩下的做队伍 body。
-				const [paramLine, ...bodyLines] = target.split('\n');
-				const params = paramLine.split(',').map(s => s.trim());
-				const npcId = toID(params[0]);
-				const format = toID(params[1]);
-				const gameTypeRaw = params[2];
-				const teamName = (params[3] || '').trim();
-				const body = bodyLines.join('\n');
-
-				if (!npcId || !format || !gameTypeRaw || !body) {
-					return this.errorReply(
-						`用法：/npcadmin team import npcId, format, gameType, 队伍名称` +
-						`\n（下一行开始粘贴 PS Teambuilder Export）`
-					);
-				}
-				const gameType = parseGameType(gameTypeRaw);
-				if (gameType === 'randombattle') {
-					return this.errorReply(`randombattle 格式不需要上传队伍（PS 会生成）。`);
-				}
+			save(target, room, user) {
+				requireUnlock(user);
+				const { fileName, name, format, gameType, npcId, teamText } = parseSaveTarget(target);
+				const pokemon = parseImportedTeam(teamText);
 
 				const templates = NPC.readTemplatesRaw();
 				const template = templates[npcId];
 				if (!template) return this.errorReply(`NPC 不存在：${npcId}`);
 
-				// 解析队伍文本
-				const pokemon = parseImportedTeam(body);
+				// 决定文件名：空 → 新建；非空 → 覆盖已有
+				let finalFileName = fileName;
+				if (!finalFileName) {
+					const slot = getTeamSlot(template, gameType, format);
+					finalFileName = nextTeamFileName(npcId, format, slot);
+				} else {
+					// 既有文件：如果 npc/format/gameType 变了，要重新挂载
+				}
 
-				// 文件名
-				const slot = getTeamSlot(template, gameType, format);
-				const fileName = nextTeamFileName(npcId, format, slot);
+				const content: NPCTeamFile = { format, pokemon };
+				if (name) content.name = name;
+				NPC.writeTeamFile(finalFileName, content);
 
-				// 写盘
-				const teamFileContent: NPCTeamFile = {
-					format,
-					pokemon,
-				};
-				if (teamName) teamFileContent.name = teamName;
-				NPC.writeTeamFile(fileName, teamFileContent);
-
-				// 更新 templates
-				slot.push(fileName);
+				reattachTeamFile(templates, finalFileName, npcId, gameType, format);
 				NPC.writeTemplates(templates);
 				NPC.reload();
 
 				this.sendReply(
-					`✓ 已为 ${template.name} 导入队伍（${gameType}/${format}）：${fileName}` +
-					`${teamName ? `（${teamName}）` : ''}，共 ${pokemon.length} 只精灵。`
+					`✓ 已保存 ${finalFileName}（${template.name} · ${gameType}/${format}` +
+					`${name ? ` · ${name}` : ''}，${pokemon.length} 只精灵）。`
 				);
 				return this.parse(`/j view-npcadmin`);
 			},
 
 			delete(target, room, user) {
-				requireUnlock.call(this, user);
-				const params = target.split(',').map(s => s.trim());
-				const [npcIdRaw, formatRaw, gameTypeRaw, fileName] = params;
-				const npcId = toID(npcIdRaw);
-				const format = toID(formatRaw);
-				if (!npcId || !format || !gameTypeRaw || !fileName) {
-					return this.errorReply(
-						`用法：/npcadmin team delete npcId, format, gameType, fileName`
-					);
-				}
-				const gameType = parseGameType(gameTypeRaw);
-				if (gameType === 'randombattle') {
-					return this.errorReply(`randombattle 不存队伍文件。`);
-				}
+				requireUnlock(user);
+				const fileName = target.trim();
+				if (!fileName) return this.errorReply(`用法：/npcadmin team delete fileName`);
 
 				const templates = NPC.readTemplatesRaw();
-				const template = templates[npcId];
-				if (!template) return this.errorReply(`NPC 不存在：${npcId}`);
-
-				const removed = removeTeamFromTemplate(template, gameType, format, fileName);
-				if (!removed) {
-					return this.errorReply(
-						`${template.name} 的 ${gameType}/${format} 下没找到 ${fileName}。`
-					);
-				}
-				NPC.deleteTeamFile(fileName);
+				const affected = removeTeamFromAllTemplates(templates, fileName);
 				NPC.writeTemplates(templates);
+				const deleted = NPC.deleteTeamFile(fileName);
 				NPC.reload();
 
-				this.sendReply(`✓ 已删除 ${template.name} 的队伍：${fileName}`);
-				return this.parse(`/j view-npcadmin`);
-			},
-
-			rename(target, room, user) {
-				requireUnlock.call(this, user);
-				// npcId, format, gameType, fileName, newName
-				const params = target.split(',').map(s => s.trim());
-				const [npcIdRaw, formatRaw, gameTypeRaw, fileName, ...nameParts] = params;
-				const newName = nameParts.join(',').trim();
-				if (!npcIdRaw || !formatRaw || !gameTypeRaw || !fileName || !newName) {
-					return this.errorReply(
-						`用法：/npcadmin team rename npcId, format, gameType, fileName, 新名称`
-					);
+				if (!deleted && !affected.length) {
+					return this.errorReply(`${fileName} 不存在。`);
 				}
-				parseGameType(gameTypeRaw); // 只做校验，不用
-
-				const content = NPC.readTeamFile(fileName);
-				if (!content) return this.errorReply(`队伍文件不存在：${fileName}`);
-				content.name = newName;
-				NPC.writeTeamFile(fileName, content);
-				NPC.reload();
-
-				this.sendReply(`✓ ${fileName} 的名称已改为"${newName}"`);
+				this.sendReply(
+					`✓ 已删除 ${fileName}` +
+					(affected.length ? `（从 ${affected.join(', ')} 摘掉）` : '')
+				);
 				return this.parse(`/j view-npcadmin`);
 			},
 		},
 	},
 };
 
-// -----------------------------------------------------------------------------
-// 页面
-// -----------------------------------------------------------------------------
+// =============================================================================
+// Pages
+// =============================================================================
 
 function renderPsicons(pokemon: PokemonSet[]): string {
 	return pokemon.map(p => `<psicon pokemon="${Utils.escapeHTML(p.species)}" />`).join('');
 }
 
-/** 渲染一个 NPC 的 teams 面板 */
-function renderNPCCard(template: NPCTemplate, unlocked: boolean): string {
-	let buf = `<details open><summary><strong>${Utils.escapeHTML(template.name)}</strong> `;
-	buf += `<small>(${template.id}) · ${template.difficulty}</small>`;
-	if (template.title) buf += ` <small>— ${Utils.escapeHTML(template.title)}</small>`;
-	buf += `</summary>`;
-
-	// 列出 singles / doubles / multi 下所有格式和队伍
-	for (const gameType of ['singles', 'doubles', 'multi'] as const) {
-		const bucket = template.teams[gameType];
-		if (!bucket) continue;
-		for (const format of Object.keys(bucket)) {
-			const files = bucket[format];
-			if (!files?.length) continue;
-			buf += `<div style="margin:4px 0 4px 12px"><em>${gameType} / ${Utils.escapeHTML(format)}</em>`;
-			buf += `<table style="margin-left:12px"><tbody>`;
-			for (const file of files) {
-				const content = NPC.readTeamFile(file);
-				const displayName = content?.name || `(未命名)`;
-				const icons = content?.pokemon ? renderPsicons(content.pokemon) : '';
-				buf += `<tr>`;
-				buf += `<td style="min-width:140px"><strong>${Utils.escapeHTML(displayName)}</strong></td>`;
-				buf += `<td style="padding:0 8px">${icons}</td>`;
-				buf += `<td>`;
-				if (unlocked) {
-					const delCmd = `/npcadmin team delete ${template.id}, ${format}, ${gameType}, ${file}`;
-					const renameHint = `/npcadmin team rename ${template.id}, ${format}, ${gameType}, ${file}, 新名称`;
-					buf += `<button class="button" name="send" value="${delCmd}">删除</button> `;
-					buf += `<button class="button" name="send" value="/raw <small>复制下方命令，把"新名称"改成实际名字再发送：</small><br/><code>${Utils.escapeHTML(renameHint)}</code>">改名</button>`;
-				} else {
-					buf += `<small>（解锁后可操作）</small>`;
-				}
-				buf += `</td></tr>`;
-			}
-			buf += `</tbody></table>`;
-			if (unlocked) {
-				buf += `<small style="margin-left:12px;color:#888">` +
-					`在聊天框粘贴：<code>/npcadmin team import ${template.id}, ${format}, ${gameType}, 队伍名称</code>` +
-					`，另起一行粘贴 Teambuilder Export 文本提交。` +
-					`</small>`;
-			}
-			buf += `</div>`;
-		}
-	}
-
-	// 列出 randombattle
-	if (template.teams.randombattle?.length) {
-		buf += `<div style="margin:4px 0 4px 12px"><em>randombattle</em>: ${
-			template.teams.randombattle.map(f => Utils.escapeHTML(f)).join(', ')
-		}</div>`;
-	}
-
-	buf += `</details>`;
-	return buf;
-}
-
-function renderAdminPage(user: User): string {
+function renderUnlockBar(user: User): string {
 	const unlocked = isUnlocked(user);
-	let buf = `<div class="pad">`;
-	buf += `<h2>NPC 管理面板</h2>`;
-
+	let buf = ``;
 	if (!unlocked) {
 		buf += `<p style="color:#c00"><strong>当前未解锁</strong>。写操作被禁用。</p>`;
 		buf += `<p>在聊天框输入 <code>/npcadmin unlock 你的密钥</code> 解锁 30 分钟。</p>`;
@@ -330,40 +249,148 @@ function renderAdminPage(user: User): string {
 		const left = Math.floor((UNLOCK_TTL - (Date.now() - (unlockedUsers.get(user.id) || 0))) / 60000);
 		buf += `<p style="color:#060"><strong>✓ 已解锁</strong>（剩 ${left} 分钟）。`;
 		buf += ` <button class="button" name="send" value="/npcadmin lock">锁定</button>`;
-		buf += ` <button class="button" name="send" value="/npcadmin reload">重载缓存</button>`;
-		buf += `</p>`;
+		buf += ` <button class="button" name="send" value="/npcadmin reload">重载缓存</button></p>`;
 	}
+	return buf;
+}
 
-	buf += `<p><button class="button" name="send" value="/j view-npcadmin"><i class="fa fa-refresh"></i> 刷新</button></p>`;
+/** 概览页：所有 NPC + 其队伍 */
+function renderOverview(user: User): string {
+	const unlocked = isUnlocked(user);
+	let buf = `<div class="pad">`;
+	buf += `<h2>NPC 管理面板</h2>`;
+	buf += renderUnlockBar(user);
+	buf += `<p>`;
+	buf += `<button class="button" name="send" value="/j view-npcadmin"><i class="fa fa-refresh"></i> 刷新</button> `;
+	if (unlocked) {
+		buf += `<button class="button notifying" name="send" value="/j view-npcadmin-new"><i class="fa fa-plus"></i> 新建队伍</button>`;
+	}
+	buf += `</p><hr/>`;
 
-	// 用法说明
-	buf += `<details><summary><strong>如何导入队伍？</strong></summary>`;
-	buf += `<ol>`;
-	buf += `<li>在 PS Teambuilder 里编好一队，点"Export"复制整段文本</li>`;
-	buf += `<li>在聊天框先打一行参数：<code>/npcadmin team import NPC_ID, 格式, 游戏类型, 队伍名称</code></li>`;
-	buf += `<li>紧接着另起一行粘贴刚才复制的队伍文本，一起发送</li>`;
-	buf += `<li>示例：<pre style="background:#f0f0f0;padding:6px">/npcadmin team import gymbrock, gen9nationaldex, singles, 沙暴地龙队
-Tyranitar @ Leftovers
-Ability: Sand Stream
-EVs: 252 HP / 252 Atk / 4 SpD
-Adamant Nature
-- Stone Edge
-...（后面省略）</pre></li>`;
-	buf += `</ol>`;
-	buf += `</details>`;
-
-	buf += `<hr/>`;
-
-	// 列出所有 NPC
 	const npcs = NPC.getAll();
 	if (!npcs.length) {
-		buf += `<p>尚未定义任何 NPC。</p>`;
-	} else {
-		for (const npc of npcs) {
-			buf += renderNPCCard(npc, unlocked);
-		}
+		buf += `<p>尚未定义任何 NPC。</p></div>`;
+		return buf;
 	}
 
+	for (const npc of npcs) {
+		buf += `<details open><summary><strong>${Utils.escapeHTML(npc.name)}</strong>`;
+		buf += ` <small>(${npc.id}) · ${npc.difficulty}</small>`;
+		if (npc.title) buf += ` <small>— ${Utils.escapeHTML(npc.title)}</small>`;
+		buf += `</summary>`;
+
+		for (const gt of GAME_TYPES) {
+			const bucket = npc.teams[gt];
+			if (!bucket) continue;
+			for (const format of Object.keys(bucket)) {
+				const files = bucket[format];
+				if (!files?.length) continue;
+				buf += `<div style="margin:4px 0 4px 12px"><em>${gt} / ${Utils.escapeHTML(format)}</em>`;
+				buf += `<table style="margin-left:12px"><tbody>`;
+				for (const file of files) {
+					const content = NPC.readTeamFile(file);
+					const name = content?.name || '(未命名)';
+					const icons = content?.pokemon ? renderPsicons(content.pokemon) : '';
+					buf += `<tr>`;
+					buf += `<td style="min-width:160px"><strong>${Utils.escapeHTML(name)}</strong></td>`;
+					buf += `<td style="padding:0 8px">${icons}</td>`;
+					buf += `<td>`;
+					if (unlocked) {
+						buf += `<button class="button" name="send" value="/j view-npcadmin-edit-${file}">编辑</button> `;
+						buf += `<button class="button" name="send" value="/npcadmin team delete ${file}">删除</button>`;
+					} else {
+						buf += `<button class="button" name="send" value="/j view-npcadmin-edit-${file}">查看</button>`;
+					}
+					buf += `</td></tr>`;
+				}
+				buf += `</tbody></table></div>`;
+			}
+		}
+
+		if (npc.teams.randombattle?.length) {
+			buf += `<div style="margin:4px 0 4px 12px"><em>randombattle</em>: ${
+				npc.teams.randombattle.map(f => Utils.escapeHTML(f)).join(', ')
+			}（PS 自带生成，无文件可编辑）</div>`;
+		}
+		buf += `</details>`;
+	}
+
+	buf += `</div>`;
+	return buf;
+}
+
+/** 编辑/查看单个队伍文件；没有 fileName 时渲染新建 */
+function renderEdit(user: User, fileName: string | null): string {
+	const unlocked = isUnlocked(user);
+	const npcs = NPC.getAll();
+	const content = fileName ? NPC.readTeamFile(fileName) : null;
+
+	// 找出该文件当前挂在哪里
+	let currentNpcId = '';
+	let currentGameType: GameType = 'singles';
+	if (fileName) {
+		for (const npc of npcs) {
+			for (const gt of GAME_TYPES) {
+				const bucket = npc.teams[gt];
+				if (!bucket) continue;
+				for (const format of Object.keys(bucket)) {
+					if (bucket[format].includes(fileName)) {
+						currentNpcId = npc.id;
+						currentGameType = gt;
+						break;
+					}
+				}
+			}
+		}
+	}
+	const currentFormat = content?.format || '';
+	const currentName = content?.name || '';
+	const currentText = content?.pokemon ? Teams.export(content.pokemon) : '';
+
+	let buf = `<div class="pad">`;
+	buf += `<p><button class="button" name="send" value="/j view-npcadmin">← 返回列表</button></p>`;
+	buf += `<h2>${fileName ? '编辑队伍' : '新建队伍'}</h2>`;
+	if (fileName) buf += `<p><small>文件：<code>${Utils.escapeHTML(fileName)}</code></small></p>`;
+	buf += renderUnlockBar(user);
+
+	if (!unlocked) {
+		// 只读显示
+		buf += `<p><strong>队伍名称：</strong>${Utils.escapeHTML(currentName || '(未命名)')}</p>`;
+		buf += `<p><strong>格式：</strong>${Utils.escapeHTML(currentFormat)}</p>`;
+		buf += `<p><strong>game-type：</strong>${currentGameType}</p>`;
+		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(currentNpcId || '(未关联)')}</p>`;
+		buf += `<pre style="background:#f0f0f0;padding:8px;max-height:600px;overflow:auto">${
+			Utils.escapeHTML(currentText) || '(无内容)'
+		}</pre>`;
+		buf += `</div>`;
+		return buf;
+	}
+
+	// 已解锁：表单
+	buf += `<form data-submitsend="/npcadmin team save ${fileName}|{name}|{format}|{gameType}|{npcId}|{team}">`;
+	buf += `<p><label>队伍名称: <input class="textbox" name="name" value="${Utils.escapeHTML(currentName)}" style="width:300px" placeholder="例：沙暴地龙队" /></label></p>`;
+	buf += `<p><label>所属 NPC: <select name="npcId">`;
+	for (const npc of npcs) {
+		const sel = npc.id === currentNpcId ? ' selected' : '';
+		buf += `<option value="${npc.id}"${sel}>${Utils.escapeHTML(npc.name)} (${npc.id})</option>`;
+	}
+	buf += `</select></label></p>`;
+	buf += `<p><label>game-type: <select name="gameType">`;
+	for (const gt of GAME_TYPES) {
+		const sel = gt === currentGameType ? ' selected' : '';
+		buf += `<option value="${gt}"${sel}>${gt}</option>`;
+	}
+	buf += `</select></label></p>`;
+	buf += `<p><label>格式 (format id, 例 gen9nationaldex): <input class="textbox" name="format" value="${Utils.escapeHTML(currentFormat)}" style="width:300px" placeholder="gen9nationaldex" /></label></p>`;
+	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong></p>`;
+	buf += `<textarea name="team" style="width:100%;min-height:400px;font-family:monospace;font-size:12px" placeholder="直接从 PS Teambuilder 的 Import/Export 复制过来">${Utils.escapeHTML(currentText)}</textarea>`;
+	buf += `<p>`;
+	buf += `<button class="button notifying" type="submit">保存</button> `;
+	if (fileName) {
+		buf += ` <button class="button" name="send" value="/npcadmin team delete ${fileName}" style="color:#c00">删除此队伍</button>`;
+	}
+	buf += `</p>`;
+	buf += `</form>`;
 	buf += `</div>`;
 	return buf;
 }
@@ -371,6 +398,13 @@ Adamant Nature
 export const pages: Chat.PageTable = {
 	npcadmin(query, user) {
 		this.title = '[NPC 管理]';
-		return renderAdminPage(user);
+		const [sub, ...rest] = query;
+		if (!sub) return renderOverview(user);
+		if (sub === 'new') return renderEdit(user, null);
+		if (sub === 'edit') {
+			const fileName = rest.join('-');
+			return renderEdit(user, fileName);
+		}
+		return renderOverview(user);
 	},
 };

@@ -2,54 +2,63 @@
 
 ## [已发布]
 
-### v1.2.24 - NPC 管理面板（网页端队伍 CRUD） (2026-10-06)
+### v1.2.25 - NPC 管理面板改为页面表单编辑 (2026-10-06)
 
-**背景**: 以前新建 / 修改 NPC 队伍必须直接编辑项目文件，重启服务才生效。现在接入 PS 页面系统，玩家在 Teambuilder 里编好队伍 → Export 文本 → 粘到管理页面即可保存。
+**背景**: v1.2.24 的粘贴命令体验差，必须手动拼长命令。改成"点编辑 → 弹表单 → 直接改 → 保存"的流程。
 
-**新增命令**（走密钥解锁，30 分钟 session）:
+**页面结构**:
+- `view-npcadmin` 概览：所有 NPC + 队伍（名称 + psicon）+ [编辑][删除] 按钮 + [新建队伍]
+- `view-npcadmin-edit-FILENAME` 单队编辑：
+  - 队伍名称 input
+  - 所属 NPC select（从现有 NPC 列表拉）
+  - game-type select（singles / doubles / multi）
+  - format input（gen9nationaldex / ...）
+  - **大 textarea 直接改 PS Teambuilder Export 文本**，等宽字体
+  - [保存] / [删除此队伍]
+- `view-npcadmin-new` 新建：同上但空白预填
+
+**命令**（走表单提交，玩家不需要手打）:
 | 命令 | 说明 |
 |---|---|
-| `/npcadmin unlock KEY` | 用密钥（硬编码 `963741`）解锁本 session 的管理权限 |
-| `/npcadmin lock` | 立即锁回去 |
-| `/npcadmin reload` | 重读 templates.json + teams/*.json，不用重启 |
-| `/npcadmin team import NPC,格式,游戏类型,队伍名称 ⏎ <粘贴 Teambuilder 文本>` | 保存队伍文件 + 更新 templates.json |
-| `/npcadmin team delete NPC,格式,游戏类型,文件名` | 删除队伍文件 + 从 templates 摘掉 |
-| `/npcadmin team rename NPC,格式,游戏类型,文件名,新名称` | 只改 team.json 的 name 字段 |
+| `/npcadmin unlock KEY` | 解锁 session 30 分钟 |
+| `/npcadmin lock` | 立即锁 |
+| `/npcadmin reload` | 重读配置 |
+| `/npcadmin team save fileName\|name\|format\|gameType\|npcId\|teamText` | 保存（fileName 空=新建）|
+| `/npcadmin team delete fileName` | 删除 |
 
-**页面**: `/npcadmin` 或 `/j view-npcadmin`
-- 列出所有 NPC + 其队伍（按 game-type / format 分组）
-- 每个队伍显示：**队伍名称（中文）+ 6 只精灵 psicon 图标**（PS 原生 20×20 像素图标）
-- 解锁后每个队伍带 [删除] / [改名] 按钮
-- 页面顶部的用法说明可以折叠展开
+参数用 `|` 分段（PS Export 里不出现），teamText 可以含逗号/换行；命令走 `parse` 路径跳过 1000 字符长度限制。
 
-**NPC team file schema 扩展**:
-```typescript
-interface NPCTeamFile {
-  format: string;
-  pokemon: PokemonSet[];
-  name?: string;  // 新增：中文显示名（例"沙暴地龙队"），不影响业务逻辑
-}
-```
+**关键 PS 机制利用**:
+- `<form data-submitsend="/cmd {name}|{format}|...">` + `<textarea name="team">`：PS 客户端把表单字段按名字替换到命令里，支持多行 textarea 原样提交
+- `<psicon pokemon="xxx" />`：PS 原生 20×20 像素精灵图标
+- 命令手势走 `this.parse()`，长度不受 1000 字符聊天限制
 
-**NPCManager 加 CRUD 方法**（避免 chat plugin 乱碰 FS）:
-- `readTeamFile(fileName)` / `writeTeamFile(fileName, content)` / `deleteTeamFile(fileName)`
-- `readTemplatesRaw()` / `writeTemplates(all)`
-- 文件名校验正则：`^[a-zA-Z0-9._-]+\.json$`，拒绝 `../` 等逃逸
+**自动行为**:
+- 保存时如果换了 NPC / 格式 / gameType，自动从旧挂载点摘掉重新挂到新位置
+- 删除同时从所有 template 的引用里摘掉
+- 每次写操作后自动 `NPC.reload()`
+
+**NPCManager 增量**: 加 `readTeamFile / writeTeamFile / deleteTeamFile / readTemplatesRaw / writeTemplates`，文件名正则校验 `^[a-zA-Z0-9._-]+\.json$` 防路径逃逸。
 
 **不做的事（KNOWN LIMITATION）**:
-- NPC 本身的 CRUD（新建 NPC / 删除 NPC / 改 avatar/title）：下一版本做
-- 单只精灵级别的编辑（替换单只不用重传整队）：工作量太大，依赖玩家在 PS Teambuilder 里编
-- 真正的权限系统：现在用硬编码密钥，适合单机开发；生产部署前应改成 Config / 全局权限
+- NPC 本身的 CRUD（新建 NPC / 删除 NPC / 改模板字段）：下一版本做
+- 单只精灵的字段级编辑：工作量太大，依赖玩家在 PS Teambuilder 里编
+- 真正的权限系统：现在用硬编码密钥
 
 **文件变更**:
 | 文件 | 变更 |
 |------|------|
-| server/npc/manager.ts | NPCTeamFile 加 name 字段；新增 readTeamFile / writeTeamFile / deleteTeamFile / readTemplatesRaw / writeTemplates |
-| server/chat-plugins/npc-admin.ts | 新建，commands + pages |
-
-**测试**: `node -e` 冒烟验证了 read/write/delete 往返、文件名逃逸拒绝；398 unit tests 不受影响全过。
+| server/npc/manager.ts | NPCTeamFile 加 name 字段；新增 CRUD 方法 |
+| server/chat-plugins/npc-admin.ts | 新建，含页面表单 + 命令 |
 
 ---
+
+### v1.2.24 - NPC 管理面板（网页端队伍 CRUD） (2026-10-06)
+
+初版使用聊天粘贴命令，已被 v1.2.25 的表单版本替换。保留在 git 历史里作为参考。
+
+---
+
 
 ### v1.2.23 - 对手 preset 覆盖伤害估算 (2026-10-05)
 

@@ -2,6 +2,64 @@
 
 ## [已发布]
 
+### v1.2.25 - NPC 管理面板改为页面表单编辑 (2026-10-06)
+
+**背景**: v1.2.24 的粘贴命令体验差，必须手动拼长命令。改成"点编辑 → 弹表单 → 直接改 → 保存"的流程。
+
+**页面结构**:
+- `view-npcadmin` 概览：所有 NPC + 队伍（名称 + psicon）+ [编辑][删除] 按钮 + [新建队伍]
+- `view-npcadmin-edit-FILENAME` 单队编辑：
+  - 队伍名称 input
+  - 所属 NPC select（从现有 NPC 列表拉）
+  - game-type select（singles / doubles / multi）
+  - format input（gen9nationaldex / ...）
+  - **大 textarea 直接改 PS Teambuilder Export 文本**，等宽字体
+  - [保存] / [删除此队伍]
+- `view-npcadmin-new` 新建：同上但空白预填
+
+**命令**（走表单提交，玩家不需要手打）:
+| 命令 | 说明 |
+|---|---|
+| `/npcadmin unlock KEY` | 解锁 session 30 分钟 |
+| `/npcadmin lock` | 立即锁 |
+| `/npcadmin reload` | 重读配置 |
+| `/npcadmin team save fileName\|name\|format\|gameType\|npcId\|teamText` | 保存（fileName 空=新建）|
+| `/npcadmin team delete fileName` | 删除 |
+
+参数用 `|` 分段（PS Export 里不出现），teamText 可以含逗号/换行；命令走 `parse` 路径跳过 1000 字符长度限制。
+
+**关键 PS 机制利用**:
+- `<form data-submitsend="/cmd {name}|{format}|...">` + `<textarea name="team">`：PS 客户端把表单字段按名字替换到命令里，支持多行 textarea 原样提交
+- `<psicon pokemon="xxx" />`：PS 原生 20×20 像素精灵图标
+- 命令手势走 `this.parse()`，长度不受 1000 字符聊天限制
+
+**自动行为**:
+- 保存时如果换了 NPC / 格式 / gameType，自动从旧挂载点摘掉重新挂到新位置
+- 删除同时从所有 template 的引用里摘掉
+- 每次写操作后自动 `NPC.reload()`
+
+**NPCManager 增量**: 加 `readTeamFile / writeTeamFile / deleteTeamFile / readTemplatesRaw / writeTemplates`，文件名正则校验 `^[a-zA-Z0-9._-]+\.json$` 防路径逃逸。
+
+**不做的事（KNOWN LIMITATION）**:
+- NPC 本身的 CRUD（新建 NPC / 删除 NPC / 改模板字段）：下一版本做
+- 单只精灵的字段级编辑：工作量太大，依赖玩家在 PS Teambuilder 里编
+- 真正的权限系统：现在用硬编码密钥
+
+**文件变更**:
+| 文件 | 变更 |
+|------|------|
+| server/npc/manager.ts | NPCTeamFile 加 name 字段；新增 CRUD 方法 |
+| server/chat-plugins/npc-admin.ts | 新建，含页面表单 + 命令 |
+
+---
+
+### v1.2.24 - NPC 管理面板（网页端队伍 CRUD） (2026-10-06)
+
+初版使用聊天粘贴命令，已被 v1.2.25 的表单版本替换。保留在 git 历史里作为参考。
+
+---
+
+
 ### v1.2.23 - 对手 preset 覆盖伤害估算 (2026-10-05)
 
 **背景**: NormalAI 之前把对手一律按 IV=31 / EV=85 / 无性格 估算，和竞技练度（252/252/修正性格）系统性偏差 ~9-10%。影响到 Garchomp / Tyranitar 这类对手时伤害估低。

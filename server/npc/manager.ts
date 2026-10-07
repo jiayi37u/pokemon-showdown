@@ -9,23 +9,31 @@
 
 import { FS } from '../../lib';
 import type { PokemonSet } from '../../sim/teams';
+import { Dex } from '../../sim/dex';
 
-/** NPC team configuration - supports multiple teams per format for random selection */
-export interface NPCTeamConfig {
-	/** Format-based team mapping, e.g., "gen9ou": ["team1.json", "team2.json"] */
-	singles?: {
-		[format: string]: string[];
-	};
-	/** Format-based doubles team mapping, e.g., "gen9doublesou": ["team1.json"] */
-	doubles?: {
-		[format: string]: string[];
-	};
-	/** Format-based multi team mapping, e.g., "gen9nationaldexmulti": ["team1.json"] */
-	multi?: {
-		[format: string]: string[];
-	};
-	/** Supported random battle formats, e.g., ["gen9randombattle", "gen8randombattle"] */
-	randombattle?: string[];
+/**
+ * NPC 的队伍配置。
+ *
+ * 新 schema（v1.2.26+）：
+ *   - `teams`: 该 NPC 持有的所有自定义队伍文件名（相对 data/npc/teams/）
+ *   - `randomFormats`: 支持的随机对战格式（PS 原生生成队伍，无文件）
+ *
+ * 每个队伍文件自己带 `formats: string[]`，运行时按 formatId 筛选出合适的队伍。
+ *
+ * 加载时 normalizeTeamConfig 会把旧 schema（嵌套 singles/doubles/multi 字典）转换过来。
+ */
+export interface NPCTemplate {
+	id: string;
+	name: string;
+	avatar: string;
+	title?: string;
+	description?: string;
+	difficulty: 'random' | 'basic' | 'smart' | 'expert';
+	/** 该 NPC 持有的所有自定义队伍文件 */
+	teams: string[];
+	/** 支持的随机对战格式 */
+	randomFormats: string[];
+	customRules?: string[];
 }
 
 /** Multi battle team with slot assignments */
@@ -34,36 +42,20 @@ export interface MultiTeam {
 	p4: PokemonSet[];
 }
 
-/** NPC template definition */
-export interface NPCTemplate {
-	id: string;
-	name: string;
-	avatar: string;
-	title?: string;
-	description?: string;
-	difficulty: 'random' | 'basic' | 'smart' | 'expert';
-	teams: NPCTeamConfig;
-	customRules?: string[];
-}
-
-/** NPC team file format */
+/**
+ * NPC 队伍文件格式（新 schema）。
+ *
+ * `formats` 是**该队伍能用的所有分级 ID**；添加分级前必须通过 TeamValidator 校验。
+ * `name` 是中文显示名。
+ *
+ * 读文件时如果只找到旧的 `format: "x"` 字段，自动当作 `formats: ["x"]` 处理。
+ */
 export interface NPCTeamFile {
-	format: string;
+	formats: string[];
 	pokemon: PokemonSet[];
-}
-
-/**
- * Check if format is a doubles format
- */
-function isDoublesFormat(format: string): boolean {
-	return format.includes('doubles') || format.includes('vgc');
-}
-
-/**
- * Check if format is a multi battle format
- */
-function isMultiFormat(format: string): boolean {
-	return format.includes('multi');
+	name?: string;
+	// 旧字段，加载后 normalize 掉
+	format?: string;
 }
 
 /**
@@ -71,6 +63,56 @@ function isMultiFormat(format: string): boolean {
  */
 function isRandomBattleFormat(format: string): boolean {
 	return format.includes('randombattle') || format.includes('randomdoubles');
+}
+
+/** 从一个 Pokemon file 的 raw JSON 补齐到新 schema。空输入返回 null。 */
+function normalizeTeamFile(raw: AnyObject | null): NPCTeamFile | null {
+	if (!raw) return null;
+	if (!raw.pokemon?.length) return null;
+	if (Array.isArray(raw.formats) && raw.formats.length) {
+		return { formats: raw.formats, pokemon: raw.pokemon, name: raw.name };
+	}
+	if (typeof raw.format === 'string' && raw.format) {
+		return { formats: [raw.format], pokemon: raw.pokemon, name: raw.name };
+	}
+	return { formats: [], pokemon: raw.pokemon, name: raw.name };
+}
+
+/**
+ * 把 template 的 teams/randomFormats 字段归一到新 schema。
+ * 既接受新 schema 的字符串数组 + randomFormats 字段，也接受旧 schema 的嵌套字典。
+ */
+function normalizeTemplate(raw: AnyObject): { teams: string[]; randomFormats: string[] } {
+	// 新 schema（flat）
+	if (Array.isArray(raw.teams)) {
+		return { teams: raw.teams, randomFormats: raw.randomFormats || [] };
+	}
+	// 过渡 schema：teams.teams + teams.randomFormats（这是 v1.2.25 的误实现，兼容一下）
+	if (raw.teams && Array.isArray(raw.teams.teams)) {
+		return {
+			teams: raw.teams.teams,
+			randomFormats: raw.teams.randomFormats || raw.teams.randombattle || [],
+		};
+	}
+	// 旧 schema：嵌套字典
+	const cfg = raw.teams || {};
+	const seen = new Set<string>();
+	const teams: string[] = [];
+	for (const bucketKey of ['singles', 'doubles', 'multi'] as const) {
+		const bucket = cfg[bucketKey];
+		if (!bucket) continue;
+		for (const format of Object.keys(bucket)) {
+			const files = bucket[format];
+			if (!Array.isArray(files)) continue;
+			for (const f of files) {
+				if (!seen.has(f)) {
+					seen.add(f);
+					teams.push(f);
+				}
+			}
+		}
+	}
+	return { teams, randomFormats: cfg.randombattle || [] };
 }
 
 /**
@@ -90,6 +132,10 @@ export class NPCManager {
 
 	/**
 	 * Load all NPC templates from templates.json
+	 *
+	 * 读入时对每个 template 的 teams 字段做 normalizeTeamConfig —— 旧 schema（嵌套 singles/
+	 * doubles/multi 字典）会被扁平成新 schema（flat teams: string[]）。磁盘上文件可以是任一
+	 * 形态，内存里永远是新 schema。
 	 */
 	loadTemplates(): void {
 		try {
@@ -101,12 +147,23 @@ export class NPCManager {
 				return;
 			}
 
-			const templates = JSON.parse(data) as { [id: string]: NPCTemplate };
+			const raw = JSON.parse(data) as { [id: string]: AnyObject };
 
 			this.templates.clear();
-			for (const id in templates) {
-				const template = templates[id];
-				template.id = id; // Ensure id is set
+			for (const id in raw) {
+				const r = raw[id];
+				const { teams, randomFormats } = normalizeTemplate(r);
+				const template: NPCTemplate = {
+					id,
+					name: r.name,
+					avatar: r.avatar,
+					title: r.title,
+					description: r.description,
+					difficulty: r.difficulty,
+					teams,
+					randomFormats,
+					customRules: r.customRules,
+				};
 				this.templates.set(id, template);
 			}
 
@@ -140,208 +197,186 @@ export class NPCManager {
 	}
 
 	/**
-	 * Check if NPC supports a format
+	 * Check if NPC supports a format.
+	 *
+	 * 新实现：遍历 template.teams[] 读每个 team 文件的 formats；或 randomFormats 直接包含。
 	 */
 	supportsFormat(npcId: string, format: string): boolean {
 		const template = this.get(npcId);
 		if (!template) return false;
 
-		// Check random battle
 		if (isRandomBattleFormat(format)) {
-			return !!(template.teams.randombattle && template.teams.randombattle.includes(format));
+			return template.randomFormats.includes(format);
 		}
-
-		// Check multi battle
-		if (isMultiFormat(format)) {
-			return !!(template.teams.multi && template.teams.multi[format]?.length > 0);
-		}
-
-		// Check doubles
-		if (isDoublesFormat(format)) {
-			return !!(template.teams.doubles && template.teams.doubles[format]?.length > 0);
-		}
-
-		// Check singles
-		return !!(template.teams.singles && template.teams.singles[format]?.length > 0);
+		return this.findTeamFilesForFormat(template, format).length > 0;
 	}
 
 	/**
-	 * Get NPC team for a format (randomly selects from available teams)
+	 * 列出该 NPC 下所有在给定 format 下有效的队伍文件名。
+	 * 空列表 = 没有支持该格式的队伍。
+	 */
+	private findTeamFilesForFormat(template: NPCTemplate, format: string): string[] {
+		const files: string[] = [];
+		for (const file of template.teams) {
+			const content = this.readTeamFile(file);
+			if (!content) continue;
+			if (content.formats.includes(format)) files.push(file);
+		}
+		return files;
+	}
+
+	/**
+	 * Get NPC team for a format (randomly selects from available teams).
+	 * 随机对战格式返回 null，调用方用系统生成。
 	 */
 	getTeam(npcId: string, format: string): PokemonSet[] | null {
-		console.log(`[NPC] getTeam called: npcId=${npcId}, format=${format}`);
-
 		const template = this.get(npcId);
 		if (!template) {
 			console.error(`[NPC] getTeam: Template not found for npcId=${npcId}`);
-			console.log(`[NPC] getTeam: Available templates: ${Array.from(this.templates.keys()).join(', ')}`);
 			return null;
 		}
+		if (isRandomBattleFormat(format)) return null;
 
-		console.log(`[NPC] getTeam: Template found: ${template.name}`);
-		console.log(`[NPC] getTeam: Template teams config:`, JSON.stringify(template.teams, null, 2));
-
-		// Random battle uses system generation
-		if (isRandomBattleFormat(format)) {
-			console.log(`[NPC] getTeam: Random battle format detected, returning null for system generation`);
-			return null; // Signal to use random team generation
-		}
-
-		// Get team file list based on format type
-		let teamFiles: string[] | undefined;
-
-		if (isDoublesFormat(format)) {
-			teamFiles = template.teams.doubles?.[format];
-			console.log(`[NPC] getTeam: Checking doubles for format=${format}, teamFiles=${JSON.stringify(teamFiles)}`);
-		} else {
-			teamFiles = template.teams.singles?.[format];
-			console.log(`[NPC] getTeam: Checking singles for format=${format}, teamFiles=${JSON.stringify(teamFiles)}`);
-		}
-
-		if (!teamFiles || teamFiles.length === 0) {
-			console.error(`[NPC] getTeam: No team files found for format=${format}`);
-			console.log(`[NPC] getTeam: Available singles formats: ${Object.keys(template.teams.singles || {}).join(', ')}`);
-			console.log(`[NPC] getTeam: Available doubles formats: ${Object.keys(template.teams.doubles || {}).join(', ')}`);
-			console.log(`[NPC] getTeam: Available multi formats: ${Object.keys(template.teams.multi || {}).join(', ')}`);
+		const files = this.findTeamFilesForFormat(template, format);
+		if (!files.length) {
+			console.error(`[NPC] getTeam: no team supports format=${format} for npcId=${npcId}`);
 			return null;
 		}
-
-		// Randomly select a team from the list
-		const teamFile = teamFiles[Math.floor(Math.random() * teamFiles.length)];
-		console.log(`[NPC] getTeam: Selected team file: ${teamFile}`);
-
-		// Load team file (no caching to allow random selection each time)
-		try {
-			const teamPath = `${this.dataPath}/teams/${teamFile}`;
-			console.log(`[NPC] getTeam: Loading team from path: ${teamPath}`);
-			const data = FS(teamPath).readIfExistsSync();
-
-			if (!data) {
-				console.error(`[NPC] Team file not found: ${teamPath}`);
-				return null;
-			}
-
-			const teamData = JSON.parse(data) as NPCTeamFile;
-			console.log(`[NPC] getTeam: Loaded ${teamData.pokemon.length} Pokemon from team file`);
-			return teamData.pokemon;
-		} catch (err) {
-			console.error(`[NPC] Failed to load team for ${npcId}:`, err);
-			return null;
-		}
+		const file = files[Math.floor(Math.random() * files.length)];
+		const content = this.readTeamFile(file);
+		if (!content) return null;
+		console.log(`[NPC] getTeam: selected ${file} (${content.pokemon.length} Pokemon) for ${format}`);
+		return content.pokemon;
 	}
 
 	/**
-	 * Get NPC multi-battle team for a format
-	 * Returns teams for p2 and p4 positions based on slot assignments
-	 * @param npcId - NPC template ID
-	 * @param format - Battle format
-	 * @returns MultiTeam with p2 and p4 arrays, or null if not found
+	 * Get NPC multi-battle team for a format.
+	 *
+	 * Multi 规则：**不读 slot 字段**，直接按 `pokemon` 数组顺序前 3 只分 p2，后 3 只分 p4。
+	 * 这和 npc-admin 保存时的规则对称，用户在 Teambuilder Export 文本里自己把握顺序。
 	 */
 	getMultiTeam(npcId: string, format: string): MultiTeam | null {
 		const template = this.get(npcId);
 		if (!template) return null;
 
-		// Get multi team files
-		const teamFiles = template.teams.multi?.[format];
-		if (!teamFiles || teamFiles.length === 0) return null;
+		const files = this.findTeamFilesForFormat(template, format);
+		if (!files.length) {
+			console.error(`[NPC] getMultiTeam: no team supports format=${format} for npcId=${npcId}`);
+			return null;
+		}
+		const file = files[Math.floor(Math.random() * files.length)];
+		const content = this.readTeamFile(file);
+		if (!content) return null;
 
-		// Randomly select a team from the list
-		const teamFile = teamFiles[Math.floor(Math.random() * teamFiles.length)];
+		const pokemon = content.pokemon;
+		// 兼容旧数据：如果精灵自带 slot 字段，优先按 slot 分组；否则按前 3 后 3 的规则。
+		let p2Team: PokemonSet[] = [];
+		let p4Team: PokemonSet[] = [];
+		const hasSlots = pokemon.some(p => (p as AnyObject).slot);
+		if (hasSlots) {
+			for (const poke of pokemon) {
+				const slot = (poke as AnyObject).slot;
+				const clean = { ...poke };
+				delete (clean as AnyObject).slot;
+				if (slot === 'p2') p2Team.push(clean);
+				else if (slot === 'p4') p4Team.push(clean);
+			}
+			if (p2Team.length !== 3 || p4Team.length !== 3) {
+				// 落回按顺序切分，和新规则一致
+				p2Team = pokemon.slice(0, 3).map(p => ({ ...p, slot: undefined } as AnyObject)) as PokemonSet[];
+				p4Team = pokemon.slice(3, 6).map(p => ({ ...p, slot: undefined } as AnyObject)) as PokemonSet[];
+			}
+		} else {
+			p2Team = pokemon.slice(0, 3);
+			p4Team = pokemon.slice(3, 6);
+		}
 
+		if (p2Team.length !== 3 || p4Team.length !== 3) {
+			console.warn(`[NPC] getMultiTeam: expected 6 pokemon in ${file}, got ${pokemon.length}`);
+		}
+		return { p2: p2Team, p4: p4Team };
+	}
+
+	/**
+	 * Get supported formats for an NPC.
+	 * 聚合所有 team 文件的 formats + randomFormats。
+	 */
+	getSupportedFormats(npcId: string): string[] {
+		const template = this.get(npcId);
+		if (!template) return [];
+		const seen = new Set<string>();
+		for (const file of template.teams) {
+			const content = this.readTeamFile(file);
+			if (!content) continue;
+			for (const f of content.formats) seen.add(f);
+		}
+		for (const f of template.randomFormats) seen.add(f);
+		return [...seen];
+	}
+
+	/**
+	 * Admin：读单个队伍文件。
+	 * 返回值已经被 normalizeTeamFile 处理：旧的 `format: "x"` 会被转成 `formats: ["x"]`。
+	 */
+	readTeamFile(teamFile: string): NPCTeamFile | null {
 		try {
 			const teamPath = `${this.dataPath}/teams/${teamFile}`;
 			const data = FS(teamPath).readIfExistsSync();
-
-			if (!data) {
-				console.error(`[NPC] Multi team file not found: ${teamPath}`);
-				return null;
-			}
-
-			const teamData = JSON.parse(data) as NPCTeamFile;
-			const pokemon = teamData.pokemon;
-
-			// Split by slot assignment
-			const p2Team: PokemonSet[] = [];
-			const p4Team: PokemonSet[] = [];
-
-			for (const poke of pokemon) {
-				const slot = (poke as any).slot;
-				if (slot === 'p2') {
-					// Remove slot field from team data (not needed in battle)
-					const cleanPoke = { ...poke };
-					delete (cleanPoke as any).slot;
-					p2Team.push(cleanPoke);
-				} else if (slot === 'p4') {
-					const cleanPoke = { ...poke };
-					delete (cleanPoke as any).slot;
-					p4Team.push(cleanPoke);
-				} else {
-					// No slot assignment - default split: first 3 to p2, rest to p4
-					console.warn(`[NPC] Pokemon ${poke.name || poke.species} has no slot assignment in multi team`);
-				}
-			}
-
-			// Fallback: if no slot assignments, split evenly
-			if (p2Team.length === 0 && p4Team.length === 0) {
-				const half = Math.ceil(pokemon.length / 2);
-				p2Team.push(...pokemon.slice(0, half));
-				p4Team.push(...pokemon.slice(half));
-			}
-
-			// Validate team sizes (should be 3 each for multi)
-			if (p2Team.length !== 3 || p4Team.length !== 3) {
-				console.warn(`[NPC] Multi team has incorrect sizes: p2=${p2Team.length}, p4=${p4Team.length} (expected 3 each)`);
-			}
-
-			return { p2: p2Team, p4: p4Team };
+			if (!data) return null;
+			const raw = JSON.parse(data);
+			return normalizeTeamFile(raw);
 		} catch (err) {
-			console.error(`[NPC] Failed to load multi team for ${npcId}:`, err);
+			console.error(`[NPC] readTeamFile(${teamFile}) failed:`, err);
 			return null;
 		}
 	}
 
 	/**
-	 * Get supported formats for an NPC
+	 * Admin：写一个队伍文件。只校验 teamFile 不含 "/" 等路径分隔符，避免逃逸。
+	 * 第二参数支持两种形态：
+	 *   - NPCTeamFile 对象：按 JSON.stringify(..., null, 2) 默认序列化
+	 *   - 字符串：直接作为文件内容写入（调用方自定义格式；用于保持仓库里既有
+	 *     文件的"evs/ivs/moves 单行内联"风格）
 	 */
-	getSupportedFormats(npcId: string): string[] {
-		const template = this.get(npcId);
-		if (!template) return [];
-
-		const formats: string[] = [];
-
-		// Check singles - iterate over all format keys
-		if (template.teams.singles) {
-			for (const format of Object.keys(template.teams.singles)) {
-				if (template.teams.singles[format]?.length > 0) {
-					formats.push(format);
-				}
-			}
+	writeTeamFile(teamFile: string, content: NPCTeamFile | string): void {
+		if (!/^[a-zA-Z0-9._-]+\.json$/.test(teamFile)) {
+			throw new Error(`invalid team filename: ${teamFile}`);
 		}
+		const teamPath = `${this.dataPath}/teams/${teamFile}`;
+		const text = typeof content === 'string' ? content : (JSON.stringify(content, null, 2) + '\n');
+		FS(teamPath).writeSync(text);
+	}
 
-		// Check doubles - iterate over all format keys
-		if (template.teams.doubles) {
-			for (const format of Object.keys(template.teams.doubles)) {
-				if (template.teams.doubles[format]?.length > 0) {
-					formats.push(format);
-				}
-			}
+	/**
+	 * Admin：删除一个队伍文件。
+	 */
+	deleteTeamFile(teamFile: string): boolean {
+		if (!/^[a-zA-Z0-9._-]+\.json$/.test(teamFile)) {
+			throw new Error(`invalid team filename: ${teamFile}`);
 		}
+		const teamPath = `${this.dataPath}/teams/${teamFile}`;
+		const fs = FS(teamPath);
+		if (!fs.existsSync()) return false;
+		fs.unlinkIfExistsSync();
+		return true;
+	}
 
-		// Check multi - iterate over all format keys
-		if (template.teams.multi) {
-			for (const format of Object.keys(template.teams.multi)) {
-				if (template.teams.multi[format]?.length > 0) {
-					formats.push(format);
-				}
-			}
-		}
+	/**
+	 * Admin：覆盖写 templates.json（整体保存）。
+	 */
+	writeTemplates(templates: { [id: string]: NPCTemplate }): void {
+		const templatesPath = `${this.dataPath}/templates.json`;
+		FS(templatesPath).writeSync(JSON.stringify(templates, null, 2) + '\n');
+	}
 
-		// Check random battle - add all supported random formats
-		if (template.teams.randombattle) {
-			formats.push(...template.teams.randombattle);
-		}
-
-		return formats;
+	/**
+	 * Admin：读 templates.json 的原始对象（含注释/完整结构）。
+	 */
+	readTemplatesRaw(): { [id: string]: NPCTemplate } {
+		const templatesPath = `${this.dataPath}/templates.json`;
+		const data = FS(templatesPath).readIfExistsSync();
+		if (!data) return {};
+		return JSON.parse(data) as { [id: string]: NPCTemplate };
 	}
 
 	/**

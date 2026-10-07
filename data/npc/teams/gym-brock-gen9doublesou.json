@@ -1,5 +1,5 @@
 {
-  "format": "gen9doublesou",
+  "formats": ["gen9doublesou"],
   "pokemon": [
     {
       "species": "Tyranitar",

@@ -1,5 +1,5 @@
 {
-  "format": "gen6ou",
+  "formats": ["gen6ou"],
   "pokemon": [
     {
       "species": "Camerupt",

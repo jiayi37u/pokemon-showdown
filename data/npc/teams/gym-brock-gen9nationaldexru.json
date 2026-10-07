@@ -1,5 +1,5 @@
 {
-  "format": "gen9nationaldexru",
+  "formats": ["gen9nationaldexru"],
   "pokemon": [
     {
       "species": "Aggron",

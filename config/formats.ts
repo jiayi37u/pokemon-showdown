@@ -41,6 +41,60 @@ export const Formats: import('../sim/dex-formats').FormatList = [
 		ruleset: ['[Gen 9] 1v1'],
 	},
 
+	// PokeMMO (CTCC1/Pokemon-Showdown, 9466904df894)
+	///////////////////////////////////////////////////////////////////
+
+	{
+		section: "PokeMMO",
+		column: 1,
+	},
+	{
+		name: "[Gen 5] PokeMMO",
+
+		rated: false,
+		mod: 'mmo',
+		ruleset: [
+			'Species Clause', 'Sleep Clause Mod', 'Team Preview',
+			'HP Percentage Mod', 'Cancel Mod', 'Endless Battle Clause',
+		],
+
+		onBattleStart() {
+			this.gen = 8;
+		},
+	},
+	{
+		name: "[Gen 5] PokeMMO Test",
+
+		rated: true,
+		mod: 'mmo',
+		ruleset: [
+			'Species Clause', 'Sleep Clause Mod', 'Adjust Level = 50', 'Team Preview',
+			'HP Percentage Mod', 'Cancel Mod', 'Endless Battle Clause',
+			'Obtainable Abilities', 'Obtainable Formes', 'EV Limit = Auto',
+		],
+		banlist: ['Unreleased', 'Unobtainable', 'Past', 'Future', 'LGPE', 'CAP', 'Custom'],
+
+		onBattleStart() {
+			this.gen = 8;
+		},
+	},
+	{
+		name: "[Gen 5] PokeMMO Doubles",
+
+		rated: true,
+		mod: 'mmo',
+		ruleset: [
+			'Species Clause', 'Sleep Clause Mod', 'Adjust Level = 50', 'Team Preview',
+			'HP Percentage Mod', 'Cancel Mod', 'Endless Battle Clause',
+			'Obtainable Abilities', 'Obtainable Formes', 'EV Limit = Auto',
+		],
+		gameType: 'doubles',
+
+		onBattleStart() {
+			this.gen = 8;
+		},
+	},
+
 	// S/V Singles
 	///////////////////////////////////////////////////////////////////
 

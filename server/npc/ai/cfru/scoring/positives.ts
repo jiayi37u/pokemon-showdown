@@ -13,6 +13,7 @@ import type { ScoringContext, PositiveScoringFunction } from './index';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
 import { isFaster, goesFirst } from '../util/speed';
 import { getTypeEffectiveness } from '../util/type-calc';
+import { getHazeBenefit } from './negatives';
 
 // =============================================================================
 // Damage Move Rewards
@@ -2124,6 +2125,20 @@ export const rewardKnockOff: PositiveScoringFunction = (ctx) => {
 	return bonus;
 };
 
+/** Reward the net value of Haze, capped at 140 after its 20-point turn cost. */
+export const rewardHaze: PositiveScoringFunction = ctx => {
+	if (ctx.move.id !== 'haze') return 0;
+	const { net, reason } = getHazeBenefit(ctx);
+	if (net <= 0) return 0;
+	const bonus = Math.min(60, net);
+	ctx.adjustments.push({
+		reason: `Haze: net benefit ${net} (${reason})${net > 60 ? '; capped at +60' : ''}`,
+		amount: bonus,
+		category: 'positive',
+	});
+	return bonus;
+};
+
 // =============================================================================
 // Export all positive scorers
 // =============================================================================
@@ -2151,6 +2166,7 @@ export const allPositiveScorers: PositiveScoringFunction[] = [
 	rewardHazards,
 
 	// Utility moves
+	rewardHaze,
 	rewardDrainMove,
 	rewardPivotMove,
 	rewardHealing,

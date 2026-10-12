@@ -37,6 +37,12 @@
 
 **文件**: `normal.ts`, `multi-manager.ts`
 
-**问题**: 招式评分循环、目标选择逻辑、换人决策有重复
+**现状**: 单打和双打使用 `NormalAI`，线上 Multi 使用 `NPCMultiManager`。两条路径共享 `BattleTracker`、`ScoringEngine` 和 `buildAIMove`，没有统一完整决策流程。提交 `b781736cc` 包含构建工具的共享，不包含决策流程统一。
 
-**结论**: 暂不合并，Multi 的特殊性（协调两个 side）使强行合并代价大
+**双打决策**: `NormalAI` 按行动精灵的场上位置评估所有存活对手，替补评分覆盖两个对手。`NPCBattleAI` 依据请求中的场上数量及 `active` 标志排除队友，且排除倒下和已选替补。`test/server/npc/doubles-switching.js` 使用真实双打请求验证两个行动位置、免疫目标、替补分配、困住及被迫换人，并检查模拟器接受指令。
+
+**待修复（2026-10-12 核验，Multi 按用户要求延后）**:
+- `NPCMultiManager.evaluateSideChoice` 没有因招式无效或评分低而主动换人的分支。围巾多边兽-Z 锁定十万伏特，对面是已暴露蓄电的电灯怪和烈咬陆鲨时，线上决策路径仍输出 `>p2 move 1 1`。
+- `test/npc/sim-battle/runner.ts` 的 Multi 使用两个 `NormalAI`，与线上 `NPCMultiManager` 不同；Multi 回归需要直接覆盖线上协调器及其请求处理。
+
+**验证边界**: 吸收类特性追踪覆盖三种模式；单打和双打换人有真实模拟器回归，线上 Multi 的主动换人仍待处理。

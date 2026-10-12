@@ -1127,6 +1127,52 @@ export const checkConfusionMove: NegativeScoringFunction = (ctx) => {
 // Setup Move Checks
 // =============================================================================
 
+/** Shared field-wide Haze value; independent of the selected target. */
+export function getHazeBenefit(ctx: ScoringContext): { net: number, hasChanges: boolean, reason: string } {
+	const stageValues = [0, 5, 20, 28, 36, 44, 52];
+	let enemyBoosts = 0;
+	let allyDrops = 0;
+	let allyBoosts = 0;
+	let enemyDrops = 0;
+	for (const side of ['self', 'opponent'] as const) {
+		for (const pokemon of ctx.state[side].active) {
+			if (pokemon.fainted) continue;
+			for (const stage of Object.values(pokemon.boosts)) {
+				const value = stageValues[Math.abs(stage)];
+				if (side === 'self') {
+					if (stage > 0) allyBoosts += value;
+					else allyDrops += value;
+				} else {
+					if (stage > 0) enemyBoosts += value;
+					else enemyDrops += value;
+				}
+			}
+		}
+	}
+	return {
+		net: enemyBoosts + allyDrops - allyBoosts - enemyDrops,
+		hasChanges: enemyBoosts + allyDrops + allyBoosts + enemyDrops > 0,
+		reason: `enemy boosts +${enemyBoosts}, ally drops +${allyDrops}, ally boosts -${allyBoosts}, enemy drops -${enemyDrops}`,
+	};
+}
+
+/** Penalize wasted Haze and the turn spent resetting the field. */
+export const checkHaze: NegativeScoringFunction = ctx => {
+	if (ctx.move.id !== 'haze') return 0;
+	const { net, hasChanges, reason } = getHazeBenefit(ctx);
+	if (net <= 0) {
+		ctx.flags.hasNoEffect = !hasChanges;
+		ctx.adjustments.push({
+			reason: hasChanges ? `Haze: no net benefit (${reason})` : 'Haze: no stat changes to clear',
+			amount: -100,
+			category: 'negative',
+		});
+		return -100;
+	}
+	ctx.adjustments.push({ reason: 'Haze: turn cost', amount: -20, category: 'negative' });
+	return -20;
+};
+
 /**
  * Check if stat boost move is wasted
  */
@@ -3096,8 +3142,9 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkPoisonMove,
 	checkConfusionMove,
 
-	// Setup moves
+	// Setup moves and stat resets
 	checkStatBoostWasted,
+	checkHaze,
 
 	// Terrain and weather
 	checkTerrainBlock,

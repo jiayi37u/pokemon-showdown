@@ -27,6 +27,10 @@ export interface TrackedPokemon {
 
 	/** Known ability (may be empty if not revealed) */
 	ability: string;
+	/** Native ability, retained separately from temporary copies, swaps and suppression. */
+	baseAbility?: string;
+	/** Whether the current ability differs from the native ability during this stay. */
+	abilityChanged?: boolean;
 
 	/** Known item (may be empty if not revealed) */
 	item: string;
@@ -260,6 +264,7 @@ export class BattleTracker {
 
 		const parts = line.slice(1).split('|');
 		const command = parts[0];
+		this.handleAbilityEvent(parts);
 
 		switch (command) {
 		case 'switch':
@@ -269,9 +274,6 @@ export class BattleTracker {
 			break;
 		case 'faint':
 			this.handleFaint(parts);
-			break;
-		case '-ability':
-			this.handleAbility(parts);
 			break;
 		case '-item':
 		case '-enditem':
@@ -406,6 +408,8 @@ export class BattleTracker {
 			types,
 			level,
 			ability,
+			baseAbility: ability,
+			abilityChanged: false,
 			item: '',
 			itemLost: false,  // Default: assume item exists but unknown
 			hpPercent,
@@ -426,7 +430,8 @@ export class BattleTracker {
 		// Update if we already know this Pokemon
 		const existing = this.opponentTeam.get(species);
 		if (existing) {
-			tracked.ability = existing.ability || tracked.ability;
+			tracked.ability = existing.baseAbility ?? existing.ability;
+			tracked.baseAbility = tracked.ability;
 			tracked.item = existing.item;
 			tracked.itemLost = existing.itemLost;  // Preserve itemLost status
 			tracked.knownMoves = existing.knownMoves;
@@ -457,11 +462,9 @@ export class BattleTracker {
 	}
 
 	/**
-	 * Handle ability reveal
-	 * Format: |-ability|p1a: Nickname|Levitate
+	 * Record a public reveal without persisting temporary ability changes across switches.
 	 */
-	private handleAbility(parts: string[]): void {
-		const positionPart = parts[1];
+	private recordAbility(positionPart: string | undefined, ability: string, changed = false, previous = ''): void {
 		if (!positionPart) return;
 
 		const position = positionPart.split(':')[0].trim();
@@ -469,17 +472,89 @@ export class BattleTracker {
 
 		if (!this.isOpponentSide(side)) return;
 
-		const ability = parts[2];
-		if (!ability) return;
-
 		const tracked = this.opponentPokemon.get(position);
 		if (tracked) {
+			if (changed) {
+				if (!tracked.abilityChanged && previous) tracked.baseAbility = previous;
+				tracked.abilityChanged = true;
+			} else if (!tracked.abilityChanged) {
+				tracked.baseAbility = ability;
+			}
 			tracked.ability = ability;
 			// Also update team record
 			const teamMon = this.opponentTeam.get(tracked.species);
 			if (teamMon) {
 				teamMon.ability = ability;
+				teamMon.baseAbility = tracked.baseAbility;
+				teamMon.abilityChanged = tracked.abilityChanged;
 			}
+		}
+	}
+
+	/**
+	 * Ability names appear in several protocol events, with event-specific ownership.
+	 * In particular, absorption's [of] is the attacker, while damage's [of] is the ability holder.
+	 */
+	private handleAbilityEvent(parts: string[]): void {
+		const [command, pokemon, effect] = parts;
+		const of = parts.find(part => part.startsWith('[of] '))?.slice('[of] '.length);
+		const from = parts.find(part => part.startsWith('[from] ability: '))?.slice('[from] ability: '.length);
+
+		if (command === '-ability') {
+			if (!effect) return;
+			// setAbility emits the old ability in the fourth field; ordinary reveals may put "boost" there.
+			const previous = parts[3] && Dex.abilities.get(parts[3]).exists ? parts[3] : '';
+			this.recordAbility(pokemon, effect, !!previous, previous);
+			if (['trace', 'receiver', 'powerofalchemy'].includes(toID(from)) ||
+				parts.includes('[from] move: Role Play')) {
+				this.recordAbility(of, effect);
+			} else if (from && of && of !== pokemon) {
+				this.recordAbility(of, from);
+			}
+			return;
+		}
+		if (command === '-endability') {
+			this.recordAbility(pokemon, '', true);
+			return;
+		}
+		if (command === '-activate' && (effect === 'move: Skill Swap' || effect === 'Skill Swap')) {
+			// The public fields contain the new ability of each participant; allied swaps hide them.
+			const ours = this.opponentPokemon.get(pokemon?.split(':')[0].trim())?.ability || '';
+			const theirs = this.opponentPokemon.get(of?.split(':')[0].trim() || '')?.ability || '';
+			this.recordAbility(pokemon, parts[3] || theirs, true, parts[4] || ours);
+			this.recordAbility(of, parts[4] || ours, true, parts[3] || theirs);
+			return;
+		}
+
+		const direct = effect?.startsWith('ability: ') ? effect.slice('ability: '.length) : '';
+		switch (command) {
+		case '-immune':
+		case '-fail':
+			if (from) this.recordAbility(of || pokemon, from);
+			break;
+		case '-heal':
+			// Hospitality heals another Pokemon; absorb abilities and residual recovery heal their holder.
+			if (from) this.recordAbility(toID(from) === 'hospitality' ? of : pokemon, from);
+			break;
+		case '-damage':
+			if (from) this.recordAbility(of || pokemon, from);
+			break;
+		case '-weather':
+		case '-fieldstart':
+			if (from) this.recordAbility(of, from);
+			break;
+		case '-start':
+		case '-activate':
+		case 'cant':
+			if (direct) this.recordAbility(pokemon, direct);
+			else if (from) this.recordAbility(of || pokemon, from);
+			break;
+		case '-status':
+			if (from) this.recordAbility(of, from);
+			break;
+		case '-block':
+			if (direct) this.recordAbility(of || pokemon, direct);
+			break;
 		}
 	}
 

@@ -252,11 +252,11 @@ export class NormalAI extends NPCBattleAI {
 
 		// Check if we should switch
 		if (this.config.canSwitch && switches.length > 0) {
-			const switchResult = this.evaluateSwitching(active, availableMoves, switches);
+			const switchResult = this.evaluateSwitching(active, availableMoves, switches, activeIndex);
 			if (switchResult.shouldSwitch) {
 				// Log switch decision
 				if (this.battleState) {
-					const currentPokemon = this.battleState.self.active[activeIndex];
+					const currentPokemon = this.battleState.self.active.find(p => p.slot === activeIndex + 1);
 					const switchTo = this.battleState.self.reserve.find(p => p.slot === switchResult.switchTarget);
 					if (currentPokemon && switchTo) {
 						this.logger.logSwitchDecision(
@@ -463,20 +463,7 @@ export class NormalAI extends NPCBattleAI {
 		// Also store all scores by target for detailed logging
 		this.lastMoveScoresByTarget = allScoresByTarget;
 
-		// If all moves scored 0, fall back to random damaging move
-		if (bestScore <= 0) {
-			const damagingMoves = moves.filter(m => m.category !== 'Status');
-			if (damagingMoves.length > 0) {
-				const bestMove = this.prng.sample(damagingMoves);
-				return {
-					bestMove,
-					chosenMove: this.convertToAIMoves([bestMove], active)[0],
-					bestTargetPos: '1',
-				};
-			}
-		}
-
-		// Return random among best moves (for unpredictability)
+		// Even at zero score, retain the evaluated target slot and the move's targeting rules.
 		const chosen = this.prng.sample(bestMoves);
 
 		// Determine target position (1 or 2 for opponents, in PS doubles format)
@@ -527,7 +514,8 @@ export class NormalAI extends NPCBattleAI {
 	private evaluateSwitching(
 		active: AnyObject,
 		moves: MoveChoice[],
-		switches: SwitchChoice[]
+		switches: SwitchChoice[],
+		activeIndex = 0
 	): {
 		shouldSwitch: boolean;
 		switchTarget: number;
@@ -543,10 +531,10 @@ export class NormalAI extends NPCBattleAI {
 
 		if (!this.battleState) return noSwitch;
 
-		const attacker = this.battleState.self.active[0];
-		const target = this.battleState.opponent.active[0];
+		const attacker = this.battleState.self.active.find(p => p.slot === activeIndex + 1);
+		const opponents = this.battleState.opponent.active.filter(p => !p.fainted);
 
-		if (!attacker || !target) return noSwitch;
+		if (!attacker || !opponents.length) return noSwitch;
 
 		// Don't switch if trapped
 		if (active.trapped) {
@@ -555,29 +543,20 @@ export class NormalAI extends NPCBattleAI {
 
 		// Score all moves
 		const aiMoves = this.convertToAIMoves(moves, active);
-		const scores = this.scoringEngine.scoreMoves(
-			this.battleState,
-			attacker,
-			aiMoves,
-			target
-		);
-
-		// Separate attack and status move scores
+		// Staying is useful if at least one living opponent offers a good move/target combination.
 		let maxAttackScore = -Infinity;
 		let maxStatusScore = -Infinity;
-		for (let i = 0; i < scores.length; i++) {
-			const score = scores[i].score;
-			const category = aiMoves[i].category;
-			if (category === 'Status') {
-				if (score > maxStatusScore) maxStatusScore = score;
-			} else {
-				if (score > maxAttackScore) maxAttackScore = score;
+		for (const target of opponents) {
+			const scores = this.scoringEngine.scoreMoves(this.battleState, attacker, aiMoves, target);
+			for (let i = 0; i < scores.length; i++) {
+				const score = scores[i].score;
+				if (aiMoves[i].category === 'Status') {
+					maxStatusScore = Math.max(maxStatusScore, score);
+				} else {
+					maxAttackScore = Math.max(maxAttackScore, score);
+				}
 			}
 		}
-
-		// If no attack moves, use -Infinity (will trigger switch consideration)
-		// If no status moves, use -Infinity
-		const maxScore = Math.max(maxAttackScore, maxStatusScore);
 
 		// Dynamic threshold: consider switching if both attack and status moves score low
 		// This means we're in a bad matchup where we can't do much
@@ -593,7 +572,7 @@ export class NormalAI extends NPCBattleAI {
 			let bestSwitchPokemon = '';
 
 			for (const switchOption of switches) {
-				const { score, reasons } = this.scoreSwitchOption(switchOption.pokemon, target);
+				const { score, reasons } = this.scoreSwitchMatchups(switchOption.pokemon, opponents);
 
 				// Get Pokemon name
 				const pokemonName = switchOption.pokemon.details?.split(',')[0]?.trim() || `Slot ${switchOption.slot}`;
@@ -611,10 +590,7 @@ export class NormalAI extends NPCBattleAI {
 				}
 			}
 
-			// Switch if we found a switch-in that scores better than staying
-			// Compare switch score against (maxScore - 100) to normalize the comparison
-			// A switch score > 0 means the switch-in has positive attributes
-			// A maxScore < 90 means our current moves are weak
+			// Retain the existing threshold for a viable replacement.
 			if (bestSwitchScore > 5) {
 				return {
 					shouldSwitch: true,
@@ -634,6 +610,17 @@ export class NormalAI extends NPCBattleAI {
 		}
 
 		return noSwitch;
+	}
+
+	/** Use the least favorable living opponent matchup for voluntary and forced replacements. */
+	private scoreSwitchMatchups(pokemon: AnyObject, opponents: AIPokemon[]): { score: number; reasons: string[] } {
+		const matchups = opponents.map(target => ({ target, ...this.scoreSwitchOption(pokemon, target) }));
+		return {
+			score: Math.min(...matchups.map(matchup => matchup.score)),
+			reasons: matchups.flatMap(matchup => matchup.reasons.map(reason =>
+				opponents.length > 1 ? `${matchup.target.species}: ${reason}` : reason
+			)),
+		};
 	}
 
 	/**
@@ -823,17 +810,16 @@ export class NormalAI extends NPCBattleAI {
 	 * Uses the same scoring logic as evaluateSwitching for consistency
 	 */
 	protected override chooseSwitch(active: AnyObject | undefined, switches: SwitchChoice[]): number {
-		if (!this.battleState || this.battleState.opponent.active.length === 0) {
+		const opponents = this.battleState?.opponent.active.filter(p => !p.fainted) || [];
+		if (!opponents.length) {
 			return this.prng.sample(switches).slot;
 		}
 
-		const target = this.battleState.opponent.active[0];
-
 		// Score each switch option using the improved scoring method
-		const scored: { switch: SwitchChoice; score: number }[] = [];
+		const scored: { switch: SwitchChoice, score: number }[] = [];
 
 		for (const sw of switches) {
-			const { score } = this.scoreSwitchOption(sw.pokemon, target);
+			const { score } = this.scoreSwitchMatchups(sw.pokemon, opponents);
 			scored.push({ switch: sw, score });
 		}
 

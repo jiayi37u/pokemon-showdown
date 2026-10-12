@@ -191,7 +191,8 @@ export abstract class NPCBattleAI extends BattlePlayer {
 			}
 
 			// Get available switches
-			const canSwitch = active.trapped ? [] : this.getAvailableSwitches(pokemon, i, chosen, 1, false);
+			const canSwitch = active.trapped ? [] :
+				this.getAvailableSwitches(pokemon, i, chosen, request.active.length, false);
 
 			// Make decision
 			const decision = this.makeDecision(active, moves, canSwitch, {
@@ -304,7 +305,7 @@ export abstract class NPCBattleAI extends BattlePlayer {
 			if (!mon) continue;
 
 			// Skip if already active (unless reviving)
-			if (slot <= activeCount && !reviving) continue;
+			if (!reviving && (slot <= activeCount || mon.active)) continue;
 
 			// Skip if already chosen for switch
 			if (alreadyChosen.includes(slot)) continue;

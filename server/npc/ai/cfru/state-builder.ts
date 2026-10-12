@@ -36,7 +36,7 @@ export function buildBattleState(
 	config: CFRUAIConfig = DEFAULT_AI_CONFIG
 ): BattleState {
 	const side = request.side;
-	const isDoubles = request.active ? request.active.length > 1 : false;
+	const isDoubles = (request.active || request.forceSwitch || []).length > 1 || config.isDoubles;
 	const turn = battle?.turn ?? 1;
 
 	// Build self (full information)
@@ -559,7 +559,7 @@ export function buildBattleStateWithTracker(
 	tracker: BattleTracker,
 	config: CFRUAIConfig = DEFAULT_AI_CONFIG
 ): BattleState {
-	const isDoubles = request.active ? request.active.length > 1 : false;
+	const isDoubles = (request.active || request.forceSwitch || []).length > 1 || config.isDoubles;
 	const turn = battle?.turn ?? 1;
 
 	// Determine which side index we are (p1 = 0, p2 = 1)

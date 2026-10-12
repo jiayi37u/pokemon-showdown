@@ -7,8 +7,8 @@
  * @license MIT
  */
 
-import { NPC } from '../npc/manager';
-import { createNPCBattle, createNPCMultiBattle, getAvailableFormats, isFormatSupported } from '../npc/room';
+import { NPC, NPC_RANDOM_FORMATS } from '../npc/manager';
+import { createNPCBattle, createNPCMultiBattle, isFormatSupported } from '../npc/room';
 import { Teams } from '../../sim/teams';
 import { challenges, GameChallenge } from '../ladders-challenges';
 
@@ -38,6 +38,7 @@ function getFormatDisplayName(format: string): string {
 		'vgc2024': 'VGC 2024',
 		'vgc2023': 'VGC 2023',
 		'randombattle': 'Random Battle',
+		'pokemmorandombattle': 'PokeMMO Random Battle',
 		'randomdoublesbattle': 'Random Doubles',
 		'nationaldexmulti': 'National Dex Multi',
 	};
@@ -71,15 +72,20 @@ function getNPCListHTML(user: User): string {
 	html += `<p>Challenge an NPC trainer to battle!</p>`;
 
 	html += `<div class="ladder">`;
-	html += `<table><tr><th>NPC</th><th>Difficulty</th><th>Formats</th><th>Action</th></tr>`;
+	html += `<table><tr><th>NPC</th><th>Formats</th><th>Action</th></tr>`;
+
+	html += `<tr>`;
+	html += `<td><strong>Random Battle</strong></td>`;
+	html += `<td>${NPC_RANDOM_FORMATS.map(f => getFormatDisplayName(f)).join(', ')}</td>`;
+	html += `<td><button class="button" name="send" value="/npc challenge random">Challenge</button></td>`;
+	html += `</tr>`;
 
 	for (const npc of npcs) {
-		const formats = NPC.getSupportedFormats(npc.id);
+		const formats = NPC.getSupportedFormats(npc.id).filter(f => !NPC_RANDOM_FORMATS.includes(f));
 		const formatNames = formats.map(f => getFormatDisplayName(f)).join(', ');
 
 		html += `<tr>`;
 		html += `<td><strong>${npc.name}</strong>${npc.title ? `<br/><small>${npc.title}</small>` : ''}</td>`;
-		html += `<td>${npc.difficulty}</td>`;
 		html += `<td>${formatNames || 'None'}</td>`;
 		html += `<td><button class="button" name="send" value="/npc challenge ${npc.id}">Challenge</button></td>`;
 		html += `</tr>`;
@@ -87,34 +93,36 @@ function getNPCListHTML(user: User): string {
 
 	html += `</table></div>`;
 
-	// Random battle button
-	html += `<hr/><p><button class="button" name="send" value="/npc random">Random NPC Battle</button></p>`;
-
 	html += `</div>`;
 	return html;
 }
 
 /**
- * Generate format selection HTML for a specific NPC
+ * Generate the shared difficulty/format selection for an NPC or random battles
  */
 function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: string): string {
-	const npc = NPC.get(npcId);
+	const isRandom = npcId === 'random';
+	const npc = isRandom ? null : NPC.get(npcId);
 
-	if (!npc) {
+	if (!isRandom && !npc) {
 		return `<div class="pad"><h2>Error</h2><p>NPC not found: ${npcId}</p></div>`;
 	}
 
-	const allFormats = NPC.getSupportedFormats(npcId);
+	const allFormats = isRandom ? NPC_RANDOM_FORMATS :
+		NPC.getSupportedFormats(npcId).filter(f => !NPC_RANDOM_FORMATS.includes(f));
 	// Filter out multi formats - they need special /npc multi command
 	const formats = allFormats.filter(f => !f.includes('multi'));
 	// Check if NPC has multi formats available
 	const multiFormats = allFormats.filter(f => f.includes('multi'));
-	const difficulty = selectedDifficulty || npc.difficulty || 'smart';
+	const difficulty = selectedDifficulty || npc?.difficulty || 'smart';
+	const name = npc?.name || 'Random Battle';
+	const description = isRandom ?
+		'An NPC opponent and both teams are chosen when you start the battle.' : npc?.description;
 
 	let html = `<div class="pad">`;
-	html += `<h2>Challenge ${npc.name}</h2>`;
-	if (npc.title) html += `<p><em>${npc.title}</em></p>`;
-	if (npc.description) html += `<p>${npc.description}</p>`;
+	html += `<h2>Challenge ${name}</h2>`;
+	if (npc?.title) html += `<p><em>${npc.title}</em></p>`;
+	if (description) html += `<p>${description}</p>`;
 
 	// Difficulty selection
 	html += `<h3>Select Difficulty</h3>`;
@@ -146,7 +154,9 @@ function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: 
 
 		for (const format of formats) {
 			const formatName = getFormatDisplayName(format);
-			const needsTeam = !format.includes('randombattle');
+			const needsTeam = !isRandom;
+			const battleCommand = isRandom ? `/npc random ${format}, ${difficulty}` :
+				`/npc start ${npcId}, ${format}, ${difficulty}`;
 
 			html += `<tr>`;
 			html += `<td><strong>${formatName}</strong>`;
@@ -154,7 +164,7 @@ function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: 
 				html += ` <small>(requires team)</small>`;
 			}
 			html += `</td>`;
-			html += `<td><button class="button" name="send" value="/npc start ${npcId}, ${format}, ${difficulty}">Battle</button></td>`;
+			html += `<td><button class="button" name="send" value="${battleCommand}">Battle</button></td>`;
 			html += `</tr>`;
 		}
 
@@ -164,7 +174,7 @@ function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: 
 	// Add Multi Battle section if NPC supports it
 	if (multiFormats.length > 0) {
 		html += `<h3>Multi Battle (2v2 Team)</h3>`;
-		html += `<p>Team up with a friend against ${npc.name}!</p>`;
+		html += `<p>Team up with a friend against ${name}!</p>`;
 		html += `<div class="ladder"><table>`;
 		html += `<tr><th>Format</th><th>Action</th></tr>`;
 
@@ -211,11 +221,10 @@ export const commands: Chat.ChatCommands = {
 			const difficulty = parts[1] ? toID(parts[1]) : undefined;
 
 			if (!npcId) {
-				return this.errorReply(`Usage: /npc challenge [npc id]`);
+				return this.errorReply(`Usage: /npc challenge [npc id or random]`);
 			}
 
-			const npc = NPC.get(npcId);
-			if (!npc) {
+			if (npcId !== 'random' && !NPC.get(npcId)) {
 				return this.errorReply(`NPC not found: ${npcId}`);
 			}
 
@@ -321,31 +330,21 @@ export const commands: Chat.ChatCommands = {
 		},
 
 		async random(target, room, user, connection) {
-			// Get random NPC
+			const [formatArg, difficultyArg] = target.split(',').map(s => toID(s.trim()));
+			const format = formatArg || 'gen9randombattle';
+			const difficulty = difficultyArg || 'smart';
+			if (!NPC_RANDOM_FORMATS.includes(format)) {
+				return this.errorReply(`Unknown random format. Available: ${NPC_RANDOM_FORMATS.join(', ')}`);
+			}
+			if (!AVAILABLE_DIFFICULTIES.includes(difficulty as Difficulty)) {
+				return this.errorReply(`Invalid difficulty: ${difficulty}. Available: ${AVAILABLE_DIFFICULTIES.join(', ')}`);
+			}
+
 			const npc = NPC.getRandom();
-			if (!npc) {
-				return this.errorReply(`No NPCs available.`);
-			}
+			if (!npc) return this.errorReply(`No NPCs available.`);
 
-			// Default to random battle format
-			const format = 'gen9randombattle';
-
-			if (!NPC.supportsFormat(npc.id, format)) {
-				// Try to find a supported format
-				const formats = NPC.getSupportedFormats(npc.id);
-				if (formats.length === 0) {
-					return this.errorReply(`${npc.name} has no supported formats.`);
-				}
-				// Show format selection instead
-				return this.sendReplyBox(getFormatSelectionHTML(npc.id, user));
-			}
-
-			// Create battle
-			const result = await createNPCBattle({
-				user,
-				npcId: npc.id,
-				format,
-			});
+			// The chosen NPC supplies the appearance; format and difficulty are independent.
+			const result = await createNPCBattle({ user, npcId: npc.id, format, difficulty });
 
 			if (!result.success) {
 				return this.errorReply(result.error || 'Failed to create NPC battle');
@@ -575,9 +574,10 @@ export const commands: Chat.ChatCommands = {
 	npchelp: [
 		`/npc - Show the NPC battle menu`,
 		`/npc list - Show available NPCs`,
-		`/npc challenge [npc], [difficulty] - Select a format and difficulty to battle an NPC`,
+		`/npc challenge [npc or random], [difficulty] - Select a format and difficulty`,
 		`/npc start [npc], [format], [difficulty] - Start a battle with the specified NPC, format, and difficulty`,
-		`/npc random - Start a random battle with a random NPC`,
+		`/npc random [format], [difficulty] - Random NPC appearance and teams (defaults: gen9randombattle, smart)`,
+		`Random formats: ${NPC_RANDOM_FORMATS.join(', ')}`,
 		`/npc multisetup [npc], [difficulty] - Show multi battle setup form to enter teammate`,
 		`/npc multi [npc], [teammate], [difficulty] - Invite teammate for multi battle (2v2) against NPC`,
 		`/npc acceptmulti [challenger] - Accept a multi battle invitation`,

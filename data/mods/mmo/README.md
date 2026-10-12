@@ -2,6 +2,16 @@
 
 `mmo` is a Gen 5 species/type dex with PokeMMO battle overrides. The rated singles formats are `gen5pokemmoou`, `gen5pokemmouu`, and `gen5pokemmonu`; all adjust teams to level 50. The existing PokeMMO, Test, and Doubles formats also use the shared dex, but retain their own format rules.
 
+## Random Battle
+
+`gen5pokemmorandombattle` uses the complete Gen 5 Random Battle catalogue, including Ubers, and the original per-species balancing levels (69–100 in the current data). It reuses `data/random-battles/gen5/sets.json` and its team-building algorithm through `data/random-battles/mmo/teams.ts`; no separate copy of the pool or sets is maintained. The generator reads the MMO dex for battle data, while retaining the Gen 5 templates' moves, abilities, item-selection logic, and levels.
+
+This format uses MMO battle mechanics, Sleep Clause MMO, independent Hidden Power types, and Illusion Level Mod. It has no team preview, fixed level 50, singles tier/combo bans, or MMO acquisition restrictions. For example, Kyogre, Speed Boost Blaziken, Arena Trap Dugtrio, and Draco Meteor Hydreigon remain available. It is a local random format, not a port of an official MMO random ladder; the inherited levels have not been rebalanced for the changed mechanics.
+
+The main `/npc` table contains a Random Battle row whose Formats column lists Gen 9 and PokeMMO Random Battle. Its Challenge button (`/npc challenge random`) opens the shared difficulty/format selection page; each format has a Battle button using the selected difficulty. `/npc random gen5pokemmorandombattle` randomly chooses an existing NPC's name/avatar and generates both teams. Difficulty defaults to `smart`, independently of the chosen NPC; select Basic on the challenge page or append `, basic` to the direct command to use BasicAI. `/npc random` retains its Gen 9 default. Shared formats are configured once in `NPC_RANDOM_FORMATS` in `server/npc/manager.ts`, not per NPC template.
+
+Regression coverage lives in `test/random-battles/mmo.js`, `test/server/npc/pokemmo-random.js`, and `test/server/npc/random-menu.js`, including the full source catalogue, balancing levels, reproducibility, NPC team generation, and completed battles with BasicAI/NormalAI.
+
 ## Sources
 
 - The battle implementation starts from [CTCC1/Pokemon-Showdown](https://github.com/CTCC1/Pokemon-Showdown/tree/9466904df894ae04a9568523e64ba3c40b5e1193/data/mods/mmo), commit `9466904df894ae04a9568523e64ba3c40b5e1193` (MIT).

@@ -11,12 +11,15 @@ import { FS } from '../../lib';
 import type { PokemonSet } from '../../sim/teams';
 import { Dex } from '../../sim/dex';
 
+/** Random formats are shared by all NPC appearances, independently of fixed teams. */
+export const NPC_RANDOM_FORMATS: readonly string[] = ['gen9randombattle', 'gen5pokemmorandombattle'];
+
 /**
  * NPC 的队伍配置。
  *
  * 新 schema（v1.2.26+）：
  *   - `teams`: 该 NPC 持有的所有自定义队伍文件名（相对 data/npc/teams/）
- *   - `randomFormats`: 支持的随机对战格式（PS 原生生成队伍，无文件）
+ * 随机对战格式由 NPC_RANDOM_FORMATS 统一配置，不绑定具体 NPC。
  *
  * 每个队伍文件自己带 `formats: string[]`，运行时按 formatId 筛选出合适的队伍。
  *
@@ -31,8 +34,6 @@ export interface NPCTemplate {
 	difficulty: 'random' | 'basic' | 'smart' | 'expert';
 	/** 该 NPC 持有的所有自定义队伍文件 */
 	teams: string[];
-	/** 支持的随机对战格式 */
-	randomFormats: string[];
 	customRules?: string[];
 }
 
@@ -79,19 +80,17 @@ function normalizeTeamFile(raw: AnyObject | null): NPCTeamFile | null {
 }
 
 /**
- * 把 template 的 teams/randomFormats 字段归一到新 schema。
- * 既接受新 schema 的字符串数组 + randomFormats 字段，也接受旧 schema 的嵌套字典。
+ * 把 template 的 teams 字段归一为文件名数组，兼容旧的嵌套队伍字典。
  */
-function normalizeTemplate(raw: AnyObject): { teams: string[]; randomFormats: string[] } {
+function normalizeTemplate(raw: AnyObject): { teams: string[] } {
 	// 新 schema（flat）
 	if (Array.isArray(raw.teams)) {
-		return { teams: raw.teams, randomFormats: raw.randomFormats || [] };
+		return { teams: raw.teams };
 	}
-	// 过渡 schema：teams.teams + teams.randomFormats（这是 v1.2.25 的误实现，兼容一下）
+	// 过渡 schema：teams.teams
 	if (raw.teams && Array.isArray(raw.teams.teams)) {
 		return {
 			teams: raw.teams.teams,
-			randomFormats: raw.teams.randomFormats || raw.teams.randombattle || [],
 		};
 	}
 	// 旧 schema：嵌套字典
@@ -112,7 +111,7 @@ function normalizeTemplate(raw: AnyObject): { teams: string[]; randomFormats: st
 			}
 		}
 	}
-	return { teams, randomFormats: cfg.randombattle || [] };
+	return { teams };
 }
 
 /**
@@ -152,7 +151,7 @@ export class NPCManager {
 			this.templates.clear();
 			for (const id in raw) {
 				const r = raw[id];
-				const { teams, randomFormats } = normalizeTemplate(r);
+				const { teams } = normalizeTemplate(r);
 				const template: NPCTemplate = {
 					id,
 					name: r.name,
@@ -161,7 +160,6 @@ export class NPCManager {
 					description: r.description,
 					difficulty: r.difficulty,
 					teams,
-					randomFormats,
 					customRules: r.customRules,
 				};
 				this.templates.set(id, template);
@@ -199,14 +197,14 @@ export class NPCManager {
 	/**
 	 * Check if NPC supports a format.
 	 *
-	 * 新实现：遍历 template.teams[] 读每个 team 文件的 formats；或 randomFormats 直接包含。
+	 * 固定队伍按文件的 formats 判断；随机对战对所有已存在的 NPC 开放。
 	 */
 	supportsFormat(npcId: string, format: string): boolean {
 		const template = this.get(npcId);
 		if (!template) return false;
 
 		if (isRandomBattleFormat(format)) {
-			return template.randomFormats.includes(format);
+			return NPC_RANDOM_FORMATS.includes(format);
 		}
 		return this.findTeamFilesForFormat(template, format).length > 0;
 	}
@@ -299,7 +297,7 @@ export class NPCManager {
 
 	/**
 	 * Get supported formats for an NPC.
-	 * 聚合所有 team 文件的 formats + randomFormats。
+	 * 聚合固定队伍格式与全局随机格式。
 	 */
 	getSupportedFormats(npcId: string): string[] {
 		const template = this.get(npcId);
@@ -310,7 +308,7 @@ export class NPCManager {
 			if (!content) continue;
 			for (const f of content.formats) seen.add(f);
 		}
-		for (const f of template.randomFormats) seen.add(f);
+		for (const f of NPC_RANDOM_FORMATS) seen.add(f);
 		return [...seen];
 	}
 

@@ -25,6 +25,16 @@ NPC 对战功能允许用户与电脑控制的对手进行对战，支持可配�
 4. **对手信息追踪** - 通过协议消息追踪对手状态
 5. **多人组队对战** - 两名玩家组队对战 NPC (v1.2)
 
+## 随机对战
+
+`/npc` 的 NPC 表格包含独立的 **Random Battle** 行，Formats 列显示支持的 **Gen 9 Random Battle** 和 **PokeMMO Random Battle**。点击 **Challenge** 后，选择 Basic／Smart 难度，再点击目标模式旁的 **Battle**。开始对战时随机选择已有 NPC 的名称与形象，双方自动生成队伍。各具体 NPC 的详情页只展示其固定队伍模式。
+
+随机对战默认为 Smart AI，难度由玩家选择，与抽到的 NPC 无关。`/npc challenge random` 可直接打开选择页；也可以使用命令 `/npc random gen5pokemmorandombattle, basic` 指定 Basic AI；省略格式的 `/npc random` 默认进入 Gen 9。随机格式在 `server/npc/manager.ts` 的 `NPC_RANDOM_FORMATS` 中统一配置，NPC 模板只配置形象和固定队伍，无需逐个维护随机格式。
+
+PokeMMO 随机对战的精灵池、配队模板和等级沿用 Gen 5 Random Battle，包含神兽，按物种保留 69–100 级的平衡等级；战斗使用 MMO 机制。该模式不执行 OU／UU／NU 的精灵池、组合禁用或统一 50 级规则，也不限制 MMO 的获取方式。Gen 5 配置的等级没有针对 MMO 机制重新调优。
+
+规则与测试范围见 [MMO 模组说明](../../data/mods/mmo/README.md#random-battle)。
+
 ## 架构认知
 
 ### 架构认知

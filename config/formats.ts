@@ -49,6 +49,20 @@ export const Formats: import('../sim/dex-formats').FormatList = [
 		column: 1,
 	},
 	{
+		name: "[Gen 5] PokeMMO Random Battle",
+		mod: 'mmo',
+		team: 'random',
+		rated: false,
+		// Keep Gen 5 random sets and levels; MMO singles availability/bans do not apply.
+		ruleset: [
+			'Species Clause', 'Sleep Clause MMO', 'PokeMMO Hidden Power',
+			'HP Percentage Mod', 'Cancel Mod', 'Endless Battle Clause', 'Illusion Level Mod', 'Dynamax Clause',
+		],
+		onBattleStart() {
+			this.gen = 8;
+		},
+	},
+	{
 		name: "[Gen 5] PokeMMO OU",
 		mod: 'mmo',
 		ruleset: ['PokeMMO Standard'],

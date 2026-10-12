@@ -1,4 +1,11 @@
 export const Conditions: import('../../../sim/dex-conditions').ModdedConditionDataTable = {
+	partiallytrapped: {
+		inherit: true,
+		onStart(pokemon, source) {
+			this.add('-activate', pokemon, 'move: ' + this.effectState.sourceEffect, `[of] ${source}`);
+			this.effectState.boundDivisor = source.hasItem('bindingband') ? 6 : 8;
+		},
+	},
 	brn: {
 		inherit: true,
 		onResidual(pokemon) {

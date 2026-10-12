@@ -41,12 +41,30 @@ export const Formats: import('../sim/dex-formats').FormatList = [
 		ruleset: ['[Gen 9] 1v1'],
 	},
 
-	// PokeMMO (CTCC1/Pokemon-Showdown, 9466904df894)
+	// PokeMMO (see data/mods/mmo/README.md for mechanics and tier sources)
 	///////////////////////////////////////////////////////////////////
 
 	{
 		section: "PokeMMO",
 		column: 1,
+	},
+	{
+		name: "[Gen 5] PokeMMO OU",
+		mod: 'mmo',
+		ruleset: ['PokeMMO Standard'],
+		banlist: ['Hydreigon + Draco Meteor'],
+	},
+	{
+		name: "[Gen 5] PokeMMO UU",
+		mod: 'mmo',
+		ruleset: ['PokeMMO Standard'],
+		banlist: ['OU'],
+	},
+	{
+		name: "[Gen 5] PokeMMO NU",
+		mod: 'mmo',
+		ruleset: ['PokeMMO Standard'],
+		banlist: ['OU', 'UU'],
 	},
 	{
 		name: "[Gen 5] PokeMMO",

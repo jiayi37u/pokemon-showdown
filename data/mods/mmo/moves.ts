@@ -1,3 +1,5 @@
+import { MoveUpdates } from './move-data';
+
 export const Moves: import('../../../sim/dex-moves').ModdedMoveDataTable = {
 	// ===============================================
 	// ==================== Gen 7 ====================
@@ -1624,6 +1626,9 @@ export const Moves: import('../../../sim/dex-moves').ModdedMoveDataTable = {
 	blizzard: {
 		inherit: true,
 		basePower: 110,
+		onModifyMove(move) {
+			if (this.field.isWeather(['hail', 'snowscape'])) move.accuracy = true;
+		},
 	},
 	block: {
 		inherit: true,
@@ -2457,3 +2462,9 @@ export const Moves: import('../../../sim/dex-moves').ModdedMoveDataTable = {
 	},
 	// TODO: manually set weather
 };
+
+// Apply the MMO move metadata without replacing this mod's battle callbacks.
+for (const [id, update] of Object.entries(MoveUpdates)) {
+	const move = Moves[id as ID] || { inherit: true };
+	Moves[id as ID] = { ...move, ...update };
+}

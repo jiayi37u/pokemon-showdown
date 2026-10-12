@@ -1,12 +1,29 @@
 // PokeMMO mechanics from CTCC1/Pokemon-Showdown (MIT).
 // Source: https://github.com/CTCC1/Pokemon-Showdown/tree/9466904df894ae04a9568523e64ba3c40b5e1193/data/mods/mmo
 import { Dex } from '../../../sim/dex';
+import { PokeMMOTiers } from './formats-data';
 
 type PokeMMOMove = ActiveMove & { isFutureMove?: boolean, recentForme?: Pokemon['species'] };
 
 export const Scripts: ModdedBattleScriptsData = {
 	inherit: 'gen5',
 	gen: 5,
+	init() {
+		// Do not inherit Smogon availability or tiers for species absent from the MMO catalogue.
+		for (const id in this.data.Pokedex) {
+			if (!Object.prototype.hasOwnProperty.call(PokeMMOTiers, id)) {
+				this.modData('Pokedex', id).isNonstandard = 'Past';
+				this.data.FormatsData[id] = { ...this.data.FormatsData[id], tier: 'Illegal' };
+			}
+		}
+		// FormatsData entries on aliases are interpreted as event-only ability variants by Dex.
+		for (const id in PokeMMOTiers) {
+			if (this.data.Pokedex[id]?.isCosmeticForme) {
+				this.modData('Pokedex', id).tier = PokeMMOTiers[id];
+				delete this.data.FormatsData[id];
+			}
+		}
+	},
 	actions: {
 		inherit: true,
 		getDamage(

@@ -1,3 +1,5 @@
+import { Abilities as ModernAbilities } from '../../abilities';
+
 export const Abilities: import('../../../sim/dex-abilities').ModdedAbilityDataTable = {
 	innerfocus: {
 		inherit: true,
@@ -45,8 +47,8 @@ export const Abilities: import('../../../sim/dex-abilities').ModdedAbilityDataTa
 	snowwarning: {
 		inherit: true,
 		onStart(source) {
-			if (this.field.weather !== 'hail') {
-				this.field.setWeather('hail');
+			if (this.field.weather !== 'snowscape') {
+				this.field.setWeather('snowscape');
 			}
 		},
 	},
@@ -60,3 +62,11 @@ export const Abilities: import('../../../sim/dex-abilities').ModdedAbilityDataTa
 		},
 	},
 };
+
+for (const id of ['competitive', 'neutralizinggas', 'protean', 'sharpness', 'slushrush', 'windrider'] as const) {
+	Abilities[id] = { inherit: true, gen: 5, isNonstandard: null };
+}
+// Restore snow support and modern protection against Intimidate and Taunt.
+for (const id of ['slushrush', 'icebody', 'snowcloak', 'forecast', 'owntempo', 'scrappy', 'oblivious'] as const) {
+	Abilities[id] = { ...ModernAbilities[id], ...Abilities[id] };
+}

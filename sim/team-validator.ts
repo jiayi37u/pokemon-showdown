@@ -1181,12 +1181,12 @@ export class TeamValidator {
 			}
 		}
 
-		if (set.hpType && !canBottleCap) {
+		if (set.hpType && !canBottleCap && !ruleTable.has('pokemmohiddenpower')) {
 			const ivHpType = dex.getHiddenPower(set.ivs).type;
 			if (set.hpType !== ivHpType) {
 				problems.push(`${name} has Hidden Power ${set.hpType}, but its IVs are for Hidden Power ${ivHpType}.`);
 			}
-		} else if (set.hpType) {
+		} else if (set.hpType && !ruleTable.has('pokemmohiddenpower')) {
 			if (!this.possibleBottleCapHpType(set.hpType, set.ivs)) {
 				problems.push(`${name} has Hidden Power ${set.hpType}, but its IVs don't allow this even with (Bottle Cap) Hyper Training.`);
 			}

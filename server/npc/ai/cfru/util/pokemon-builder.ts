@@ -5,7 +5,7 @@
  * 调用方向：
  *   - buildPokemonFromRequest()          —— state-builder 单打/双打自家精灵（request.side.pokemon）
  *   - trackedPokemonToAIPokemon()        —— 对手精灵（从 BattleTracker 聚合，stats 需按公式估算）
- *   - buildAIPokemonForMulti()           —— multi-manager 的 p2/p4 自家精灵（含 tracker boosts）
+ *   - NPCMultiManager.buildAIPokemon()   —— 复用 buildPokemonFromRequest 后补充 Multi tracker 状态
  *
  * 这里只做共享的"字段解析 + 默认值"工作，具体数据源的字段挑选还在各自 state-builder /
  * multi-manager 文件里，以免换 request/tracker 的字段路径时跨层级跳。

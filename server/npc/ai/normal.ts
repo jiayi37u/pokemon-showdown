@@ -14,6 +14,7 @@
  */
 
 import type { ObjectReadWriteStream } from '../../../lib/streams';
+import type { ChoiceRequest } from '../../../sim/side';
 import type { PRNGSeed } from '../../../sim/prng';
 import { PRNG } from '../../../sim/prng';
 import { Dex, toID } from '../../../sim/dex';
@@ -36,6 +37,8 @@ import { BattleTracker, createBattleTracker, TrackedPokemon } from './cfru/util/
 
 /** NormalAI configuration options */
 export interface NormalAIOptions {
+	/** Side label used by the Multi coordinator's per-player decision log. */
+	side?: 'p2' | 'p4';
 	/** PRNG seed */
 	seed?: PRNG | PRNGSeed | null;
 
@@ -79,6 +82,7 @@ export class NormalAI extends NPCBattleAI {
 
 	/** Current turn number */
 	private currentTurn: number = 0;
+	private activeSlotOffset = 0;
 
 	/** Decision logger */
 	private logger: AIDecisionLogger;
@@ -121,7 +125,7 @@ export class NormalAI extends NPCBattleAI {
 		// Initialize logger
 		this.logger = createBattleLogger(
 			options.battleId || `battle-${Date.now()}`,
-			'p2',
+			options.side || 'p2',
 			{
 				console: options.logging?.console ?? LogLevel.NONE,
 				file: options.logging?.file ?? LogLevel.NONE,
@@ -188,27 +192,27 @@ export class NormalAI extends NPCBattleAI {
 	/**
 	 * Override receiveRequest to update battle state
 	 */
-	override receiveRequest(request: AnyObject): void {
-		// Update turn and cache
-		const newTurn = this.battleRef?.turn ?? this.currentTurn + 1;
-		if (newTurn !== this.currentTurn) {
-			this.currentTurn = newTurn;
-			this.aiCache = updateCacheTurn(this.aiCache, newTurn);
-			this.scoringEngine.updateCache(this.aiCache);
+	override receiveRequest(request: ChoiceRequest): void {
+		if (request.wait) return;
+		const state = buildBattleStateWithTracker(request, this.battleRef, this.tracker, this.cfruConfig);
+		state.turn = this.battleRef?.turn ?? this.currentTurn + 1;
+		this.receiveRequestWithState(request, state);
+	}
+
+	/** Multi supplies the public team state; switch candidates still come only from this player's request. */
+	receiveRequestWithState(request: ChoiceRequest, state: BattleState, activeSlot = 1): void {
+		this.currentTurn = state.turn;
+		this.aiCache = updateCacheTurn(this.aiCache, state.turn);
+		this.scoringEngine.updateCache(this.aiCache);
+		this.battleState = state;
+		this.cfruConfig.isDoubles = state.isDoubles;
+		this.scoringEngine.updateConfig(this.cfruConfig);
+		this.activeSlotOffset = activeSlot - 1;
+		try {
+			super.receiveRequest(request);
+		} finally {
+			this.activeSlotOffset = 0;
 		}
-
-		// Build battle state from request
-		// Use tracker for server environment where battle.sides is not available
-		this.battleState = buildBattleStateWithTracker(request, this.battleRef, this.tracker, this.cfruConfig);
-
-		// Update doubles setting
-		if (request.active && request.active.length > 1) {
-			this.cfruConfig.isDoubles = true;
-			this.scoringEngine.updateConfig(this.cfruConfig);
-		}
-
-		// Call parent implementation
-		super.receiveRequest(request);
 	}
 
 	/**
@@ -235,6 +239,7 @@ export class NormalAI extends NPCBattleAI {
 		zMove?: boolean;
 		transform?: 'mega' | 'ultra' | 'dynamax' | 'terastallize';
 	} {
+		activeIndex += this.activeSlotOffset;
 		// Filter out disabled moves
 		const availableMoves = moves.filter(m => !m.disabled);
 
@@ -331,7 +336,7 @@ export class NormalAI extends NPCBattleAI {
 		// (for doubles, this is the target that maximizes damage)
 		let targetPos: string | undefined;
 		if (this.cfruConfig.isDoubles && bestMove.target) {
-			targetPos = bestTargetPos || this.getTargetPosition(bestMove, active);
+			targetPos = bestTargetPos || this.getTargetPosition(bestMove, activeIndex);
 		}
 
 		return {
@@ -840,14 +845,15 @@ export class NormalAI extends NPCBattleAI {
 	 * - Negative numbers (-1, -2) = ally Pokemon
 	 * - 0 = no specific target (auto-select)
 	 */
-	private getTargetPosition(move: MoveChoice, active: AnyObject): string {
+	private getTargetPosition(move: MoveChoice, activeIndex: number): string {
 		// For moves that need a target, default to first opponent (position 1)
 		if (move.target === 'normal' || move.target === 'any') {
 			return '1'; // First opponent (positive = foe)
 		}
 		// For ally-targeting moves
 		if (move.target === 'adjacentAlly' || move.target === 'adjacentAllyOrSelf') {
-			return '-2'; // Partner (negative = ally, -2 is typically the partner slot)
+			const partner = this.battleState?.self.active.find(p => p.slot !== activeIndex + 1 && !p.fainted);
+			return partner ? String(-partner.slot) : move.target === 'adjacentAllyOrSelf' ? String(-activeIndex - 1) : '';
 		}
 		return '';
 	}

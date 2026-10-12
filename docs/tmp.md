@@ -13,7 +13,7 @@
 
 **处理方式**: 抽出 `server/npc/ai/cfru/util/pokemon-builder.ts`，共享 `parseCondition` / `parseDetails` / `speciesDefaults` / `makeAIPokemonSkeleton`。state-builder 的两个函数已复用这些底层。
 
-**遗留**: `multi-manager.ts` 的 `buildAIPokemon` 没完全并进来——它用 `isActive` 命名、带 Multi 专用的 `terastallized/teraType`、缺一些字段。目前下游不读这些字段，所以能跑通；完整合并留给 Multi 流程彻底过完 state-builder 的后续重构。相关注释已写在该函数的 JSDoc 里。
+**Multi 构建**: `multi-manager.ts` 复用 `buildPokemonFromRequest`，能力等级、特性能力值修正及上次招式从 Multi tracker 的 `p2a` / `p4b` 记录补齐。己方等级、当前特性和 `active` 等字段遵循共享模型。
 
 ---
 
@@ -33,16 +33,14 @@
 
 ---
 
-### P4 - NormalAI 和 NPCMultiManager 重复逻辑（延后）
+### P4 - NormalAI 和 NPCMultiManager 重复逻辑 ✅ 已处理
 
 **文件**: `normal.ts`, `multi-manager.ts`
 
-**现状**: 单打和双打使用 `NormalAI`，线上 Multi 使用 `NPCMultiManager`。两条路径共享 `BattleTracker`、`ScoringEngine` 和 `buildAIMove`，没有统一完整决策流程。提交 `b781736cc` 包含构建工具的共享，不包含决策流程统一。
+**决策路径**: 单打、双打由 `NormalAI.receiveRequest` 构建状态后决策。线上 Multi 由 `NPCMultiManager` 汇总 p2 / p4 请求和公开协议，调用各自 `NormalAI.receiveRequestWithState`，共用招式编号、目标选择、主动换人和被迫换人逻辑。
 
-**双打决策**: `NormalAI` 按行动精灵的场上位置评估所有存活对手，替补评分覆盖两个对手。`NPCBattleAI` 依据请求中的场上数量及 `active` 标志排除队友，且排除倒下和已选替补。`test/server/npc/doubles-switching.js` 使用真实双打请求验证两个行动位置、免疫目标、替补分配、困住及被迫换人，并检查模拟器接受指令。
+**位置与队伍**: 场上位置固定为 p2 = 1、p4 = 2、p1 = 1、p3 = 2，不因倒下而重新编号。替补候选只来自行动玩家自己的 `request.side.pokemon`，p2 和 p4 可分别选择自己队伍的 `switch 2`。状态中的队友只参与场面评估。
 
-**待修复（2026-10-12 核验，Multi 按用户要求延后）**:
-- `NPCMultiManager.evaluateSideChoice` 没有因招式无效或评分低而主动换人的分支。围巾多边兽-Z 锁定十万伏特，对面是已暴露蓄电的电灯怪和烈咬陆鲨时，线上决策路径仍输出 `>p2 move 1 1`。
-- `test/npc/sim-battle/runner.ts` 的 Multi 使用两个 `NormalAI`，与线上 `NPCMultiManager` 不同；Multi 回归需要直接覆盖线上协调器及其请求处理。
+**请求协调**: 行动请求等待队友请求或同回合的明确 `wait`；队伍预览和被迫换人可独立执行。双方选择先计算后发送，已提交请求不重复发送。等待玩家的队伍数据仍用于状态构建。
 
-**验证边界**: 吸收类特性追踪覆盖三种模式；单打和双打换人有真实模拟器回归，线上 Multi 的主动换人仍待处理。
+**验证**: `test/server/npc/multi-decisions.js` 直接覆盖线上协调器，使用真实四人模拟器的请求、公开协议和指令校验，包含锁招免疫、禁用招式编号、各自后备、辅助目标、困住、倒下、被迫换人、请求延迟、能力字段、黑雾及完整对战。`test/npc/sim-battle/runner.ts` 的两个 `NormalAI` 不能替代协调器回归。

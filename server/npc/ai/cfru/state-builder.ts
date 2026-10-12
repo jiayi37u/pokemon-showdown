@@ -153,7 +153,7 @@ function buildSelfReserve(request: AnyObject, active: AIPokemon[]): AIPokemon[] 
  * Note: This function builds basic Pokemon info from request.
  * For active Pokemon with boosts, use buildSelfActiveWithBoosts which requires battle object.
  */
-function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: boolean): AIPokemon {
+export function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: boolean): AIPokemon {
 	const { currentHp, maxHp, hpPercent, status, fainted } = parseCondition(mon.condition);
 	const { species, level, gender } = parseDetails(mon.details);
 	const { types } = speciesDefaults(species);

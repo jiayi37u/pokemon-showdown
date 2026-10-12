@@ -1,0 +1,198 @@
+{
+  "format": "gen9nationaldex",
+  "pokemon": [
+    {
+      "name": "",
+      "species": "Camerupt",
+      "item": "Assault Vest",
+      "ability": "Solid Rock",
+      "gender": "",
+      "nature": "Modest",
+      "evs": {
+        "hp": 248,
+        "atk": 0,
+        "def": 0,
+        "spa": 252,
+        "spd": 8,
+        "spe": 0
+      },
+      "ivs": {
+        "hp": 31,
+        "atk": 0,
+        "def": 31,
+        "spa": 31,
+        "spd": 31,
+        "spe": 31
+      },
+      "level": 100,
+      "moves": [
+        "Heat Wave",
+        "Scorching Sands",
+        "Hidden Power Ice",
+        "Overheat"
+      ],
+      "shiny": true,
+      "teraType": "Fire"
+    },
+    {
+      "name": "",
+      "species": "Cacturne",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "",
+      "nature": "Careful",
+      "evs": {
+        "hp": 248,
+        "atk": 8,
+        "def": 0,
+        "spa": 0,
+        "spd": 252,
+        "spe": 0
+      },
+      "ivs": {
+        "hp": 31,
+        "atk": 31,
+        "def": 31,
+        "spa": 31,
+        "spd": 31,
+        "spe": 31
+      },
+      "level": 100,
+      "moves": [
+        "Spiky Shield",
+        "Leech Seed",
+        "Knock Off",
+        "Seed Bomb"
+      ],
+      "teraType": "Grass"
+    },
+    {
+      "name": "",
+      "species": "Alakazam",
+      "item": "Life Orb",
+      "ability": "Magic Guard",
+      "gender": "",
+      "nature": "Timid",
+      "evs": {
+        "hp": 0,
+        "atk": 0,
+        "def": 0,
+        "spa": 252,
+        "spd": 4,
+        "spe": 252
+      },
+      "ivs": {
+        "hp": 31,
+        "atk": 0,
+        "def": 31,
+        "spa": 31,
+        "spd": 31,
+        "spe": 31
+      },
+      "level": 100,
+      "moves": [
+        "Encore",
+        "Shadow Ball",
+        "Dazzling Gleam",
+        "Expanding Force"
+      ],
+      "teraType": "Psychic"
+    },
+    {
+      "name": "",
+      "species": "Mightyena",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "gender": "",
+      "nature": "Jolly",
+      "evs": {
+        "hp": 0,
+        "atk": 252,
+        "def": 0,
+        "spa": 0,
+        "spd": 4,
+        "spe": 252
+      },
+      "ivs": {
+        "hp": 31,
+        "atk": 31,
+        "def": 31,
+        "spa": 31,
+        "spd": 31,
+        "spe": 31
+      },
+      "level": 100,
+      "moves": [
+        "Psychic Fangs",
+        "Throat Chop",
+        "Play Rough",
+        "Taunt"
+      ],
+      "teraType": "Dark"
+    },
+    {
+      "name": "",
+      "species": "Crobat",
+      "item": "Black Sludge",
+      "ability": "Inner Focus",
+      "gender": "",
+      "nature": "Jolly",
+      "evs": {
+        "hp": 252,
+        "atk": 4,
+        "def": 0,
+        "spa": 0,
+        "spd": 0,
+        "spe": 252
+      },
+      "ivs": {
+        "hp": 31,
+        "atk": 31,
+        "def": 31,
+        "spa": 31,
+        "spd": 31,
+        "spe": 31
+      },
+      "level": 100,
+      "moves": [
+        "Tailwind",
+        "Roost",
+        "Brave Bird",
+        "Super Fang"
+      ],
+      "teraType": "Poison"
+    },
+    {
+      "name": "",
+      "species": "Houndoom",
+      "item": "Life Orb",
+      "ability": "Flash Fire",
+      "gender": "",
+      "nature": "Timid",
+      "evs": {
+        "hp": 0,
+        "atk": 0,
+        "def": 0,
+        "spa": 252,
+        "spd": 4,
+        "spe": 252
+      },
+      "ivs": {
+        "hp": 31,
+        "atk": 0,
+        "def": 31,
+        "spa": 31,
+        "spd": 31,
+        "spe": 31
+      },
+      "level": 100,
+      "moves": [
+        "Nasty Plot",
+        "Dark Pulse",
+        "Fire Blast",
+        "Heat Wave"
+      ],
+      "teraType": "Dark"
+    }
+  ]
+}

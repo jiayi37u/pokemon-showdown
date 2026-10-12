@@ -1,5 +1,5 @@
 {
-  "formats": ["gen6ou"],
+  "formats": ["gen6ou", "gen9nationaldex", "gen9nationaldexmulti"],
   "pokemon": [
     {
       "species": "Camerupt",
@@ -9,8 +9,12 @@
       "evs": { "hp": 248, "spa": 252, "spd": 8 },
       "moves": ["Heat Wave", "Scorching Sands", "Hidden Power [Ice]", "Overheat"],
       "shiny": true,
-      "teraType": "Fire",
-      "ivs": { "atk": 0 }
+      "ivs": { "atk": 0 },
+      "name": "Camerupt",
+      "level": 100,
+      "gender": "",
+      "hpType": "Ice",
+      "teraType": "Fire"
     },
     {
       "species": "Cacturne",
@@ -19,6 +23,10 @@
       "nature": "Careful",
       "evs": { "hp": 248, "atk": 8, "spd": 252 },
       "moves": ["Spiky Shield", "Leech Seed", "Knock Off", "Seed Bomb"],
+      "name": "Cacturne",
+      "level": 100,
+      "ivs": { "hp": 31, "atk": 31, "def": 31, "spa": 31, "spd": 31, "spe": 31 },
+      "gender": "",
       "teraType": "Grass"
     },
     {
@@ -28,8 +36,11 @@
       "nature": "Timid",
       "evs": { "spa": 252, "spd": 4, "spe": 252 },
       "moves": ["Encore", "Shadow Ball", "Dazzling Gleam", "Expanding Force"],
-      "teraType": "Psychic",
-      "ivs": { "atk": 0 }
+      "ivs": { "atk": 0 },
+      "name": "Alakazam",
+      "level": 100,
+      "gender": "",
+      "teraType": "Psychic"
     },
     {
       "species": "Mightyena",
@@ -38,6 +49,10 @@
       "nature": "Jolly",
       "evs": { "atk": 252, "spd": 4, "spe": 252 },
       "moves": ["Psychic Fangs", "Throat Chop", "Play Rough", "Taunt"],
+      "name": "Mightyena",
+      "level": 100,
+      "ivs": { "hp": 31, "atk": 31, "def": 31, "spa": 31, "spd": 31, "spe": 31 },
+      "gender": "",
       "teraType": "Dark"
     },
     {
@@ -47,6 +62,10 @@
       "nature": "Jolly",
       "evs": { "hp": 252, "atk": 4, "spe": 252 },
       "moves": ["Tailwind", "Roost", "Brave Bird", "Super Fang"],
+      "name": "Crobat",
+      "level": 100,
+      "ivs": { "hp": 31, "atk": 31, "def": 31, "spa": 31, "spd": 31, "spe": 31 },
+      "gender": "",
       "teraType": "Poison"
     },
     {
@@ -56,8 +75,11 @@
       "nature": "Timid",
       "evs": { "spa": 252, "spd": 4, "spe": 252 },
       "moves": ["Nasty Plot", "Dark Pulse", "Fire Blast", "Heat Wave"],
-      "teraType": "Dark",
-      "ivs": { "atk": 0 }
+      "ivs": { "atk": 0 },
+      "name": "Houndoom",
+      "level": 100,
+      "gender": "",
+      "teraType": "Dark"
     }
   ]
 }

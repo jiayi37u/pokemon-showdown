@@ -27,7 +27,7 @@ describe('PokeMMO tiers', () => {
 			counts[tier] = (counts[tier] || 0) + 1;
 			assert.equal(dex.species.get(id).tier, tier, id);
 		}
-		assert.deepEqual(counts, { Uber: 60, OU: 43, UU: 53, NU: 46, UT: 487 });
+		assert.deepEqual(counts, { Uber: 60, OU: 43, UU: 53, NU: 46, UT: 487, LC: 2 });
 		assert.equal(dex.species.get('gallade').tier, 'NU');
 		assert.equal(Dex.mod('gen5').species.get('gallade').tier, 'RU');
 		assert.equal(Dex.mod('gen5').moves.get('outrage').basePower, 120);
@@ -229,7 +229,7 @@ describe('PokeMMO tiers', () => {
 			assert.equal(validate(set(species.name, species.abilities[0], [move])), null, id);
 			checked++;
 		}
-		assert.equal(checked, 629);
+		assert.equal(checked, 631);
 	});
 
 	it('should double Slush Rush speed in snow and restore it when snow ends', () => {

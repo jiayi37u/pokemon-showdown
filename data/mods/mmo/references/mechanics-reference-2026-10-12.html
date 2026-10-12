@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PokeMMO vs Mainline - Complete Differences - PokeMMO Showdown</title>
+  <meta name="description" content="Complete reference of every difference between PokeMMO PvP and mainline/Smogon Pokemon. Mechanics, moves, abilities, items, bans, and base stat changes.">
+  <meta property="og:title" content="PokeMMO vs Mainline - Complete Differences - PokeMMO Showdown">
+  <meta property="og:description" content="Complete reference of every difference between PokeMMO PvP and mainline/Smogon Pokemon. Mechanics, moves, abilities, items, bans, and base stat changes.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://mmoshowdown.com/resources/mechanics-reference">
+  <meta property="og:image" content="https://mmoshowdown.com/logo.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="canonical" href="https://mmoshowdown.com/resources/mechanics-reference">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+    body {
+      font-family: Verdana, Arial, sans-serif; font-size: 13px; line-height: 1.6;
+      color: #e0e0e0; background: #141418;
+    }
+    .topbar, .breadcrumbs, .page-header, .content, .footer { position: relative; z-index: 1; }
+    a { color: #ccd8ee; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .topbar { background: #111114; padding: 14px 24px; display: flex; align-items: center; border-bottom: 1px solid #2a2a2e; position: relative; }
+    .topbar-wordmark { height: 52px; object-fit: contain; }
+    .topbar-nav {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 6px; font-size: 14px;
+    }
+    .topbar-nav a {
+      color: #888; text-decoration: none; padding: 7px 18px;
+      border-radius: 4px; border: 1px solid transparent; background: transparent;
+    }
+    .topbar-nav a:hover { color: #ccd8ee; border-color: #2a2a2e; background: #1e1e24; text-decoration: none; }
+    .topbar-nav a.active { color: #fff; border-color: #2a2a2e; background: #1e1e24; }
+
+    .breadcrumbs { padding: 14px 24px 0; max-width: 960px; margin: 0 auto; font-size: 12px; color: #555; }
+    .breadcrumbs a { color: #888; }
+    .breadcrumbs a:hover { color: #ccd8ee; }
+    .breadcrumbs span { color: #555; margin: 0 4px; }
+
+    .page-header { padding: 18px 24px 0; max-width: 960px; margin: 0 auto; }
+    .page-title { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+    .page-sub { font-size: 13px; color: #888; max-width: 600px; }
+
+    .content { padding: 14px 24px 32px; max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+    .card { background: #1e1e24; border: 1px solid #2a2a2e; border-radius: 6px; overflow: hidden; }
+    .card-head {
+      font-size: 14px; font-weight: 700; color: #e0e0e0;
+      padding: 10px 16px; background: #1a1a1f; border-bottom: 1px solid #2a2a2e;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .card-body { padding: 14px 16px; }
+    .card-body p { color: #b0b0b0; line-height: 1.7; margin-bottom: 10px; }
+    .card-body p:last-child { margin-bottom: 0; }
+    .card-body strong { color: #e0e0e0; font-weight: 700; }
+    .card-body a { color: #ccd8ee; text-decoration: underline; text-decoration-color: #444; text-underline-offset: 2px; }
+    .card-body a:hover { text-decoration-color: #ccd8ee; }
+    .card-body ul,.card-body ol { padding-left: 24px; margin: 6px 0; }
+    .card-body li { margin-bottom: 12px; }
+
+    .pkmn-icon {
+      display: inline-block; width: 40px; height: 30px;
+      background: url('https://play.pokemonshowdown.com/sprites/pokemonicons-sheet.png') no-repeat;
+      image-rendering: pixelated; vertical-align: middle; flex-shrink: 0;
+    }
+
+    .tier-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+    .tier-ou  { background: #2a4a6e; color: #8ab4e8; }
+    .tier-uu  { background: #4a2a2a; color: #e88a8a; }
+    .tier-nu  { background: #2a4a2a; color: #8ae88a; }
+    .tier-vgc { background: #4a3a1a; color: #e8c86a; }
+    .tier-uber { background: #3a2a4a; color: #b88ae8; }
+    .tier-lc  { background: #2a3a4a; color: #8ac8e8; }
+
+    .section-list { list-style: none; padding: 0; margin: 8px 0 0; }
+    .section-list li { padding: 8px 0; border-bottom: 1px solid #2a2a2e; color: #b0b0b0; font-size: 13px; line-height: 1.6; }
+    .section-list li:last-child { border-bottom: none; }
+    .section-list li strong { color: #e0e0e0; }
+
+    .callout { background: #1a1f2a; border: 1px solid #2a3a4e; border-radius: 5px; padding: 12px 14px; margin: 10px 0; font-size: 12px; color: #8ab4e8; line-height: 1.6; }
+    .callout a { color: #a0c8ff; }
+
+    .link-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .link-card { display: block; padding: 12px 14px; background: #252528; border: 1px solid #2a2a2e; border-radius: 5px; text-decoration: none; }
+    .link-card:hover { border-color: #3a3a4e; text-decoration: none; }
+    .link-card-name { font-size: 13px; font-weight: 700; color: #ccd8ee; display: block; margin-bottom: 2px; }
+    .link-card-desc { font-size: 11px; color: #666; }
+
+    .mech-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+    .mech-table th { text-align: left; padding: 7px 10px; font-weight: 700; color: #b0b0b0; background: #1a1a1f; border-bottom: 1px solid #2a2a2e; font-size: 11px; }
+    .mech-table td { padding: 7px 10px; color: #b0b0b0; border-bottom: 1px solid #222228; }
+    .mech-table tr:last-child td { border-bottom: none; }
+    .mech-table .changed { color: #e8c86a; }
+
+    .footer { padding: 14px 24px; font-size: 11px; color: #444; text-align: center; border-top: 1px solid #2a2a2e; line-height: 1.8; }
+
+    @media (max-width: 640px) {
+      .topbar { flex-wrap: wrap; padding: 10px 14px; gap: 8px; }
+      .topbar-wordmark { height: 36px !important; }
+      .topbar-nav { position: static; transform: none; width: 100%; justify-content: center; gap: 4px; }
+      .topbar-nav a { padding: 5px 10px; font-size: 12px; }
+      .breadcrumbs { padding: 10px 14px 0; }
+      .page-header { padding: 14px 14px 0; }
+      .page-title { font-size: 18px; }
+      .content { padding: 10px 10px 24px; }
+      .link-grid { grid-template-columns: 1fr; }
+      .mech-table { font-size: 11px; }
+      .mech-table th, .mech-table td { padding: 6px 8px; }
+      .footer { padding: 12px 14px; font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <a href="/"><img src="/wordmark.png" alt="PokeMMO Showdown" class="topbar-wordmark"></a>
+    <nav class="topbar-nav">
+      <a href="/">Home</a>
+      <a href="/dex">StratDex</a>
+      <a href="/resources" class="active">Resources</a>
+      <a href="https://mmoshowdown.cc">Play</a>
+      <a href="https://discord.gg/tWXGCtud4m">Discord</a>
+    </nav>
+  </header>
+
+  <div class="breadcrumbs">
+    <a href="/">Home</a><span>/</span><a href="/resources">Resources</a><span>/</span>PokeMMO vs Mainline - Complete Differences  </div>
+
+  <div class="page-header">
+    <h1 class="page-title">PokeMMO vs Mainline - Complete Differences</h1>
+    <p class="page-sub">Every mechanic, move, ability, item, stat, and rule difference between PokeMMO&#039;s competitive metagame and standard mainline/Smogon Pokemon.</p>  </div>
+
+  <main class="content">
+        <div class="card">
+      <div class="card-head">
+        <span class="pkmn-icon" style="background-position:-280px -1590px"></span>        Core Premise      </div>
+      <div class="card-body">
+        <p>PokeMMO runs a hybrid ruleset that doesn't exist anywhere else:</p>
+<ul class="section-list">
+  <li>Gen 5 Pokemon - only Gen 1 through 5 (up to Unova) are available</li>
+  <li>Gen 6+ battle mechanics - the engine uses modern battle logic, not Gen 5's</li>
+  <li>No Fairy type - 17 types total, Steel still resists Dark and Ghost</li>
+  <li>Level 50 cap - all standard formats at Lv50 (LC at Lv5), not Lv100</li>
+  <li>Own tier system - PokeMMO tiers (OU/UU/NU/UT) are based on in-game usage, not Smogon's</li>
+</ul>      </div>
+    </div>
+        <div class="card">
+      <div class="card-head">
+        <span class="pkmn-icon" style="background-position:-240px -1140px"></span>        Battle Mechanics      </div>
+      <div class="card-body">
+        <p>These are the specific mechanical differences from standard Gen 5 <em>and</em> standard Gen 9.</p>
+<table class="mech-table">
+  <thead><tr><th>Mechanic</th><th>PokeMMO</th><th>Gen 5</th><th>Gen 9</th></tr></thead>
+  <tbody>
+<tr><td>Weather duration (summoned by ability)<br></td><td class="changed">5-8 turns</td><td>Infinite</td><td>5-8 turns</td></tr>
+<tr><td>Rapid Spin<br></td><td class="changed">Boosts speed by 1 stage</td><td>Doesn't boost speed</td><td>Boosts speed by 1 stage</td></tr>
+<tr><td>Teleport<br></td><td class="changed">Switches user out</td><td>Fails if used</td><td>Switches user out</td></tr>
+<tr><td>Sleep Clause<br></td><td class="changed">Sleep moves are one-time use</td><td>Removed</td><td>Removed in most formats</td></tr>
+    <tr><td>Critical hit multiplier<br></td><td class="changed">1.5x</td><td>2x</td><td>1.5x</td></tr>
+    <tr><td>Paralysis speed</td><td class="changed">50% reduction</td><td>75% reduction</td><td>50% reduction</td></tr>
+    <tr><td>Partial trapping</td><td class="changed">1/8 per turn</td><td>1/16 per turn</td><td>1/8 per turn</td></tr>
+    <tr><td>Sleep turns</td><td class="changed">1-3 turns, no reset</td><td>1-3 turns, reset if switched out</td><td>1-3 turns, no reset</td></tr>
+    <tr><td>Gem boost</td><td class="changed">1.5x (one-time)</td><td>1.5x</td><td>1.3x</td></tr>
+    <tr><td>Prankster vs Dark</td><td class="changed">Status moves fail</td><td>No immunity</td><td>Status moves fail</td></tr>
+    <tr><td>Fairy type</td><td class="changed">Does not exist</td><td>Does not exist</td><td>Exists</td></tr>
+    <tr><td>Snow weather</td><td class="changed">1.5x Def for Ice-types</td><td>N/A (Hail only)</td><td>1.5x Def for Ice-types</td></tr>
+    <tr><td>Intimidate blocking</td><td class="changed">Inner Focus/Own Tempo/Oblivious/Scrappy</td><td>Only Inner Focus</td><td>All four</td></tr>
+    <tr><td>Oblivious</td><td class="changed">Blocks Taunt + Attract + Captivate</td><td>Blocks Attract + Captivate</td><td>Same as PokeMMO</td></tr>
+    <tr><td>Toxic (Poison types)</td><td class="changed">Never misses</td><td>90%</td><td>Never misses</td></tr>
+    <tr><td>Facade</td><td class="changed">Ignores burn Atk reduction</td><td>Does not ignore</td><td>Ignores</td></tr>
+    <tr><td>Iron Barbs/Rough Skin</td><td class="changed">Suppressed by Mold Breaker</td><td>Not suppressed</td><td>Suppressed</td></tr>
+    <tr><td>Rage Powder</td><td class="changed">Grass + Overcoat immune</td><td>Grass immune</td><td>Grass + Overcoat immune</td></tr>
+    <tr><td>Ghost trapping immunity</td><td class="changed">Ghosts immune to trapping</td><td>Not immune</td><td>Immune</td></tr>
+    <tr><td>Soul Dew</td><td class="changed">1.2x Dragon/Psychic BP (Lati twins)</td><td>1.5x SpA/SpD flat</td><td>1.2x Dragon/Psychic BP</td></tr>
+    <tr><td>Screens (doubles)</td><td class="changed">1/3 reduction</td><td>1/2 reduction</td><td>1/3 reduction</td></tr>
+    <tr><td>Hidden Power IVs</td><td class="changed">Not enforced (any IVs, any type)</td><td>IVs determine type + power</td><td>Fixed 60 BP, IVs determine type</td></tr>
+    <tr><td>Level cap<br></td><td class="changed">Lv50 for singles tiers</td><td>Lv100 for singles tiers</td><td>Lv100 for singles tiers (Smogon)</td></tr>
+  </tbody>
+</table>      </div>
+    </div>
+        <div class="card">
+      <div class="card-head">
+        <span class="pkmn-icon" style="background-position:-40px -1110px"></span>        Move Base Power Changes      </div>
+      <div class="card-body">
+        <p>PokeMMO-specific BP values. Many align with Gen 6+ updates, but some (like Knock Off) are unique. This list covers ~75+ moves.</p>
+<table class="mech-table">
+  <thead><tr><th>Move</th><th>PokeMMO BP</th><th>Gen 5 BP</th><th>Gen 9 BP</th></tr></thead>
+  <tbody>
+    <tr><td>Knock Off</td><td class="changed">20 (flat, no item boost)</td><td>20</td><td>65 (1.5x w/ item)</td></tr>
+    <tr><td>Outrage</td><td class="changed">90</td><td>120</td><td>120</td></tr>
+    <tr><td>Sucker Punch</td><td>70</td><td>80</td><td>70</td></tr>
+    <tr><td>Hidden Power</td><td>60 (flat)</td><td>30-70</td><td>60</td></tr>
+    <tr><td>Dark Void</td><td class="changed">50 accuracy</td><td>80 accuracy</td><td>50 accuracy</td></tr>
+    <tr><td>Luster Purge / Mist Ball</td><td>95</td><td>70</td><td>95</td></tr>
+    <tr><td>Thunderbolt / Ice Beam / Flamethrower / Surf</td><td>90</td><td>95</td><td>90</td></tr>
+    <tr><td>Fire Blast / Thunder / Blizzard / Hydro Pump / Hurricane</td><td>110</td><td>120</td><td>110</td></tr>
+    <tr><td>Overheat / Draco Meteor / Leaf Storm</td><td>130</td><td>140</td><td>130</td></tr>
+    <tr><td>Rapid Spin</td><td>50</td><td>20</td><td>50</td></tr>
+    <tr><td>Leech Life</td><td>80</td><td>20</td><td>80</td></tr>
+    <tr><td>Future Sight</td><td>120</td><td>100</td><td>120</td></tr>
+    <tr><td>Energy Ball</td><td>90</td><td>80</td><td>90</td></tr>
+    <tr><td>Aura Sphere</td><td>80</td><td>90</td><td>80</td></tr>
+    <tr><td>Dragon Pulse</td><td>85</td><td>90</td><td>85</td></tr>
+    <tr><td>Heat Wave</td><td>95</td><td>100</td><td>95</td></tr>
+    <tr><td>Crabhammer</td><td>100</td><td>90</td><td>100</td></tr>
+    <tr><td>Meteor Mash</td><td>90</td><td>100</td><td>90</td></tr>
+    <tr><td>Hex</td><td>65</td><td>50</td><td>65</td></tr>
+    <tr><td>Magma Storm</td><td>100</td><td>120</td><td>100</td></tr>
+    <tr><td>Skull Bash</td><td>130</td><td>100</td><td>130</td></tr>
+    <tr><td>Synchronoise</td><td>120</td><td>70</td><td>120</td></tr>
+    <tr><td>Techno Blast</td><td>120</td><td>85</td><td>120</td></tr>
+    <tr><td>Pin Missile</td><td>25</td><td>14</td><td>25</td></tr>
+    <tr><td>Muddy Water</td><td>90</td><td>95</td><td>90</td></tr>
+    <tr><td>Pledges (Fire/Grass/Water)</td><td>80</td><td>50</td><td>80</td></tr>
+  </tbody>
+</table>
+<div class="callout">This is a subset of the most relevant changes. There are 75+ total BP overrides. The <a href="https://calc.mmoshowdown.cc">damage calculator</a> accounts for all of them.</div>      </div>
+    </div>
+        <div class="card">
+      <div class="card-head">
+        <span class="pkmn-icon" style="background-position:-320px -510px"></span>        Move PP, Behavior, and Flags      </div>
+      <div class="card-body">
+        <p><strong>PP Nerfs (Recovery Moves)</strong></p>
+<table class="mech-table">
+  <thead><tr><th>Move</th><th>PokeMMO PP</th><th>Standard PP</th></tr></thead>
+  <tbody>
+    <tr><td>Recover</td><td class="changed">8</td><td>16</td></tr>
+    <tr><td>Rest</td><td class="changed">8</td><td>16</td></tr>
+    <tr><td>Slack Off</td><td class="changed">8</td><td>16</td></tr>
+    <tr><td>Softboiled</td><td class="changed">8</td><td>16</td></tr>
+    <tr><td>Roost</td><td class="changed">8</td><td>16</td></tr>
+    <tr><td>Milk Drink</td><td class="changed">8</td><td>16</td></tr>
+  </tbody>
+</table>
+<p><b>Key Behavior Changes</b></p>
+<ul class="section-list">
+  <li>Knock Off - flat 20 BP with no 1.5x boost when the target holds an item. Still removes the item.</li>
+  <li>Follow Me / Rage Powder - both have priority +2. Rage Powder is blocked by Grass type and Overcoat.</li></ul><ul class="section-list">
+</ul>      </div>
+    </div>
+        <div class="card">
+      <div class="card-head">
+        <span class="pkmn-icon" style="background-position:-160px -1170px"></span>        Abilities      </div>
+      <div class="card-body">
+        <p><strong>Backported Abilities (Gen 6+ available in PokeMMO)</strong></p>
+<ul class="section-list">
+  <li>Sharpness - 1.5x BP for slicing moves (Aerial Ace, Leaf Blade, Night Slash, Psycho Cut, Sacred Sword, X-Scissor, etc.)</li>
+  <li>Competitive - +2 SpA when any stat is dropped (Empoleon has Competitive instead of Defiant)</li>
+  <li>Wind Rider - boosts Attack in Tailwind, immune to wind moves</li>
+  <li>Neutralizing Gas - suppresses all other abilities on the field. When the Gas user leaves, all active abilities re-trigger and re-announce (Drizzle, Intimidate, etc.)</li>
+  <li>Slush Rush - doubles Speed in Hail/Snow</li>
+</ul>
+<br>
+<p><strong>Behavior Changes</strong></p>
+<ul class="section-list">
+  <li>Oblivious - blocks Taunt in addition to Attract and Captivate (Gen 9 behavior)</li>
+  <li>Inner Focus / Own Tempo / Oblivious / Scrappy - all block Intimidate unconditionally (Gen 8+ behavior)</li>
+</ul>      </div>
+    </div>
+        <div class="card">
+      <div class="card-head">
+        <span class="pkmn-icon" style="background-position:-320px -600px"></span>        Items      </div>
+      <div class="card-body">
+        <p><strong>Backported Items (Gen 6+ available in PokeMMO)</strong></p>
+<ul class="section-list">
+  <li>Assault Vest - 1.5x SpD, can't use status moves</li>
+  <li>Clear Amulet - prevents stat drops</li>
+  <li>Covert Cloak - blocks secondary effects</li>
+  <li>Weakness Policy - +2 Atk/SpA after super-effective hit</li>
+  <li>Heavy-Duty Boots - immune to entry hazards (banned in all tiers)</li>
+  <li>Loaded Dice - multi-hit moves always hit 4-5 times</li>
+  <li>Room Service - lowers Speed in Trick Room</li>
+  <li>Safety Goggles - immune to powder moves and weather damage</li>
+  <li>Punching Glove - 1.1x BP for punch moves, no contact</li>
+  <li>Eject Pack - switches out on stat drop</li>
+  <li>Throat Spray - +1 SpA after using a sound move</li>
+  <li>Snowball - +1 Atk when hit by Ice</li>
+  <li>Luminous Moss - +1 SpD when hit by Water</li>
+</ul>
+<br>
+<p><strong>Item Behavior Changes</strong></p>
+<ul class="section-list">
+  <li>Soul Dew - reworked from flat 1.5x SpA/SpD to 1.2x BP for Dragon and Psychic moves on Latios/Latias only</li>
+  <li>Type Gems - 1.5x one-time boost (Gen 5 value). All type gems are legal.</li>
+</ul>      </div>
+    </div>
+        <div class="card">
+      <div class="card-head">
+        <span class="pkmn-icon" style="background-position:-160px -450px"></span>        Base Stat Changes      </div>
+      <div class="card-body">
+        <p>55 Pokemon have updated base stats reflecting Gen 6-9 buffs. The full list:</p>
+<p>Butterfree, Beedrill, Pidgeot, Pikachu, Raichu, Nidoqueen, Nidoking, Clefable, Wigglytuff, Vileplume, Poliwrath, Alakazam, Victreebel, Golem, Ampharos, Bellossom, Azumarill, Jumpluff, Beautifly, Exploud, Staraptor, Roserade, Stoutland, Unfezant, Gigalith, Seismitoad, Leavanny, Scolipede, Krookodile, Cresselia, Arbok, Dugtrio, Farfetch'd, Dodrio, Electrode, Exeggutor, Noctowl, Ariados, Qwilfish, Magcargo, Corsola, Mantine, Swellow, Pelipper, Masquerain, Delcatty, Volbeat, Lunatone, Solrock, Chimecho, Woobat, Crustle, Beartic, Cryogonal</p>      </div>
+    </div>
+        <div class="card">
+      <div class="card-head">
+        <span class="pkmn-icon" style="background-position:-200px -360px"></span>        Bans and Clauses      </div>
+      <div class="card-body">
+        <p><strong>Combo Bans</strong></p>
+<table class="mech-table">
+  <thead><tr><th>Ban</th><th>Formats</th></tr></thead>
+  <tbody>
+    <tr><td>Dugtrio + Arena Trap</td><td>Ubers, OU, UU, NU (not VGC)</td></tr>
+    <tr><td>Gallade + Sharpness</td><td>OU, UU, NU (not VGC)</td></tr>
+    <tr><td>Hydreigon + Draco Meteor</td><td>OU</td></tr>
+    <tr><td>Garchomp + Swords Dance</td><td>OU</td></tr>
+    <tr><td>Politoed + Lovely Kiss</td><td>VGC</td></tr>
+  </tbody>
+</table>
+<p><strong>Other Bans</strong></p>
+<ul class="section-list">
+  <li><strong>Moody</strong> - banned in OU/UU/NU (not VGC)</li>
+  <li><strong>Heavy-Duty Boots</strong> - banned in all tiers</li>
+</ul>
+<br>
+<p><strong>Standard Clauses</strong></p>
+<ul class="section-list">
+  <li><strong>Species Clause</strong> - all formats</li>
+  <li><strong>Sleep Clause (MMO variant)</strong> - when an opponent's Pokemon has been slept, the next sleep attempt fails. Not active in VGC.</li>
+  <li><strong>OHKO Clause</strong> - not active in VGC</li>
+  <li><strong>Evasion Moves Clause</strong> - not active in VGC</li>
+  <li><strong>Duplicate Move Clause</strong> - all formats</li>
+</ul>
+<br>
+<p><strong>VGC Specific</strong></p>
+<ul class="section-list">
+  <li>Item Clause = 1 (no duplicate items)</li>
+  <li>Force Open Team Sheets</li>
+  <li>Picked Team Size = 4 (bring 6, pick 4)</li>
+</ul>      </div>
+    </div>
+        <div class="card">
+      <div class="card-head">
+        <span class="pkmn-icon" style="background-position:-40px -960px"></span>        Special Event Moves      </div>
+      <div class="card-body">
+        <p>Only in PokeMMO, certain pokémons have access to special moves that only existed in previous generation events that cannot be transferred to future generations.<br>Most of them were from in-person new york center distribution events, available only to gen 2 cartridges, thus not available in any generations other than that.<br>Below you can find a list of relevant special tutor moves:<br><br><ul><li>Golem evolution line has access to Rapid Spin.</li><li>Nidoqueen evolution line has access to Moonlight.</li><li>Weavile evolution line has access to Moonlight.</li><li>Nidoking evolution line has access to Morning Sun.</li><li>Zapdos, Moltres and Articuno have access to Extrasensory.</li><li>Magnezone evolution line has access to Agility.</li><li>Blissey evolution line has access to Wish.</li><li>Jirachi has access to Follow Me</li><li>Politoed evolution line has access to Lovely Kiss</li><li>Nidoking evolution line has access to Lovely Kiss</li><li>Victreebel evolution line has access to Lovely Kiss</li><li>Magmar evolution line has access to Follow Me</li><li>Electabuzz evolution line has access to Follow Me</li></ul></p>      </div>
+    </div>
+      </main>
+
+  <footer class="footer">
+    PokeMMO Showdown is not affiliated or associated with any other company.<br>
+    All logos, trademarks, and trade names used herein are the property of their respective owners.<br>
+    created and developed by suhleam
+  </footer>
+
+</body>
+</html>

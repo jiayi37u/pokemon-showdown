@@ -1,6 +1,10 @@
 import { Abilities as ModernAbilities } from '../../abilities';
 
 export const Abilities: import('../../../sim/dex-abilities').ModdedAbilityDataTable = {
+	// PokeMMO explicitly lets Mold Breaker suppress these contact abilities.
+	// Mainline Gen 9 does not, so the breakable flag is an MMO override.
+	ironbarbs: { ...ModernAbilities.ironbarbs, flags: { breakable: 1 } },
+	roughskin: { ...ModernAbilities.roughskin, flags: { breakable: 1 } },
 	innerfocus: {
 		inherit: true,
 		rating: 1.5,
@@ -52,15 +56,7 @@ export const Abilities: import('../../../sim/dex-abilities').ModdedAbilityDataTa
 			}
 		},
 	},
-	overcoat: {
-		inherit: true,
-		onTryHit(target, source, move) {
-			if (move.flags['powder'] && target !== source && this.dex.getImmunity('powder', target)) {
-				this.add('-immune', target, '[from] ability: Overcoat');
-				return null;
-			}
-		},
-	},
+	overcoat: { ...ModernAbilities.overcoat },
 };
 
 for (const id of ['competitive', 'neutralizinggas', 'protean', 'sharpness', 'slushrush', 'windrider'] as const) {

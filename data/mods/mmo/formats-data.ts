@@ -408,6 +408,8 @@ export const PokeMMOTiers: { [species: string]: TierTypes.Singles } = {
 	natu: "UT",
 	nidoking: "UU",
 	nidoqueen: "UU",
+	nidoranf: "LC",
+	nidoranm: "LC",
 	nidorina: "UT",
 	nidorino: "UT",
 	nincada: "UT",

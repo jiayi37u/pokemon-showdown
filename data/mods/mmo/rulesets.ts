@@ -19,7 +19,11 @@ export const Rulesets: import('../../../sim/dex-formats').ModdedFormatDataTable 
 		checkCanLearn(move, species) {
 			// MMO tutors and breeding have no cartridge transfer/event-source incompatibilities.
 			if (species.id === 'smeargle' && !move.flags['nosketch'] && move.id !== 'struggle') return null;
-			if (PokeMMOLearnsets[species.id]?.includes(move.id)) return null;
+			// Evolution retains moves taught to pre-evolutions (including MMO event tutors).
+			for (let current = species; current.exists; current = this.dex.species.get(current.prevo)) {
+				if (PokeMMOLearnsets[current.id]?.includes(move.id)) return null;
+				if (!current.prevo) break;
+			}
 			return ` can't learn ${move.name} in PokeMMO.`;
 		},
 		onValidateSet(set) {

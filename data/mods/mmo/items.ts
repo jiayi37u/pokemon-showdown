@@ -1,5 +1,9 @@
 // MMO Showdown public teambuilder snapshot, 2026-10-12. See README.md for sources.
+import { Items as ModernItems } from '../../items';
+
 export const Items: import('../../../sim/dex-items').ModdedItemDataTable = {
+	// Replace the full entry to remove Gen 6's inherited SpA/SpD callbacks.
+	souldew: { ...ModernItems.souldew },
 	assaultvest: { inherit: true, gen: 5, isNonstandard: null },
 	clearamulet: { inherit: true, gen: 5, isNonstandard: null },
 	covertcloak: { inherit: true, gen: 5, isNonstandard: null },

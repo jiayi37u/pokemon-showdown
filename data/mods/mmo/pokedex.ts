@@ -2891,6 +2891,20 @@ export const Pokedex: import('../../../sim/dex-species').ModdedSpeciesDataTable 
 		maleOnlyHidden: false,
 		baseStats: { hp: 90, atk: 92, def: 87, spa: 75, spd: 85, spe: 76 },
 	},
+	nidoranf: {
+		inherit: true,
+		isNonstandard: null,
+		abilities: { "0": "Poison Point", "1": "Rivalry", "H": "Hustle" },
+		unreleasedHidden: false,
+		maleOnlyHidden: false,
+	},
+	nidoranm: {
+		inherit: true,
+		isNonstandard: null,
+		abilities: { "0": "Poison Point", "1": "Rivalry", "H": "Hustle" },
+		unreleasedHidden: false,
+		maleOnlyHidden: false,
+	},
 	nidorina: {
 		inherit: true,
 		isNonstandard: null,

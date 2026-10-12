@@ -1,4 +1,10 @@
+import { TypeChart as Gen5TypeChart } from '../gen5/typechart';
+
 export const TypeChart: import('../../../sim/dex-data').ModdedTypeDataTable = {
+	grass: {
+		inherit: true,
+		damageTaken: { ...Gen5TypeChart.grass.damageTaken, powder: 3 },
+	},
 	dark: {
 		inherit: true,
 		damageTaken: {

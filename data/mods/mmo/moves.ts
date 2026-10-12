@@ -1,4 +1,5 @@
 import { MoveUpdates } from './move-data';
+import { Moves as ModernMoves } from '../../moves';
 
 export const Moves: import('../../../sim/dex-moves').ModdedMoveDataTable = {
 	// ===============================================
@@ -164,7 +165,7 @@ export const Moves: import('../../../sim/dex-moves').ModdedMoveDataTable = {
 	darkvoid: {
 		inherit: true,
 		isNonstandard: null,
-		accuracy: 80,
+		accuracy: 50,
 		onTry(source, target, move) {
 			if (source.species.name === 'Darkrai' || move.hasBounced) {
 				return;
@@ -1887,13 +1888,6 @@ export const Moves: import('../../../sim/dex-moves').ModdedMoveDataTable = {
 		pp: 20,
 		priority: 0,
 		flags: { contact: 1, protect: 1, mirror: 1 },
-		onBasePower(basePower, source, target, move) {
-			const item = target.getItem();
-			if (!this.singleEvent('TakeItem', item, target.itemState, target, target, move, item)) return;
-			if (item.id) {
-				return this.chainModify(1.5);
-			}
-		},
 		onAfterHit(target, source) {
 			if (source.hp) {
 				const item = target.takeItem();
@@ -2123,14 +2117,8 @@ export const Moves: import('../../../sim/dex-moves').ModdedMoveDataTable = {
 		zMove: { boost: { def: 1 } },
 		contestType: "Cool",
 	},
-	ragepowder: {
-		inherit: true,
-		priority: 2,
-		flags: { powder: 1 },
-		onTryImmunity(target) {
-			return !target.types.includes('Grass');
-		},
-	},
+	// Modern redirection checks the attacker's powder immunity, not the user's type.
+	ragepowder: { ...ModernMoves.ragepowder },
 	reflect: {
 		inherit: true,
 		condition: {

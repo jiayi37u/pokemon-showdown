@@ -1,28 +1,86 @@
 {
-  "_description": "对手精灵的默认 EV/Nature/道具 预设，用于 NormalAI 的伤害估算。未命中的 species 回退到现有的 IV=31 / EV=85 / 性格无修正公式。只处理有伤害影响的道具（现版本仅 Eviolite）。key 使用 PS toID(species) 规则。",
+  "_description": "手工维护的对手能力值、道具和常用招式预设。缺省 IV=31、每项 EV=85、性格无修正。moves 仅用于 NormalAI 承伤威胁判断，实露四招后停用，不写入已暴露招式。key 使用 PS toID(species) 规则。条目按全国图鉴编号排列。",
   "_schema": {
-    "nature": "Pokemon 性格名",
-    "evs": "{ hp?: 0-252, atk?, def?, spa?, spd?, spe?: }",
+    "nature": "可选，Pokemon 性格名；省略时无修正",
+    "evs": "可选，{ hp?: 0-252, atk?, def?, spa?, spd?, spe?: }；省略整个表时每项 85，显式表内未写的项目为 0",
     "ivs": "可选，覆盖 IV（例：Timid 常减 Atk IV 到 0）",
-    "item": "可选，仅限对伤害有影响的道具（Eviolite / Choice X / Life Orb 等）"
+    "item": "可选，仅限对伤害有影响的道具（Eviolite / Choice X / Life Orb 等）",
+    "moves": "可选，常用招式 ID 或英文名数组，允许为空或只填一两个；实露不足四招时与已暴露招式合并用于威胁判断"
   },
-  "garchomp": {
-    "nature": "Jolly",
-    "evs": { "atk": 252, "spe": 252, "hp": 4 }
-  },
-  "hydreigon": {
+  "alakazam": {
     "nature": "Timid",
-    "evs": { "spa": 252, "spe": 252, "hp": 4 },
-    "ivs": { "atk": 0 }
+    "evs": { "spa": 252, "spe": 252 },
+    "moves": ["psychic"]
   },
-  "tyranitar": {
-    "nature": "Adamant",
-    "evs": { "hp": 252, "atk": 252, "spd": 4 }
+  "gengar": {
+    "nature": "Timid",
+    "evs": { "spa": 252, "spe": 252 },
+    "moves": ["shadowball"]
   },
   "chansey": {
     "nature": "Bold",
     "evs": { "hp": 252, "def": 252, "spd": 4 },
     "ivs": { "atk": 0 },
     "item": "Eviolite"
+  },
+  "starmie": {
+    "nature": "Timid",
+    "evs": { "spa": 252, "spe": 252 },
+    "moves": ["hydropump", "icebeam"]
+  },
+  "gyarados": {
+    "nature": "Jolly",
+    "evs": { "atk": 252, "spe": 252 },
+    "moves": ["waterfall"]
+  },
+  "scizor": {
+    "moves": ["bulletpunch", "uturn"]
+  },
+  "tyranitar": {
+    "nature": "Adamant",
+    "evs": { "hp": 252, "atk": 252, "spd": 4 },
+    "moves": ["stoneedge", "crunch"]
+  },
+  "garchomp": {
+    "nature": "Jolly",
+    "evs": { "atk": 252, "spe": 252, "hp": 4 },
+    "moves": ["earthquake", "dragonclaw"]
+  },
+  "mamoswine": {
+    "nature": "Adamant",
+    "evs": { "atk": 252, "spe": 252 },
+    "moves": ["earthquake", "iceshard", "iciclecrash"]
+  },
+  "rotomwash": {
+    "moves": ["voltswitch", "hydropump"]
+  },
+  "excadrill": {
+    "nature": "Adamant",
+    "evs": { "atk": 252, "spe": 252 },
+    "moves": ["earthquake", "ironhead"]
+  },
+  "conkeldurr": {
+    "nature": "Adamant",
+    "evs": { "hp": 252, "atk": 252 },
+    "moves": ["machpunch", "drainpunch", "closecombat"]
+  },
+  "darmanitan": {
+    "evs": { "atk": 252, "spe": 252 },
+    "moves": ["flareblitz"]
+  },
+  "hydreigon": {
+    "nature": "Timid",
+    "evs": { "spa": 252, "spe": 252, "hp": 4 },
+    "ivs": { "atk": 0 }
+  },
+  "volcarona": {
+    "nature": "Timid",
+    "evs": { "spa": 252, "spe": 252 },
+    "moves": ["bugbuzz", "fireblast"]
+  },
+  "keldeo": {
+    "nature": "Timid",
+    "evs": { "spa": 252, "spe": 252 },
+    "moves": ["hydropump", "secretsword"]
   }
 }

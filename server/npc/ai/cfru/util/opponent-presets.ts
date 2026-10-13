@@ -1,33 +1,34 @@
 /**
- * Opponent preset 加载器 —— 为 NormalAI 的对手 stats 估算提供"常见练度"覆盖。
+ * Opponent preset 加载器 —— 对手能力值估算与承伤威胁判断的手工预设。
  *
  * 配置文件：`data/npc/opponent-presets.json`
  *   key = toID(species)（例：'garchomp'、'charizardmegay'）
- *   value = { nature, evs, ivs?, item? }
+ *   value = { nature?, evs?, ivs?, item?, moves? }
  *
- * 命中：用 preset 的 EV + nature 算出 stats，接管对手估算
- * 未命中：返回 null，调用方回退到 IV=31 / EV=85 / 无 nature 的既有逻辑
+ * 缺省 EV 使用每项 85；显式 EV 表中未写的项目为 0。缺省 IV=31，性格无修正。
+ * moves 仅补充承伤威胁候选，不写入已揭露信息；实露四招后忽略预设招式。
  *
  * JSON 文件在编译时拷到 dist/data/npc/，运行时按 cwd 读取；加载失败不报错，静默回退。
  */
 
 import { FS } from '../../../../../lib';
-import { toID } from '../../../../../sim/dex';
+import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon } from '../types';
 
 type StatKey = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
 
 export interface OpponentPreset {
-	nature: string;
-	evs: Partial<Record<StatKey, number>>;
+	nature?: string;
+	evs?: Partial<Record<StatKey, number>>;
 	ivs?: Partial<Record<StatKey, number>>;
 	item?: string;
+	moves?: string[];
 }
 
 interface PresetFile { [speciesId: string]: OpponentPreset | AnyObject }
 
 /** 自然性格 → 加/减 stat */
-const NATURE_TABLE: { [nature: string]: { plus: StatKey | null; minus: StatKey | null } } = {
+const NATURE_TABLE: { [nature: string]: { plus: StatKey | null, minus: StatKey | null } } = {
 	Hardy: { plus: null, minus: null },
 	Lonely: { plus: 'atk', minus: 'def' },
 	Brave: { plus: 'atk', minus: 'spe' },
@@ -84,10 +85,27 @@ export function getOpponentPreset(species: string): OpponentPreset | null {
 	const presets = loadPresetsIfNeeded();
 	const key = toID(species);
 	const entry = presets[key];
-	if (!entry || typeof entry !== 'object' || !entry.nature || !entry.evs) return null;
+	if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
 	// 过滤以 "_" 开头的注释字段
 	if (key.startsWith('_')) return null;
-	return entry as OpponentPreset;
+	return entry;
+}
+
+/** Threat-only candidates. Keep the observed moves intact for all other AI decisions. */
+export function getOpponentThreatMoves(species: string, revealedMoves: readonly string[]): string[] {
+	const revealed = new Set(
+		revealedMoves.map(move => Dex.moves.get(move)).filter(move => move.exists).map(move => move.id)
+	);
+	if (revealed.size >= 4) return [...revealed];
+	const presetMoves = getOpponentPreset(species)?.moves;
+	if (Array.isArray(presetMoves)) {
+		for (const name of presetMoves) {
+			if (typeof name !== 'string') continue;
+			const move = Dex.moves.get(name);
+			if (move.exists) revealed.add(move.id);
+		}
+	}
+	return [...revealed];
 }
 
 /**
@@ -103,10 +121,10 @@ export function computeStatsFromPreset(
 	level: number,
 	preset: OpponentPreset
 ): AIPokemon['baseStats'] {
-	const natureMod = NATURE_TABLE[preset.nature] || { plus: null, minus: null };
+	const natureMod = NATURE_TABLE[preset.nature || 'Hardy'] || { plus: null, minus: null };
 	const defaultIV = 31;
 	const iv = (k: StatKey) => preset.ivs?.[k] ?? defaultIV;
-	const ev = (k: StatKey) => preset.evs[k] ?? 0;
+	const ev = (k: StatKey) => preset.evs ? (preset.evs[k] ?? 0) : 85;
 	const nmul = (k: StatKey) => {
 		if (natureMod.plus === k) return 1.1;
 		if (natureMod.minus === k) return 0.9;

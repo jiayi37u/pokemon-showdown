@@ -412,15 +412,13 @@ export function getModifiedBasePower(
 	move: AIMove,
 	field: FieldConditions
 ): number {
-	let basePower = move.basePower;
+	// Dynamic-power moves can have a static Dex power of 0 (e.g. Flail and Crush Grip).
+	let basePower = getVariableBasePower(attacker, defender, move, move.basePower);
 	if (basePower === 0) return 0;
 
 	const moveId = toID(move.id);
 	const attackerAbility = toID(attacker.ability);
 	const defenderAbility = toID(defender.ability);
-
-	// Variable base power moves
-	basePower = getVariableBasePower(attacker, defender, move, basePower);
 
 	// Ability-based power boosts
 	// Technician
@@ -566,6 +564,32 @@ function getVariableBasePower(
 	basePower: number
 ): number {
 	const moveId = toID(move.id);
+	const attackerHp = attacker.maxHp > 0 ? attacker.hp : attacker.hpPercent;
+	const attackerMaxHp = attacker.maxHp || 100;
+	const defenderHp = defender.maxHp > 0 ? defender.hp : defender.hpPercent;
+	const defenderMaxHp = defender.maxHp || 100;
+
+	// Resolve current HP at decision time, including damage already taken on switching in.
+	if (moveId === 'waterspout' || moveId === 'eruption' || moveId === 'dragonenergy') {
+		return Math.max(1, Math.floor(basePower * attackerHp / attackerMaxHp));
+	}
+
+	if (moveId === 'flail' || moveId === 'reversal') {
+		const ratio = Math.max(Math.floor(attackerHp * 48 / attackerMaxHp), 1);
+		if (ratio < 2) return 200;
+		if (ratio < 5) return 150;
+		if (ratio < 10) return 100;
+		if (ratio < 17) return 80;
+		if (ratio < 33) return 40;
+		return 20;
+	}
+
+	if (moveId === 'crushgrip' || moveId === 'wringout' || moveId === 'hardpress') {
+		const maxPower = moveId === 'hardpress' ? 100 : 120;
+		// Match the simulator's fixed-point rounding, including the minimum power of 1.
+		const hp = Math.floor(defenderHp * 4096 / defenderMaxHp);
+		return Math.max(1, Math.floor(Math.floor((maxPower * 100 * hp + 2047) / 4096) / 100));
+	}
 
 	// Facade: doubles when statused
 	if (moveId === 'facade' && attacker.status) {
@@ -583,7 +607,7 @@ function getVariableBasePower(
 	}
 
 	// Brine: doubles when target is below 50% HP
-	if (moveId === 'brine' && defender.hpPercent <= 50) {
+	if (moveId === 'brine' && defenderHp * 2 <= defenderMaxHp) {
 		return 130;
 	}
 
@@ -660,7 +684,8 @@ function getVariableBasePower(
  *   - Seismic Toss / Night Shade: 等于攻击方等级
  *   - Dragon Rage: 固定 40
  *   - Sonic Boom: 固定 20
- *   - Super Fang: 对手当前 HP 的 50%
+ *   - Super Fang / Nature's Madness / Ruination: 对手当前 HP 的 50%
+ *   - Guardian of Alola: 对手当前 HP 的 75%，保护状态下再减伤
  *   - Endeavor: 把对手 HP 降到和自己一样（即 defHp - atkHp，<=0 则不打）
  *   - Final Gambit: 自己当前 HP（并且自己也会倒）
  *   - Psywave: 等级 × [0.5, 1.5]，min=level/2，max=level*3/2
@@ -679,8 +704,7 @@ export function computeFixedDamage(
 ): { min: number; max: number } | null {
 	const moveId = toID(move.id);
 	const level = attacker.level || 100;
-	const defenderMaxHp = defender.maxHp || Math.floor(defender.hp / Math.max(defender.hpPercent, 1) * 100);
-	const defenderCurHp = Math.floor(defenderMaxHp * defender.hpPercent / 100);
+	const defenderCurHp = defender.hp;
 
 	switch (moveId) {
 	case 'seismictoss':
@@ -690,8 +714,18 @@ export function computeFixedDamage(
 		return { min: 40, max: 40 };
 	case 'sonicboom':
 		return { min: 20, max: 20 };
-	case 'superfang': {
+	case 'superfang':
+	case 'naturesmadness':
+	case 'ruination': {
 		const dmg = Math.max(1, Math.floor(defenderCurHp / 2));
+		return { min: dmg, max: dmg };
+	}
+	case 'guardianofalola': {
+		let dmg = Math.floor(defenderCurHp * 3 / 4);
+		if (['protect', 'banefulbunker', 'kingsshield', 'spikyshield', 'matblock'].some(v => defender.volatiles.has(v))) {
+			dmg = Math.ceil(dmg / 4 - 0.5);
+		}
+		dmg = Math.max(1, dmg);
 		return { min: dmg, max: dmg };
 	}
 	case 'endeavor': {
@@ -701,7 +735,7 @@ export function computeFixedDamage(
 		return { min: dmg, max: dmg };
 	}
 	case 'finalgambit':
-		// 用光自己当前 HP 等量伤害对手。对手类型豁免（Ghost 对 Final Gambit 不豁免，但 Normal 对 Ghost 系豁免）
+		// 用光自己当前 HP，造成等量伤害；类型免疫由 calculateDamage 处理。
 		return { min: attacker.hp, max: attacker.hp };
 	case 'psywave':
 		return { min: Math.max(1, Math.floor(level / 2)), max: Math.floor(level * 3 / 2) };
@@ -771,9 +805,10 @@ export function calculateDamage(
 	cache?: AICache,
 	spreadInfo?: { isDoubles: boolean; numAliveTargets: number }
 ): DamageResult {
-	// Check cache - include spread info in key for doubles
+	// HP-dependent power, fixed damage and KO flags must reflect the current snapshot.
 	const spreadKey = spreadInfo?.isDoubles ? `-spread${spreadInfo.numAliveTargets}` : '';
-	const cacheKey = `${attacker.slot}-${defender.slot}-${move.id}${spreadKey}`;
+	const hpKey = `${attacker.hp}/${attacker.maxHp}-${defender.hp}/${defender.maxHp}`;
+	const cacheKey = `${attacker.slot}-${defender.slot}-${move.id}-${hpKey}${spreadKey}`;
 	if (cache?.damageCalc.has(cacheKey)) {
 		return cache.damageCalc.get(cacheKey)!;
 	}

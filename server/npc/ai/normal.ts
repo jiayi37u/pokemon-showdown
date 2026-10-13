@@ -30,7 +30,11 @@ import {
 	createAICache,
 } from './cfru/types';
 import { createScoringEngine, ScoringEngine } from './cfru/scoring';
-import { buildBattleState, buildBattleStateWithTracker, buildMovesFromRequest, buildAIMove } from './cfru/state-builder';
+import {
+	buildBattleState, buildBattleStateWithTracker, buildMovesFromRequest, buildAIMove, buildPokemonFromRequest,
+} from './cfru/state-builder';
+import { calculateDamage } from './cfru/util/damage-calc';
+import { getOpponentThreatMoves } from './cfru/util/opponent-presets';
 import { createCache, updateCacheTurn } from './cfru/util/cache';
 import { AIDecisionLogger, LogLevel, createBattleLogger, SwitchScoreLog } from './cfru/logger';
 import { BattleTracker, createBattleTracker, TrackedPokemon } from './cfru/util/battle-tracker';
@@ -243,18 +247,6 @@ export class NormalAI extends NPCBattleAI {
 		// Filter out disabled moves
 		const availableMoves = moves.filter(m => !m.disabled);
 
-		// If no moves available, must switch or struggle
-		if (availableMoves.length === 0) {
-			if (switches.length > 0) {
-				const switchTarget = this.chooseSwitch(active, switches);
-				return {
-					type: 'switch',
-					target: switchTarget,
-				};
-			}
-			return { type: 'move', slot: 1 }; // Struggle
-		}
-
 		// Check if we should switch
 		if (this.config.canSwitch && switches.length > 0) {
 			const switchResult = this.evaluateSwitching(active, availableMoves, switches, activeIndex);
@@ -281,6 +273,9 @@ export class NormalAI extends NPCBattleAI {
 				};
 			}
 		}
+
+		// With no safe voluntary switch, use Struggle if no moves are available.
+		if (!availableMoves.length) return { type: 'move', slot: 1 };
 
 		// Score all moves and choose the best one
 		const { bestMove, chosenMove, bestTargetPos } = this.chooseBestMoveWithScores(active, availableMoves, activeIndex);
@@ -514,6 +509,29 @@ export class NormalAI extends NPCBattleAI {
 	 */
 	private static readonly SWITCH_THRESHOLD_ATTACK = 95;  // Attack move score below this triggers switch consideration
 	private static readonly SWITCH_THRESHOLD_STATUS = 90;  // Status move score below this triggers switch consideration
+	private static readonly SWITCH_THREAT_TRIGGER = 0.7;
+	private static readonly SWITCH_THREAT_LIMIT = 0.4;
+
+	/** Maximum average damage from revealed/preset attacks, relative to the defender's current HP. */
+	private getIncomingThreat(defender: AIPokemon, opponents: AIPokemon[]): number {
+		if (defender.hp <= 0) return Infinity;
+		const state = this.battleState!;
+		let threat = 0;
+		for (const opponent of opponents) {
+			for (const moveId of getOpponentThreatMoves(opponent.species, opponent.moves)) {
+				const move = buildAIMove({ id: moveId }, 1);
+				if (move.category === 'Status') continue;
+				const numAliveTargets = state.self.active.filter(p => !p.fainted).length +
+					(move.target === 'allAdjacent' ? opponents.length - 1 : 0);
+				// Reversed sides and bench slots can collide with the outgoing damage cache.
+				const damage = calculateDamage(opponent, defender, move, state.field, undefined, {
+					isDoubles: state.isDoubles, numAliveTargets,
+				});
+				threat = Math.max(threat, damage.average / defender.hp);
+			}
+		}
+		return threat;
+	}
 
 	/** Switch evaluation result */
 	private evaluateSwitching(
@@ -563,11 +581,11 @@ export class NormalAI extends NPCBattleAI {
 			}
 		}
 
-		// Dynamic threshold: consider switching if both attack and status moves score low
-		// This means we're in a bad matchup where we can't do much
-		const shouldConsiderSwitch =
-			(maxAttackScore <= NormalAI.SWITCH_THRESHOLD_ATTACK || maxAttackScore === -Infinity) &&
-			(maxStatusScore <= NormalAI.SWITCH_THRESHOLD_STATUS || maxStatusScore === -Infinity);
+		const threat = this.getIncomingThreat(attacker, opponents);
+		const shouldConsiderSwitch = (
+			maxAttackScore <= NormalAI.SWITCH_THRESHOLD_ATTACK &&
+			maxStatusScore <= NormalAI.SWITCH_THRESHOLD_STATUS
+		) || threat >= NormalAI.SWITCH_THREAT_TRIGGER;
 
 		if (shouldConsiderSwitch) {
 			// Score all switch options with improved logic
@@ -575,12 +593,24 @@ export class NormalAI extends NPCBattleAI {
 			let bestSwitchSlot = 0;
 			let bestSwitchScore = -Infinity;
 			let bestSwitchPokemon = '';
+			const position = `Position (atk:${Math.floor(maxAttackScore)}, status:${Math.floor(maxStatusScore)}, threat:${(threat * 100).toFixed(1)}%)`;
 
 			for (const switchOption of switches) {
-				const { score, reasons } = this.scoreSwitchMatchups(switchOption.pokemon, opponents);
-
 				// Get Pokemon name
 				const pokemonName = switchOption.pokemon.details?.split(',')[0]?.trim() || `Slot ${switchOption.slot}`;
+				// Build from this player's request: Multi teammates can have identical party slots.
+				const defender = buildPokemonFromRequest(switchOption.pokemon, switchOption.slot, false);
+				const switchThreat = this.getIncomingThreat(defender, opponents);
+				if (switchThreat > NormalAI.SWITCH_THREAT_LIMIT) {
+					switchScores.push({
+						pokemon: pokemonName,
+						score: 0,
+						reasons: [`Ineligible: incoming threat ${(switchThreat * 100).toFixed(1)}% exceeds 40%`],
+					});
+					continue;
+				}
+				const { score, reasons } = this.scoreSwitchMatchups(switchOption.pokemon, opponents);
+				reasons.push(`Incoming threat ${(switchThreat * 100).toFixed(1)}%`);
 
 				switchScores.push({
 					pokemon: pokemonName,
@@ -601,7 +631,7 @@ export class NormalAI extends NPCBattleAI {
 					shouldSwitch: true,
 					switchTarget: bestSwitchSlot,
 					switchScores,
-					reason: `Weak position (atk:${Math.floor(maxAttackScore)}, status:${Math.floor(maxStatusScore)}), switching to ${bestSwitchPokemon} (score:${Math.floor(bestSwitchScore)})`,
+					reason: `${position}, switching to ${bestSwitchPokemon} (score:${Math.floor(bestSwitchScore)})`,
 				};
 			}
 
@@ -610,7 +640,7 @@ export class NormalAI extends NPCBattleAI {
 				shouldSwitch: false,
 				switchTarget: 0,
 				switchScores,
-				reason: `Weak position but no better switch-in (best: ${Math.floor(bestSwitchScore)})`,
+				reason: `${position}, no eligible switch-in with score > 5 (best: ${Math.floor(bestSwitchScore)})`,
 			};
 		}
 

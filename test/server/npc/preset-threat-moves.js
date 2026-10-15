@@ -91,7 +91,7 @@ describe('Opponent preset threat moves', () => {
 				assert.equal(stats[stat], 2 * baseStats[stat] + 31 + 21 + (stat === 'hp' ? 110 : 5));
 			}
 		}
-		assert.deepEqual(getOpponentThreatMoves('Scizor', []), ['bulletpunch', 'uturn']);
+		assert.deepEqual(getOpponentThreatMoves('Scizor', []), ['bulletpunch', 'uturn', 'superpower']);
 		assert.equal(computeStatsFromPreset(Dex.species.get('Scizor').baseStats, 100, { evs: {} }).atk, 296);
 	});
 

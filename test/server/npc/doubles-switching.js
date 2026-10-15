@@ -11,6 +11,9 @@ const lanturn = { species: 'Lanturn', ability: 'Volt Absorb', moves: ['splash'] 
 const vibrava = { species: 'Vibrava', ability: 'Levitate', item: 'Eviolite', nature: 'Calm',
 	evs: { hp: 252, spd: 252 }, moves: ['splash'] };
 const venusaur = { species: 'Venusaur', ability: 'Overgrow', moves: ['energyball'] };
+// Keep the second reserve below the incoming-damage limit against Lanturn's public preset.
+const scizor = { species: 'Scizor', ability: 'Technician', nature: 'Careful',
+	evs: { hp: 252, spd: 252, def: 4 }, moves: ['bulletpunch'] };
 
 /** Feed the production NormalAI only protocol and requests, then validate its choice in the simulator. */
 function scenario(playerTeam, npcTeam, playerChoice, npcChoice, check) {
@@ -74,7 +77,7 @@ describe('NormalAI doubles switching', () => {
 		}
 	}
 
-	for (const reserves of [[], [venusaur], [venusaur, { species: 'Scizor', ability: 'Technician', moves: ['bulletpunch'] }]]) {
+	for (const reserves of [[], [venusaur], [venusaur, scizor]]) {
 		it(`should allocate ${reserves.length} reserves without duplicate or active switch targets`, () => {
 			const raichu = { species: 'Raichu', ability: 'Static', item: 'Choice Scarf', moves: ['thunderbolt'] };
 			scenario([lanturn, vibrava], [porygon, raichu, ...reserves], 'move 1, move 1', 'move 1 1, move 1 1', ({ actions }) => {

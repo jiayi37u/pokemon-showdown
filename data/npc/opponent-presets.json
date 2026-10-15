@@ -9,15 +9,13 @@
     "moves": "核心候选招式 ID，通常 1–3 个。与实露招式分开保存；最多占剩余未知槽位，四招实露后停用"
   },
   "_sources": {
-    "formats": ["gen4ou", "gen5ou", "gen6ou", "gen7ou", "gen9ou"],
+    "formats": ["gen4ou", "gen5ou", "gen5uu", "gen6ou", "gen6uu", "gen7ou", "gen7uu", "gen9ou"],
     "source": "pokemon-core/data/strategies/<format>/pokemon.jsonl",
     "note": "来源是攻略配置，不是使用率统计。综合跨世代共性选取代表方案，分歧较大的道具留空；努力值保留自洽方案，不做数值平均。Mega 形态按进化石分别归纳。",
-    "sha256": {"gen4ou": "3054e33e528db5c466458429613576590aa8ea9464829e915d61e7609e81efc0", "gen5ou": "efa91874415b3dbeae5b6d00fe887785638bee323af83942135c427dfd6d9359", "gen6ou": "3b3c62bc65ee63cff924ff78a83c7d78fd60cfab57beff55f9aece5c7bf121b0", "gen7ou": "09d920f033c693576b0841849451a6c66f208a43e9737fb8286baf14ca7f5e14", "gen9ou": "39dff26d068316db229296cd24084b2fb77863d3f49def365b8f8aa3c773bdbe"}
+    "sha256": {"gen4ou": "3054e33e528db5c466458429613576590aa8ea9464829e915d61e7609e81efc0", "gen5ou": "efa91874415b3dbeae5b6d00fe887785638bee323af83942135c427dfd6d9359", "gen5uu": "5ea6655867e41914488be6bcc7460e0550fcf461e3c5e8c09b7ae08297b7b642", "gen6ou": "3b3c62bc65ee63cff924ff78a83c7d78fd60cfab57beff55f9aece5c7bf121b0", "gen6uu": "4558586a78eea75837a92d890617e4e583f3ab2b7940cf2724c385f251d5a5a2", "gen7ou": "09d920f033c693576b0841849451a6c66f208a43e9737fb8286baf14ca7f5e14", "gen7uu": "5afd9066b60abc4b584fe688d5b06cf396110bb484d10ff5c656248e5c115527", "gen9ou": "39dff26d068316db229296cd24084b2fb77863d3f49def365b8f8aa3c773bdbe"}
   },
   "venusaur": {
     "nameZh": "妙蛙花",
-    "nature": "Timid",
-    "evs": {"spa": 252, "spe": 252, "def": 4},
     "item": "Life Orb",
     "moves": ["gigadrain", "sludgebomb", "growth"]
   },
@@ -46,6 +44,20 @@
     "item": "Charizardite Y",
     "moves": ["flamethrower", "solarbeam", "roost"]
   },
+  "blastoise": {
+    "nameZh": "水箭龟",
+    "nature": "Bold",
+    "evs": {"hp": 252, "def": 252, "spa": 4},
+    "item": "Leftovers",
+    "moves": ["rapidspin", "scald", "roar"]
+  },
+  "blastoisemega": {
+    "nameZh": "mega水箭龟",
+    "nature": "Modest",
+    "evs": {"hp": 104, "spa": 252, "spe": 152},
+    "item": "Blastoisinite",
+    "moves": ["hydropump", "darkpulse", "rapidspin"]
+  },
   "kakuna": {
     "nameZh": "铁壳蛹",
     "moves": ["poisonsting", "bugbite"]
@@ -54,21 +66,38 @@
     "nameZh": "大针蜂",
     "nature": "Jolly",
     "evs": {"atk": 252, "def": 4, "spe": 252},
-    "moves": ["uturn", "poisonjab"]
+    "moves": ["poisonjab", "uturn", "drillrun"]
   },
   "beedrillmega": {
     "nameZh": "mega大针蜂",
     "nature": "Jolly",
     "evs": {"atk": 252, "def": 4, "spe": 252},
     "item": "Beedrillite",
-    "moves": ["uturn", "poisonjab"]
+    "moves": ["poisonjab", "uturn", "drillrun"]
+  },
+  "pidgeot": {
+    "nameZh": "大比鸟",
+    "nature": "Timid",
+    "evs": {"def": 4, "spa": 252, "spe": 252},
+    "moves": ["heatwave", "hurricane", "roost"]
+  },
+  "pidgeotmega": {
+    "nameZh": "mega大比鸟",
+    "nature": "Timid",
+    "evs": {"def": 4, "spa": 252, "spe": 252},
+    "item": "Pidgeotite",
+    "moves": ["heatwave", "hurricane", "roost"]
+  },
+  "sandslashalola": {
+    "nameZh": "穿山王",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "item": "Light Clay",
+    "moves": ["auroraveil", "iciclecrash", "rapidspin"]
   },
   "nidoqueen": {
     "nameZh": "尼多后",
-    "nature": "Relaxed",
-    "evs": {"hp": 252, "def": 252, "spa": 4},
-    "item": "Black Sludge",
-    "moves": ["earthquake", "toxicspikes", "icebeam"]
+    "moves": ["earthpower", "icebeam", "stealthrock"]
   },
   "nidoking": {
     "nameZh": "尼多王",
@@ -77,12 +106,16 @@
     "item": "Life Orb",
     "moves": ["sludgewave", "earthpower", "icebeam"]
   },
+  "clefairy": {
+    "nameZh": "皮皮",
+    "nature": "Calm",
+    "evs": {"hp": 252, "def": 4, "spd": 252},
+    "item": "Eviolite",
+    "moves": ["healingwish", "moonblast", "softboiled"]
+  },
   "clefable": {
     "nameZh": "皮可西",
-    "nature": "Bold",
-    "evs": {"hp": 252, "def": 252, "spd": 4},
-    "item": "Leftovers",
-    "moves": ["moonblast", "softboiled"]
+    "moves": ["softboiled", "moonblast", "knockoff"]
   },
   "ninetales": {
     "nameZh": "九尾",
@@ -97,11 +130,21 @@
     "item": "Light Clay",
     "moves": ["auroraveil", "freezedry"]
   },
+  "venomoth": {
+    "nameZh": "摩鲁蛾",
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["bugbuzz", "quiverdance", "sleeppowder"]
+  },
   "dugtrio": {
     "nameZh": "三地鼠",
     "nature": "Jolly",
     "evs": {"atk": 252, "def": 4, "spe": 252},
     "moves": ["earthquake", "memento", "stealthrock"]
+  },
+  "arcanine": {
+    "nameZh": "风速狗",
+    "moves": ["flareblitz", "morningsun", "extremespeed"]
   },
   "arcaninehisui": {
     "nameZh": "风速狗",
@@ -109,6 +152,11 @@
     "evs": {"atk": 252, "spd": 4, "spe": 252},
     "item": "Choice Band",
     "moves": ["flareblitz", "headsmash", "extremespeed"]
+  },
+  "poliwrath": {
+    "nameZh": "蚊香泳士",
+    "item": "Leftovers",
+    "moves": ["circlethrow", "rest", "sleeptalk"]
   },
   "alakazam": {
     "nameZh": "胡地",
@@ -122,6 +170,19 @@
     "evs": {"def": 4, "spa": 252, "spe": 252},
     "item": "Alakazite",
     "moves": ["psychic", "focusblast", "shadowball"]
+  },
+  "machamp": {
+    "nameZh": "怪力",
+    "nature": "Adamant",
+    "evs": {"hp": 172, "atk": 252, "spe": 84},
+    "moves": ["dynamicpunch", "stoneedge", "knockoff"]
+  },
+  "victreebel": {
+    "nameZh": "大食花",
+    "nature": "Rash",
+    "evs": {"atk": 172, "spa": 140, "spe": 196},
+    "item": "Life Orb",
+    "moves": ["growth", "hiddenpowerfire", "leafblade"]
   },
   "tentacruel": {
     "nameZh": "毒刺水母",
@@ -141,7 +202,6 @@
     "nameZh": "呆壳兽",
     "nature": "Bold",
     "evs": {"hp": 252, "def": 252, "spd": 4},
-    "item": "Leftovers",
     "moves": ["scald", "slackoff"]
   },
   "slowbromega": {
@@ -150,26 +210,21 @@
     "evs": {"hp": 252, "def": 252, "spd": 4},
     "ivs": {"atk": 0},
     "item": "Slowbronite",
-    "moves": ["scald", "psychic", "slackoff"]
+    "moves": ["scald", "slackoff"]
   },
   "magneton": {
     "nameZh": "三合一磁怪",
     "nature": "Timid",
     "evs": {"def": 4, "spa": 252, "spe": 252},
-    "item": "Choice Scarf",
-    "moves": ["thunderbolt", "flashcannon", "hiddenpowerfire"]
+    "moves": ["thunderbolt", "flashcannon", "voltswitch"]
   },
   "mukalola": {
     "nameZh": "臭臭泥",
-    "nature": "Careful",
-    "evs": {"hp": 248, "atk": 36, "def": 28, "spd": 192, "spe": 4},
     "item": "Assault Vest",
-    "moves": ["poisonjab", "knockoff", "pursuit"]
+    "moves": ["knockoff", "pursuit", "firepunch"]
   },
   "cloyster": {
     "nameZh": "刺甲贝",
-    "nature": "Adamant",
-    "evs": {"atk": 252, "spd": 4, "spe": 252},
     "moves": ["shellsmash", "iciclespear", "rockblast"]
   },
   "gengar": {
@@ -178,13 +233,26 @@
     "evs": {"hp": 4, "spa": 252, "spe": 252},
     "moves": ["shadowball", "sludgewave", "focusblast"]
   },
+  "exeggutor": {
+    "nameZh": "椰蛋树",
+    "moves": ["leafstorm", "psyshock", "sleeppowder"]
+  },
   "marowakalola": {
     "nameZh": "嘎啦嘎啦",
-    "nature": "Brave",
-    "evs": {"hp": 248, "atk": 252, "spd": 8},
-    "ivs": {"spe": 0},
     "item": "Thick Club",
     "moves": ["shadowbone", "flareblitz", "bonemerang"]
+  },
+  "hitmonlee": {
+    "nameZh": "飞腿郎",
+    "item": "Liechi Berry",
+    "moves": ["endure", "reversal", "stoneedge"]
+  },
+  "weezing": {
+    "nameZh": "双弹瓦斯",
+    "nature": "Bold",
+    "evs": {"hp": 252, "def": 252, "spa": 4},
+    "item": "Black Sludge",
+    "moves": ["willowisp", "haze", "flamethrower"]
   },
   "weezinggalar": {
     "nameZh": "双弹瓦斯",
@@ -200,11 +268,35 @@
     "moves": ["softboiled", "seismictoss"],
     "ivs": {"atk": 0}
   },
+  "tangela": {
+    "nameZh": "蔓藤怪",
+    "nature": "Bold",
+    "evs": {"hp": 252, "def": 252, "spd": 4},
+    "item": "Eviolite",
+    "moves": ["gigadrain", "leechseed", "protect"]
+  },
+  "kangaskhan": {
+    "nameZh": "袋兽",
+    "moves": ["suckerpunch", "aquatail", "doubleedge"]
+  },
   "starmie": {
     "nameZh": "宝石海星",
     "nature": "Timid",
     "evs": {"spa": 252, "spd": 4, "spe": 252},
     "moves": ["hydropump", "icebeam", "rapidspin"]
+  },
+  "scyther": {
+    "nameZh": "飞天螳螂",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "moves": ["aerialace", "brickbreak", "swordsdance"]
+  },
+  "jynx": {
+    "nameZh": "迷唇姐",
+    "nature": "Timid",
+    "evs": {"hp": 200, "spa": 56, "spe": 252},
+    "item": "Leftovers",
+    "moves": ["icebeam", "lovelykiss", "calmmind"]
   },
   "pinsir": {
     "nameZh": "凯罗斯",
@@ -218,6 +310,13 @@
     "evs": {"atk": 252, "def": 4, "spe": 252},
     "item": "Pinsirite",
     "moves": ["return", "quickattack", "swordsdance"]
+  },
+  "tauros": {
+    "nameZh": "肯泰罗",
+    "nature": "Jolly",
+    "evs": {"hp": 4, "atk": 252, "spe": 252},
+    "item": "Life Orb",
+    "moves": ["return", "earthquake", "rockslide"]
   },
   "gyarados": {
     "nameZh": "暴鲤龙",
@@ -250,22 +349,18 @@
     "nameZh": "雷伊布",
     "nature": "Timid",
     "evs": {"spa": 252, "spd": 4, "spe": 252},
-    "item": "Choice Specs",
-    "moves": ["thunderbolt", "voltswitch"]
+    "moves": ["thunderbolt", "voltswitch", "hiddenpowerice"]
   },
   "omastar": {
     "nameZh": "多刺菊石兽",
-    "nature": "Modest",
-    "evs": {"def": 4, "spa": 252, "spe": 252},
-    "item": "Choice Specs",
     "moves": ["hydropump", "icebeam", "scald"]
   },
   "kabutops": {
     "nameZh": "镰刀盔",
     "nature": "Adamant",
-    "evs": {"hp": 32, "atk": 252, "def": 20, "spe": 204},
+    "evs": {"atk": 252, "def": 4, "spe": 252},
     "item": "Life Orb",
-    "moves": ["stoneedge", "waterfall", "swordsdance"]
+    "moves": ["stoneedge", "waterfall", "aquajet"]
   },
   "aerodactyl": {
     "nameZh": "化石翼龙",
@@ -278,13 +373,18 @@
     "nature": "Jolly",
     "evs": {"atk": 252, "def": 4, "spe": 252},
     "item": "Aerodactylite",
-    "moves": ["stoneedge", "aerialace", "aquatail"]
+    "moves": ["stoneedge", "earthquake", "roost"]
   },
   "snorlax": {
     "nameZh": "卡比兽",
-    "nature": "Adamant",
-    "evs": {"atk": 252, "def": 4, "spd": 252},
-    "moves": ["bodyslam", "crunch"]
+    "moves": ["curse", "earthquake", "return"]
+  },
+  "articuno": {
+    "nameZh": "急冻鸟",
+    "nature": "Calm",
+    "evs": {"hp": 248, "def": 4, "spd": 160, "spe": 96},
+    "item": "Leftovers",
+    "moves": ["freezedry", "roost", "defog"]
   },
   "zapdos": {
     "nameZh": "闪电鸟",
@@ -294,9 +394,8 @@
   },
   "moltres": {
     "nameZh": "火焰鸟",
-    "nature": "Bold",
-    "evs": {"hp": 248, "def": 200, "spe": 60},
-    "item": "Leftovers",
+    "nature": "Timid",
+    "evs": {"hp": 248, "def": 164, "spe": 96},
     "moves": ["flamethrower", "roost", "substitute"]
   },
   "moltresgalar": {
@@ -315,35 +414,52 @@
   },
   "mew": {
     "nameZh": "梦幻",
-    "nature": "Calm",
-    "evs": {"hp": 252, "spd": 148, "spe": 108},
     "item": "Leftovers",
     "moves": ["taunt", "willowisp", "softboiled"]
   },
   "feraligatr": {
     "nameZh": "大力鳄",
     "nature": "Jolly",
-    "evs": {"hp": 4, "atk": 252, "spe": 252},
-    "moves": ["waterfall", "aquajet", "swordsdance"]
+    "evs": {"atk": 220, "spd": 36, "spe": 252},
+    "item": "Life Orb",
+    "moves": ["waterfall", "crunch", "swordsdance"]
   },
   "crobat": {
     "nameZh": "叉字蝠",
     "nature": "Jolly",
     "evs": {"hp": 248, "def": 116, "spe": 144},
-    "item": "Black Sludge",
     "moves": ["bravebird", "taunt", "roost"]
+  },
+  "lanturn": {
+    "nameZh": "电灯怪",
+    "nature": "Modest",
+    "evs": {"spa": 252, "spd": 104, "spe": 152},
+    "moves": ["voltswitch", "hydropump", "scald"]
+  },
+  "togetic": {
+    "nameZh": "波克基古",
+    "nature": "Calm",
+    "evs": {"hp": 248, "def": 8, "spd": 252},
+    "item": "Eviolite",
+    "moves": ["defog", "roost", "dazzlinggleam"]
   },
   "xatu": {
     "nameZh": "天然鸟",
-    "nature": "Impish",
-    "evs": {"hp": 252, "def": 184, "spe": 72},
-    "item": "Rocky Helmet",
-    "moves": ["roost", "nightshade", "reflect"]
+    "moves": ["roost", "uturn", "reflect"]
+  },
+  "ampharos": {
+    "nameZh": "电龙",
+    "moves": ["dragonpulse", "focusblast", "thunderbolt"]
+  },
+  "ampharosmega": {
+    "nameZh": "mega电龙",
+    "item": "Ampharosite",
+    "moves": ["dragonpulse", "focusblast", "thunderbolt"]
   },
   "azumarill": {
     "nameZh": "玛力露丽",
     "nature": "Adamant",
-    "evs": {"hp": 92, "atk": 252, "spe": 164},
+    "evs": {"hp": 172, "atk": 252, "spe": 84},
     "moves": ["aquajet", "playrough", "knockoff"]
   },
   "politoed": {
@@ -368,17 +484,15 @@
   },
   "umbreon": {
     "nameZh": "月亮伊布",
-    "nature": "Careful",
+    "nature": "Calm",
     "evs": {"hp": 252, "def": 4, "spd": 252},
     "item": "Leftovers",
     "moves": ["wish", "protect", "foulplay"]
   },
   "slowking": {
     "nameZh": "呆呆王",
-    "nature": "Calm",
-    "evs": {"hp": 252, "def": 76, "spd": 180},
     "item": "Leftovers",
-    "moves": ["scald", "psyshock", "slackoff"]
+    "moves": ["scald", "slackoff", "thunderwave"]
   },
   "slowkinggalar": {
     "nameZh": "呆呆王",
@@ -402,18 +516,36 @@
     "moves": ["rapidspin", "spikes", "gyroball"],
     "ivs": {"spe": 0}
   },
+  "gligar": {
+    "nameZh": "天蝎",
+    "nature": "Impish",
+    "evs": {"hp": 252, "def": 156, "spd": 100},
+    "item": "Eviolite",
+    "moves": ["earthquake", "roost", "uturn"]
+  },
+  "steelix": {
+    "nameZh": "大钢蛇",
+    "moves": ["earthquake", "heavyslam", "stealthrock"]
+  },
+  "steelixmega": {
+    "nameZh": "mega大钢蛇",
+    "item": "Steelixite",
+    "moves": ["earthquake", "heavyslam", "stealthrock"]
+  },
+  "granbull": {
+    "nameZh": "布鲁皇",
+    "item": "Leftovers",
+    "moves": ["healbell", "playrough", "earthquake"]
+  },
   "qwilfish": {
     "nameZh": "千针鱼",
-    "nature": "Adamant",
-    "evs": {"atk": 252, "def": 4, "spe": 252},
-    "item": "Life Orb",
-    "moves": ["waterfall", "poisonjab", "swordsdance"]
+    "moves": ["waterfall", "explosion", "poisonjab"]
   },
   "scizor": {
     "nameZh": "巨钳螳螂",
     "nature": "Adamant",
     "evs": {"hp": 248, "atk": 252, "spd": 8},
-    "moves": ["bulletpunch", "uturn"]
+    "moves": ["bulletpunch", "uturn", "superpower"]
   },
   "scizormega": {
     "nameZh": "mega巨钳螳螂",
@@ -432,8 +564,8 @@
   "heracross": {
     "nameZh": "赫拉克罗斯",
     "nature": "Jolly",
-    "evs": {"atk": 252, "spe": 252, "hp": 4},
-    "moves": ["closecombat", "megahorn", "stoneedge"]
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "moves": ["closecombat", "megahorn", "knockoff"]
   },
   "heracrossmega": {
     "nameZh": "mega赫拉克罗斯",
@@ -444,8 +576,6 @@
   },
   "mantine": {
     "nameZh": "巨翅飞鱼",
-    "nature": "Calm",
-    "evs": {"hp": 252, "def": 36, "spd": 220},
     "item": "Leftovers",
     "moves": ["scald", "roost", "defog"]
   },
@@ -457,14 +587,13 @@
   },
   "houndoom": {
     "nameZh": "黑鲁加",
-    "nature": "Timid",
-    "evs": {"hp": 40, "def": 8, "spa": 208, "spe": 252},
-    "moves": ["darkpulse", "fireblast", "nastyplot"]
+    "item": "Life Orb",
+    "moves": ["fireblast", "darkpulse", "hiddenpowergrass"]
   },
   "houndoommega": {
     "nameZh": "mega黑鲁加",
     "nature": "Timid",
-    "evs": {"hp": 40, "def": 8, "spa": 208, "spe": 252},
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
     "item": "Houndoominite",
     "moves": ["darkpulse", "fireblast", "nastyplot"]
   },
@@ -492,12 +621,14 @@
     "nameZh": "图图犬",
     "nature": "Jolly",
     "evs": {"hp": 4, "def": 252, "spe": 252},
+    "item": "Focus Sash",
     "moves": ["spore", "spikes", "stealthrock"]
   },
   "hitmontop": {
     "nameZh": "战舞郎",
     "nature": "Impish",
-    "evs": {"hp": 252, "def": 252, "spd": 4},
+    "evs": {"hp": 252, "atk": 4, "def": 252},
+    "item": "Leftovers",
     "moves": ["closecombat", "rapidspin", "foresight"]
   },
   "blissey": {
@@ -505,13 +636,20 @@
     "nature": "Bold",
     "evs": {"hp": 248, "def": 252, "spd": 8},
     "item": "Leftovers",
-    "moves": ["softboiled", "seismictoss"]
+    "moves": ["seismictoss", "softboiled", "toxic"]
   },
   "raikou": {
     "nameZh": "雷公",
     "nature": "Timid",
-    "evs": {"spa": 252, "spd": 4, "spe": 252},
-    "moves": ["thunderbolt", "hiddenpowerice"]
+    "evs": {"hp": 4, "spa": 252, "spe": 252},
+    "moves": ["thunderbolt", "hiddenpowerice", "voltswitch"]
+  },
+  "entei": {
+    "nameZh": "炎帝",
+    "nature": "Adamant",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "item": "Choice Band",
+    "moves": ["sacredfire", "flareblitz", "extremespeed"]
   },
   "suicune": {
     "nameZh": "水君",
@@ -543,13 +681,13 @@
   "sceptile": {
     "nameZh": "蜥蜴王",
     "nature": "Timid",
-    "evs": {"def": 4, "spa": 252, "spe": 252},
-    "moves": ["leafstorm", "dragonpulse", "focusblast"]
+    "evs": {"hp": 4, "spa": 252, "spe": 252},
+    "moves": ["gigadrain", "hiddenpowerfire"]
   },
   "sceptilemega": {
     "nameZh": "mega蜥蜴王",
     "nature": "Timid",
-    "evs": {"def": 4, "spa": 252, "spe": 252},
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
     "item": "Sceptilite",
     "moves": ["leafstorm", "dragonpulse", "focusblast"]
   },
@@ -568,10 +706,15 @@
   },
   "swampertmega": {
     "nameZh": "mega巨沼怪",
-    "nature": "Adamant",
-    "evs": {"atk": 252, "def": 4, "spe": 252},
     "item": "Swampertite",
     "moves": ["waterfall", "earthquake", "icepunch"]
+  },
+  "linoone": {
+    "nameZh": "直冲熊",
+    "nature": "Adamant",
+    "evs": {"hp": 148, "atk": 248, "def": 8, "spd": 88, "spe": 16},
+    "item": "Figy Berry",
+    "moves": ["bellydrum", "extremespeed", "seedbomb"]
   },
   "ludicolo": {
     "nameZh": "乐天河童",
@@ -579,6 +722,12 @@
     "evs": {"hp": 60, "spa": 252, "spe": 196},
     "item": "Life Orb",
     "moves": ["surf", "grassknot", "icebeam"]
+  },
+  "swellow": {
+    "nameZh": "大王燕",
+    "nature": "Jolly",
+    "evs": {"hp": 4, "atk": 252, "spe": 252},
+    "moves": ["bravebird", "facade", "protect"]
   },
   "pelipper": {
     "nameZh": "大嘴鸥",
@@ -590,9 +739,9 @@
   },
   "gardevoir": {
     "nameZh": "沙奈朵",
-    "nature": "Modest",
-    "evs": {"hp": 120, "def": 52, "spa": 216, "spe": 120},
-    "moves": ["psyshock", "hypervoice", "focusblast"]
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["moonblast", "psyshock", "trick"]
   },
   "gardevoirmega": {
     "nameZh": "mega沙奈朵",
@@ -610,9 +759,8 @@
   "ninjask": {
     "nameZh": "铁面忍者",
     "nature": "Adamant",
-    "evs": {"hp": 184, "atk": 252, "def": 4, "spe": 68},
-    "item": "Power Herb",
-    "moves": ["xscissor", "swordsdance", "nightslash"]
+    "evs": {"hp": 248, "atk": 192, "spe": 68},
+    "moves": ["swordsdance", "xscissor", "batonpass"]
   },
   "shedinja": {
     "nameZh": "脱壳忍者",
@@ -622,6 +770,11 @@
     "item": "Focus Sash",
     "moves": ["xscissor", "shadowsneak", "willowisp"]
   },
+  "exploud": {
+    "nameZh": "爆音怪",
+    "item": "Choice Specs",
+    "moves": ["boomburst", "fireblast", "focusblast"]
+  },
   "hariyama": {
     "nameZh": "铁掌力士",
     "nature": "Adamant",
@@ -630,9 +783,10 @@
   },
   "sableye": {
     "nameZh": "勾魂眼",
-    "nature": "Careful",
-    "evs": {"hp": 248, "def": 8, "spd": 252},
-    "moves": ["knockoff", "willowisp", "recover"]
+    "nature": "Calm",
+    "evs": {"hp": 252, "def": 120, "spd": 136},
+    "item": "Leftovers",
+    "moves": ["willowisp", "recover", "taunt"]
   },
   "sableyemega": {
     "nameZh": "mega勾魂眼",
@@ -656,22 +810,21 @@
   },
   "aggron": {
     "nameZh": "波士可多拉",
-    "nature": "Adamant",
-    "evs": {"hp": 252, "atk": 252, "spd": 4},
-    "moves": ["headsmash", "earthquake"]
+    "nature": "Jolly",
+    "evs": {"hp": 4, "atk": 252, "spe": 252},
+    "moves": ["headsmash", "earthquake", "aquatail"]
   },
   "aggronmega": {
     "nameZh": "mega波士可多拉",
-    "nature": "Impish",
-    "evs": {"hp": 252, "def": 16, "spd": 240},
+    "nature": "Careful",
+    "evs": {"hp": 252, "def": 4, "spd": 252},
     "item": "Aggronite",
     "moves": ["heavyslam", "stealthrock", "earthquake"]
   },
   "medicham": {
     "nameZh": "恰雷姆",
-    "nature": "Adamant",
-    "evs": {"atk": 252, "def": 4, "spe": 252},
-    "moves": ["highjumpkick", "zenheadbutt", "fakeout"]
+    "item": "Choice Band",
+    "moves": ["highjumpkick", "icepunch", "psychocut"]
   },
   "medichammega": {
     "nameZh": "mega恰雷姆",
@@ -693,18 +846,19 @@
     "item": "Manectite",
     "moves": ["voltswitch", "thunderbolt", "hiddenpowerice"]
   },
+  "volbeat": {
+    "nameZh": "电萤虫",
+    "moves": ["encore", "thunderwave", "uturn"]
+  },
   "sharpedo": {
     "nameZh": "巨牙鲨",
-    "nature": "Naughty",
-    "evs": {"atk": 224, "spa": 32, "spe": 252},
-    "moves": ["hydropump", "crunch", "protect"]
+    "item": "Life Orb",
+    "moves": ["protect", "crunch", "waterfall"]
   },
   "sharpedomega": {
     "nameZh": "mega巨牙鲨",
-    "nature": "Naughty",
-    "evs": {"atk": 224, "spa": 32, "spe": 252},
     "item": "Sharpedonite",
-    "moves": ["hydropump", "crunch", "protect"]
+    "moves": ["crunch", "protect", "icefang"]
   },
   "camerupt": {
     "nameZh": "喷火驼",
@@ -716,10 +870,9 @@
   "cameruptmega": {
     "nameZh": "mega喷火驼",
     "nature": "Modest",
-    "evs": {"hp": 132, "spa": 252, "spe": 124},
-    "ivs": {"atk": 0},
+    "evs": {"hp": 252, "def": 4, "spa": 252},
     "item": "Cameruptite",
-    "moves": ["fireblast", "earthpower", "stealthrock"]
+    "moves": ["earthpower", "fireblast", "ancientpower"]
   },
   "torkoal": {
     "nameZh": "煤炭龟",
@@ -736,7 +889,7 @@
   },
   "altaria": {
     "nameZh": "七夕青鸟",
-    "moves": ["roost", "return", "earthquake"]
+    "moves": ["roost", "dragondance", "dragonclaw"]
   },
   "altariamega": {
     "nameZh": "mega七夕青鸟",
@@ -749,13 +902,10 @@
     "nameZh": "铁螯龙虾",
     "nature": "Adamant",
     "evs": {"atk": 252, "spd": 4, "spe": 252},
-    "item": "Choice Band",
     "moves": ["crabhammer", "knockoff", "aquajet"]
   },
   "claydol": {
     "nameZh": "念力土偶",
-    "nature": "Relaxed",
-    "evs": {"hp": 252, "atk": 112, "def": 144},
     "item": "Leftovers",
     "moves": ["earthquake", "rapidspin", "stealthrock"]
   },
@@ -769,9 +919,29 @@
   "milotic": {
     "nameZh": "美纳斯",
     "nature": "Bold",
-    "evs": {"hp": 248, "def": 252, "spd": 8},
+    "evs": {"hp": 248, "def": 252, "spe": 8},
     "item": "Leftovers",
     "moves": ["scald", "recover", "icebeam"]
+  },
+  "banette": {
+    "nameZh": "诅咒娃娃",
+    "nature": "Adamant",
+    "evs": {"hp": 252, "atk": 252, "spd": 4},
+    "moves": ["destinybond", "taunt", "knockoff"]
+  },
+  "banettemega": {
+    "nameZh": "mega诅咒娃娃",
+    "nature": "Adamant",
+    "evs": {"hp": 252, "atk": 252, "spd": 4},
+    "item": "Banettite",
+    "moves": ["destinybond", "taunt", "knockoff"]
+  },
+  "dusclops": {
+    "nameZh": "彷徨夜灵",
+    "nature": "Bold",
+    "evs": {"hp": 252, "def": 252, "spd": 4},
+    "item": "Eviolite",
+    "moves": ["curse", "nightshade", "willowisp"]
   },
   "absol": {
     "nameZh": "阿勃梭鲁",
@@ -785,6 +955,15 @@
     "evs": {"atk": 252, "spd": 4, "spe": 252},
     "item": "Absolite",
     "moves": ["suckerpunch", "swordsdance", "knockoff"]
+  },
+  "glalie": {
+    "nameZh": "冰鬼护",
+    "moves": ["explosion", "doubleedge", "freezedry"]
+  },
+  "glaliemega": {
+    "nameZh": "mega冰鬼护",
+    "item": "Glalitite",
+    "moves": ["explosion", "doubleedge", "freezedry"]
   },
   "walrein": {
     "nameZh": "帝牙海狮",
@@ -820,10 +999,8 @@
   },
   "registeel": {
     "nameZh": "雷吉斯奇鲁",
-    "nature": "Impish",
-    "evs": {"hp": 252, "atk": 168, "def": 88},
     "item": "Leftovers",
-    "moves": ["stealthrock", "explosion", "icepunch"]
+    "moves": ["stealthrock", "seismictoss", "toxic"]
   },
   "latias": {
     "nameZh": "拉帝亚斯",
@@ -881,8 +1058,8 @@
   "empoleon": {
     "nameZh": "帝王拿波",
     "nature": "Calm",
-    "evs": {"hp": 248, "def": 8, "spd": 252},
-    "moves": ["scald", "stealthrock", "roar"]
+    "evs": {"hp": 252, "spa": 4, "spd": 252},
+    "moves": ["scald", "icebeam", "stealthrock"]
   },
   "staraptor": {
     "nameZh": "姆克鹰",
@@ -895,7 +1072,7 @@
     "nameZh": "罗丝雷朵",
     "nature": "Timid",
     "evs": {"def": 4, "spa": 252, "spe": 252},
-    "moves": ["leafstorm", "sleeppowder", "toxicspikes"]
+    "moves": ["sludgebomb", "leafstorm", "sleeppowder"]
   },
   "gastrodon": {
     "nameZh": "海兔兽",
@@ -903,6 +1080,16 @@
     "evs": {"hp": 248, "def": 8, "spd": 252},
     "item": "Leftovers",
     "moves": ["scald", "earthquake", "recover"]
+  },
+  "ambipom": {
+    "nameZh": "双尾怪手",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "spd": 4, "spe": 252},
+    "moves": ["return", "fakeout", "lowkick"]
+  },
+  "drifblim": {
+    "nameZh": "随风球",
+    "moves": ["acrobatics", "substitute", "destinybond"]
   },
   "lopunny": {
     "nameZh": "长耳兔",
@@ -917,19 +1104,23 @@
     "item": "Lopunnite",
     "moves": ["fakeout", "highjumpkick", "return"]
   },
+  "mismagius": {
+    "nameZh": "梦妖魔",
+    "nature": "Timid",
+    "evs": {"hp": 4, "spa": 252, "spe": 252},
+    "item": "Leftovers",
+    "moves": ["shadowball", "hiddenpowerfighting"]
+  },
   "honchkrow": {
     "nameZh": "乌鸦头头",
-    "nature": "Naughty",
-    "evs": {"atk": 252, "spa": 4, "spe": 252},
     "item": "Life Orb",
     "moves": ["suckerpunch", "bravebird", "superpower"]
   },
   "bronzong": {
     "nameZh": "青铜钟",
     "nature": "Sassy",
-    "evs": {"hp": 252, "def": 168, "spd": 88},
+    "evs": {"hp": 252, "def": 4, "spd": 252},
     "ivs": {"spe": 0},
-    "item": "Leftovers",
     "moves": ["gyroball", "earthquake", "stealthrock"]
   },
   "spiritomb": {
@@ -954,24 +1145,27 @@
   },
   "lucario": {
     "nameZh": "路卡利欧",
-    "nature": "Adamant",
-    "evs": {"atk": 252, "spd": 4, "spe": 252},
     "item": "Life Orb",
     "moves": ["closecombat", "swordsdance", "extremespeed"]
   },
   "hippowdon": {
     "nameZh": "河马兽",
-    "nature": "Careful",
-    "evs": {"hp": 252, "def": 12, "spd": 244},
+    "nature": "Impish",
+    "evs": {"hp": 252, "def": 112, "spd": 144},
     "item": "Leftovers",
     "moves": ["earthquake", "stealthrock", "slackoff"]
   },
+  "drapion": {
+    "nameZh": "龙王蝎",
+    "nature": "Jolly",
+    "evs": {"hp": 4, "atk": 252, "spe": 252},
+    "moves": ["crunch", "earthquake", "aquatail"]
+  },
   "toxicroak": {
     "nameZh": "毒骷蛙",
-    "nature": "Adamant",
-    "evs": {"hp": 28, "atk": 252, "spe": 228},
-    "item": "Life Orb",
-    "moves": ["drainpunch", "swordsdance", "suckerpunch"]
+    "nature": "Jolly",
+    "evs": {"atk": 252, "spd": 4, "spe": 252},
+    "moves": ["swordsdance", "drainpunch", "icepunch"]
   },
   "abomasnow": {
     "nameZh": "暴雪王",
@@ -979,6 +1173,11 @@
     "evs": {"atk": 252, "spa": 172, "spe": 84},
     "item": "Leftovers",
     "moves": ["woodhammer", "blizzard", "iceshard"]
+  },
+  "abomasnowmega": {
+    "nameZh": "mega暴雪王",
+    "item": "Abomasite",
+    "moves": ["blizzard", "woodhammer", "iceshard"]
   },
   "weavile": {
     "nameZh": "玛狃拉",
@@ -995,13 +1194,11 @@
   "rhyperior": {
     "nameZh": "超甲狂犀",
     "nature": "Adamant",
-    "evs": {"atk": 252, "spd": 4, "spe": 252},
-    "moves": ["earthquake", "stoneedge", "megahorn"]
+    "evs": {"hp": 252, "atk": 16, "spd": 240},
+    "moves": ["earthquake", "stoneedge", "stealthrock"]
   },
   "tangrowth": {
     "nameZh": "巨蔓藤",
-    "nature": "Relaxed",
-    "evs": {"hp": 248, "def": 172, "spd": 88},
     "moves": ["gigadrain", "knockoff", "hiddenpowerice"]
   },
   "electivire": {
@@ -1013,16 +1210,14 @@
   },
   "togekiss": {
     "nameZh": "波克基斯",
-    "nature": "Bold",
-    "evs": {"hp": 252, "def": 192, "spe": 64},
     "item": "Leftovers",
     "moves": ["airslash", "nastyplot", "roost"]
   },
   "yanmega": {
     "nameZh": "远古巨蜓",
     "nature": "Modest",
-    "evs": {"def": 104, "spa": 252, "spe": 152},
-    "moves": ["bugbuzz", "airslash", "hiddenpowerground"]
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["airslash", "bugbuzz", "protect"]
   },
   "gliscor": {
     "nameZh": "天蝎王",
@@ -1033,22 +1228,16 @@
   },
   "mamoswine": {
     "nameZh": "象牙猪",
-    "nature": "Adamant",
-    "evs": {"atk": 252, "spd": 4, "spe": 252},
     "moves": ["earthquake", "iceshard", "iciclecrash"]
   },
   "porygonz": {
     "nameZh": "多边兽乙型",
-    "nature": "Modest",
-    "evs": {"def": 4, "spa": 252, "spe": 252},
-    "item": "Life Orb",
     "moves": ["triattack", "darkpulse"]
   },
   "gallade": {
     "nameZh": "艾路雷朵",
     "nature": "Jolly",
     "evs": {"atk": 252, "def": 4, "spe": 252},
-    "item": "Lum Berry",
     "moves": ["closecombat", "willowisp", "taunt"]
   },
   "gallademega": {
@@ -1069,7 +1258,11 @@
     "nature": "Timid",
     "evs": {"hp": 4, "spa": 252, "spe": 252},
     "item": "Focus Sash",
-    "moves": ["icebeam", "spikes", "taunt"]
+    "moves": ["destinybond", "spikes", "icywind"]
+  },
+  "rotom": {
+    "nameZh": "洛托姆",
+    "moves": ["shadowball", "thunderbolt", "willowisp"]
   },
   "rotomfan": {
     "nameZh": "洛托姆",
@@ -1087,17 +1280,15 @@
   },
   "rotomheat": {
     "nameZh": "洛托姆",
-    "nature": "Bold",
-    "evs": {"hp": 248, "def": 40, "spe": 220},
-    "item": "Leftovers",
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
     "moves": ["voltswitch", "overheat", "painsplit"]
   },
   "rotommow": {
     "nameZh": "洛托姆",
     "nature": "Timid",
-    "evs": {"hp": 248, "spa": 8, "spe": 252},
-    "item": "Leftovers",
-    "moves": ["thunderbolt", "leafstorm", "willowisp"]
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["leafstorm", "thunderbolt", "voltswitch"]
   },
   "rotomwash": {
     "nameZh": "洛托姆",
@@ -1114,9 +1305,6 @@
   },
   "mesprit": {
     "nameZh": "艾姆利多",
-    "nature": "Bold",
-    "evs": {"hp": 252, "def": 180, "spd": 76},
-    "item": "Leftovers",
     "moves": ["psychic", "thunderbolt", "icebeam"]
   },
   "azelf": {
@@ -1135,8 +1323,8 @@
   "cresselia": {
     "nameZh": "克雷色利亚",
     "nature": "Bold",
-    "evs": {"hp": 252, "def": 148, "spd": 40, "spe": 68},
-    "moves": ["moonlight", "icebeam"]
+    "evs": {"hp": 248, "def": 252, "spd": 8},
+    "moves": ["moonlight", "psychic", "icebeam"]
   },
   "manaphy": {
     "nameZh": "玛纳霏",
@@ -1153,16 +1341,12 @@
   },
   "shaymin": {
     "nameZh": "谢米",
-    "nature": "Modest",
-    "evs": {"def": 4, "spa": 252, "spe": 252},
-    "item": "Leftovers",
-    "moves": ["seedflare", "rest", "sleeptalk"]
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["seedflare"]
   },
   "victini": {
     "nameZh": "比克提尼",
-    "nature": "Jolly",
-    "evs": {"atk": 252, "def": 4, "spe": 252},
-    "item": "Choice Band",
     "moves": ["vcreate", "boltstrike", "uturn"]
   },
   "serperior": {
@@ -1170,6 +1354,10 @@
     "nature": "Timid",
     "evs": {"hp": 56, "spa": 200, "spe": 252},
     "moves": ["leafstorm", "glare"]
+  },
+  "emboar": {
+    "nameZh": "炎武王",
+    "moves": ["flareblitz", "superpower", "wildcharge"]
   },
   "samurotthisui": {
     "nameZh": "大剑鬼",
@@ -1191,8 +1379,6 @@
   },
   "seismitoad": {
     "nameZh": "蟾蜍王",
-    "nature": "Bold",
-    "evs": {"hp": 248, "def": 232, "spe": 28},
     "item": "Leftovers",
     "moves": ["scald", "earthquake", "stealthrock"]
   },
@@ -1202,6 +1388,17 @@
     "evs": {"atk": 252, "def": 4, "spe": 252},
     "moves": ["megahorn", "swordsdance", "earthquake"]
   },
+  "whimsicott": {
+    "nameZh": "风妖精",
+    "nature": "Impish",
+    "evs": {"hp": 252, "def": 252, "spd": 4},
+    "item": "Leftovers",
+    "moves": ["encore", "uturn", "leechseed"]
+  },
+  "lilligant": {
+    "nameZh": "裙儿小姐",
+    "moves": ["quiverdance", "sleeppowder", "gigadrain"]
+  },
   "lilliganthisui": {
     "nameZh": "裙儿小姐",
     "nature": "Adamant",
@@ -1209,22 +1406,62 @@
     "item": "Life Orb",
     "moves": ["solarblade", "closecombat", "tripleaxel"]
   },
+  "krookodile": {
+    "nameZh": "流氓鳄",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "moves": ["earthquake", "knockoff", "pursuit"]
+  },
   "darmanitan": {
     "nameZh": "达摩狒狒",
     "evs": {"atk": 252, "spe": 252},
     "moves": ["flareblitz"]
   },
+  "crustle": {
+    "nameZh": "岩殿居蟹",
+    "nature": "Lonely",
+    "evs": {"atk": 252, "spe": 252},
+    "ivs": {"hp": 0, "def": 0, "spd": 0},
+    "item": "Custap Berry",
+    "moves": ["spikes", "stealthrock", "stoneedge"]
+  },
   "scrafty": {
     "nameZh": "头巾混混",
     "moves": ["drainpunch", "crunch"]
   },
+  "sigilyph": {
+    "nameZh": "象征鸟",
+    "moves": ["roost", "psyshock", "heatwave"]
+  },
   "cofagrigus": {
     "nameZh": "迭失棺",
-    "nature": "Bold",
-    "evs": {"hp": 248, "def": 252, "spd": 8},
-    "ivs": {"atk": 0},
+    "nature": "Quiet",
+    "evs": {"hp": 252, "spa": 252, "spd": 4},
+    "ivs": {"spe": 0},
     "item": "Leftovers",
-    "moves": ["shadowball", "toxicspikes", "willowisp"]
+    "moves": ["shadowball", "nastyplot", "trickroom"]
+  },
+  "carracosta": {
+    "nameZh": "肋骨海龟",
+    "moves": ["stoneedge", "aquajet", "waterfall"]
+  },
+  "archeops": {
+    "nameZh": "始祖大鸟",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "moves": ["earthquake", "stoneedge", "uturn"]
+  },
+  "zoroark": {
+    "nameZh": "索罗亚克",
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["darkpulse", "flamethrower", "focusblast"]
+  },
+  "cinccino": {
+    "nameZh": "奇诺栗鼠",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "spd": 4, "spe": 252},
+    "moves": ["bulletseed", "rockblast", "tailslap"]
   },
   "gothitelle": {
     "nameZh": "哥德小姐",
@@ -1239,24 +1476,44 @@
     "evs": {"hp": 252, "def": 212, "spe": 44},
     "moves": ["psychic", "recover", "calmmind"]
   },
+  "escavalier": {
+    "nameZh": "骑士蜗牛",
+    "nature": "Adamant",
+    "evs": {"hp": 248, "atk": 252, "spd": 8},
+    "moves": ["ironhead", "megahorn", "pursuit"]
+  },
   "amoonguss": {
     "nameZh": "败露球菇",
     "nature": "Bold",
     "evs": {"hp": 248, "def": 168, "spd": 92},
-    "item": "Black Sludge",
     "moves": ["gigadrain", "spore", "sludgebomb"]
   },
   "jellicent": {
     "nameZh": "胖嘟嘟",
-    "nature": "Timid",
-    "evs": {"hp": 248, "def": 124, "spe": 136},
-    "moves": ["scald", "recover", "willowisp"]
+    "nature": "Bold",
+    "evs": {"hp": 252, "def": 212, "spe": 44},
+    "moves": ["recover", "taunt", "scald"]
   },
   "alomomola": {
     "nameZh": "保姆曼波",
     "nature": "Bold",
-    "evs": {"hp": 40, "def": 216, "spd": 252},
+    "evs": {"hp": 40, "def": 252, "spd": 216},
     "moves": ["scald", "wish", "protect"]
+  },
+  "galvantula": {
+    "nameZh": "电蜘蛛",
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "item": "Life Orb",
+    "moves": ["bugbuzz", "thunder", "energyball"]
+  },
+  "ferroseed": {
+    "nameZh": "种子铁球",
+    "nature": "Sassy",
+    "evs": {"hp": 252, "def": 4, "spd": 252},
+    "ivs": {"spe": 0},
+    "item": "Eviolite",
+    "moves": ["gyroball", "leechseed", "protect"]
   },
   "ferrothorn": {
     "nameZh": "坚果哑铃",
@@ -1266,43 +1523,86 @@
     "ivs": {"spe": 0},
     "item": "Leftovers"
   },
+  "eelektross": {
+    "nameZh": "麻麻鳗鱼王",
+    "moves": ["thunderbolt", "flamethrower", "gigadrain"]
+  },
   "chandelure": {
     "nameZh": "水晶灯火灵",
     "nature": "Timid",
-    "evs": {"def": 88, "spa": 252, "spe": 168},
-    "moves": ["shadowball", "flamethrower", "hiddenpowerice"]
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["shadowball", "fireblast", "energyball"]
   },
   "haxorus": {
     "nameZh": "双斧战龙",
     "nature": "Jolly",
-    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "evs": {"atk": 252, "spd": 4, "spe": 252},
     "moves": ["outrage", "earthquake", "dragondance"]
+  },
+  "cryogonal": {
+    "nameZh": "几何雪花",
+    "moves": ["icebeam", "rapidspin", "recover"]
+  },
+  "accelgor": {
+    "nameZh": "敏捷虫",
+    "nature": "Timid",
+    "evs": {"hp": 4, "spa": 252, "spe": 252},
+    "item": "Focus Sash",
+    "moves": ["bugbuzz", "focusblast", "spikes"]
   },
   "mienshao": {
     "nameZh": "师父鼬",
-    "nature": "Naive",
-    "evs": {"atk": 252, "spa": 32, "spe": 224},
-    "item": "Choice Scarf",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "spd": 4, "spe": 252},
     "moves": ["highjumpkick", "uturn", "stoneedge"]
+  },
+  "druddigon": {
+    "nameZh": "赤面龙",
+    "nature": "Adamant",
+    "evs": {"hp": 236, "atk": 252, "spe": 20},
+    "moves": ["dragonclaw", "stealthrock", "earthquake"]
+  },
+  "golurk": {
+    "nameZh": "泥偶巨人",
+    "nature": "Adamant",
+    "evs": {"hp": 252, "atk": 252, "spd": 4},
+    "item": "Leftovers",
+    "moves": ["earthquake", "firepunch", "shadowpunch"]
   },
   "bisharp": {
     "nameZh": "劈斩司令",
     "nature": "Adamant",
-    "evs": {"atk": 252, "spd": 4, "spe": 252},
+    "evs": {"atk": 252, "def": 4, "spe": 252},
     "moves": ["knockoff", "ironhead", "suckerpunch"]
+  },
+  "bouffalant": {
+    "nameZh": "爆炸头水牛",
+    "nature": "Adamant",
+    "evs": {"hp": 252, "atk": 252, "def": 4},
+    "moves": ["earthquake", "headcharge", "megahorn"]
+  },
+  "braviary": {
+    "nameZh": "勇士雄鹰",
+    "moves": ["bravebird", "return", "superpower"]
   },
   "mandibuzz": {
     "nameZh": "秃鹰娜",
-    "nature": "Bold",
-    "evs": {"hp": 248, "def": 244, "spe": 16},
-    "item": "Heavy-Duty Boots",
-    "moves": ["foulplay", "roost", "defog"]
+    "nature": "Careful",
+    "evs": {"hp": 248, "spd": 124, "spe": 136},
+    "item": "Leftovers",
+    "moves": ["roost", "foulplay", "toxic"]
+  },
+  "durant": {
+    "nameZh": "铁蚁",
+    "nature": "Jolly",
+    "evs": {"hp": 4, "atk": 252, "spe": 252},
+    "moves": ["ironhead", "superpower", "honeclaws"]
   },
   "hydreigon": {
     "nameZh": "三首恶龙",
     "nature": "Timid",
     "evs": {"spa": 252, "spd": 4, "spe": 252},
-    "moves": ["darkpulse", "dracometeor"]
+    "moves": ["darkpulse", "dracometeor", "flashcannon"]
   },
   "volcarona": {
     "nameZh": "火神蛾",
@@ -1321,14 +1621,17 @@
     "nameZh": "代拉基翁",
     "nature": "Jolly",
     "evs": {"atk": 252, "def": 4, "spe": 252},
-    "moves": ["stoneedge", "closecombat"]
+    "moves": ["closecombat", "stoneedge", "swordsdance"]
+  },
+  "virizion": {
+    "nameZh": "毕力吉翁",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "spd": 4, "spe": 252},
+    "moves": ["closecombat", "leafblade", "swordsdance"]
   },
   "tornadus": {
     "nameZh": "龙卷云",
-    "nature": "Timid",
-    "evs": {"def": 4, "spa": 252, "spe": 252},
-    "item": "Leftovers",
-    "moves": ["hurricane", "focusblast", "protect"]
+    "moves": ["hurricane", "superpower"]
   },
   "tornadustherian": {
     "nameZh": "龙卷云",
@@ -1373,11 +1676,17 @@
     "evs": {"spa": 252, "spd": 4, "spe": 252},
     "moves": ["hydropump", "secretsword"]
   },
+  "meloetta": {
+    "nameZh": "美洛耶塔",
+    "nature": "Timid",
+    "evs": {"hp": 4, "spa": 252, "spe": 252},
+    "moves": ["focusblast", "calmmind", "psychic"]
+  },
   "chesnaught": {
     "nameZh": "布里卡隆",
     "nature": "Impish",
     "evs": {"hp": 252, "def": 252, "spd": 4},
-    "moves": ["woodhammer", "drainpunch", "spikes"]
+    "moves": ["spikes", "drainpunch", "synthesis"]
   },
   "greninja": {
     "nameZh": "甲贺忍蛙",
@@ -1391,31 +1700,89 @@
     "evs": {"atk": 252, "def": 4, "spe": 252},
     "moves": ["return", "earthquake", "quickattack"]
   },
+  "fletchinder": {
+    "nameZh": "火箭雀",
+    "nature": "Adamant",
+    "evs": {"hp": 104, "atk": 252, "spe": 152},
+    "moves": ["acrobatics", "roost", "swordsdance"]
+  },
   "talonflame": {
     "nameZh": "烈箭鹰",
+    "moves": ["roost", "bravebird", "swordsdance"]
+  },
+  "florges": {
+    "nameZh": "花洁夫人",
     "nature": "Bold",
-    "evs": {"hp": 248, "def": 228, "spe": 32},
-    "moves": ["overheat", "roost", "willowisp"]
+    "evs": {"hp": 252, "def": 252, "spd": 4},
+    "item": "Leftovers",
+    "moves": ["aromatherapy", "moonblast", "synthesis"]
+  },
+  "pangoro": {
+    "nameZh": "霸道熊猫",
+    "nature": "Adamant",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "moves": ["gunkshot", "knockoff", "drainpunch"]
   },
   "doublade": {
     "nameZh": "双剑鞘",
-    "nature": "Sassy",
-    "evs": {"hp": 252, "atk": 4, "spd": 252},
-    "ivs": {"spe": 0},
     "item": "Eviolite",
-    "moves": ["gyroball", "toxic", "rest"]
+    "moves": ["gyroball", "shadowsneak", "swordsdance"]
+  },
+  "aromatisse": {
+    "nameZh": "芳香精",
+    "nature": "Bold",
+    "evs": {"hp": 252, "def": 252, "spd": 4},
+    "item": "Leftovers",
+    "moves": ["moonblast", "wish", "aromatherapy"]
+  },
+  "barbaracle": {
+    "nameZh": "龟足巨铠",
+    "item": "Rockium Z",
+    "moves": ["liquidation", "shellsmash", "stoneedge"]
   },
   "dragalge": {
     "nameZh": "毒藻龙",
-    "nature": "Calm",
-    "evs": {"hp": 248, "spd": 232, "spe": 28},
-    "moves": ["sludgewave", "dracometeor", "scald"]
+    "nature": "Modest",
+    "evs": {"hp": 188, "spa": 252, "spe": 68},
+    "moves": ["dracometeor", "sludgewave", "focusblast"]
+  },
+  "heliolisk": {
+    "nameZh": "光电伞蜥",
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["hypervoice", "thunderbolt", "voltswitch"]
+  },
+  "tyrantrum": {
+    "nameZh": "怪颚龙",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "moves": ["earthquake", "headsmash", "outrage"]
+  },
+  "aurorus": {
+    "nameZh": "冰雪巨龙",
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "item": "Focus Sash",
+    "moves": ["freezedry", "stealthrock", "blizzard"]
+  },
+  "sylveon": {
+    "nameZh": "仙子伊布",
+    "nature": "Bold",
+    "evs": {"hp": 252, "def": 252, "spa": 4},
+    "item": "Leftovers",
+    "moves": ["hypervoice", "wish", "protect"]
   },
   "hawlucha": {
     "nameZh": "摔角鹰人",
     "nature": "Jolly",
     "evs": {"hp": 12, "atk": 244, "spe": 252},
     "moves": ["swordsdance", "acrobatics", "highjumpkick"]
+  },
+  "goodra": {
+    "nameZh": "黏美龙",
+    "nature": "Modest",
+    "evs": {"hp": 212, "spa": 252, "spe": 44},
+    "moves": ["sludgebomb", "dracometeor", "fireblast"]
   },
   "goodrahisui": {
     "nameZh": "黏美龙",
@@ -1428,7 +1795,7 @@
     "nameZh": "钥圈儿",
     "nature": "Calm",
     "evs": {"hp": 252, "def": 4, "spd": 252},
-    "moves": ["playrough", "foulplay", "spikes"]
+    "moves": ["spikes", "thunderwave", "playrough"]
   },
   "avalugg": {
     "nameZh": "冰岩怪",
@@ -1437,17 +1804,29 @@
     "item": "Rocky Helmet",
     "moves": ["avalanche", "recover", "rapidspin"]
   },
+  "noivern": {
+    "nameZh": "音波龙",
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["dracometeor", "flamethrower", "roost"]
+  },
   "zygarde": {
     "nameZh": "基格尔德",
     "nature": "Adamant",
     "evs": {"hp": 120, "atk": 252, "spe": 136},
     "moves": ["outrage", "earthquake", "dragondance"]
   },
+  "zygarde10": {
+    "nameZh": "基格尔德",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "item": "Choice Band",
+    "moves": ["extremespeed", "outrage", "thousandarrows"]
+  },
   "diancie": {
     "nameZh": "蒂安希",
-    "nature": "Timid",
-    "evs": {"atk": 4, "spa": 252, "spe": 252},
-    "moves": ["moonblast", "diamondstorm", "earthpower"]
+    "item": "Leftovers",
+    "moves": ["diamondstorm", "moonblast", "stealthrock"]
   },
   "dianciemega": {
     "nameZh": "mega蒂安希",
@@ -1455,6 +1834,13 @@
     "evs": {"atk": 4, "spa": 252, "spe": 252},
     "item": "Diancite",
     "moves": ["moonblast", "diamondstorm", "earthpower"]
+  },
+  "hoopa": {
+    "nameZh": "胡帕",
+    "nature": "Modest",
+    "evs": {"def": 4, "spa": 252, "spe": 252},
+    "moves": ["focusblast", "shadowball", "nastyplot"],
+    "ivs": {"hp": 30}
   },
   "hoopaunbound": {
     "nameZh": "胡帕",
@@ -1465,8 +1851,13 @@
   "volcanion": {
     "nameZh": "波尔凯尼恩",
     "nature": "Modest",
-    "evs": {"hp": 252, "spa": 160, "spe": 96},
+    "evs": {"def": 4, "spa": 252, "spe": 252},
     "moves": ["flamethrower", "steameruption", "sludgebomb"]
+  },
+  "decidueye": {
+    "nameZh": "狙射树枭",
+    "item": "Decidium Z",
+    "moves": ["leafblade", "spiritshackle", "substitute"]
   },
   "primarina": {
     "nameZh": "西狮海壬",
@@ -1489,9 +1880,25 @@
   },
   "araquanid": {
     "nameZh": "滴蛛霸",
-    "nature": "Brave",
-    "evs": {"hp": 216, "atk": 252, "spa": 40},
     "moves": ["liquidation", "stickyweb", "magiccoat"]
+  },
+  "salazzle": {
+    "nameZh": "焰后蜥",
+    "nature": "Timid",
+    "evs": {"def": 24, "spa": 232, "spe": 252},
+    "moves": ["fireblast", "sludgewave", "nastyplot"]
+  },
+  "bewear": {
+    "nameZh": "穿着熊",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "moves": ["earthquake", "doubleedge", "drainpunch"]
+  },
+  "tsareena": {
+    "nameZh": "甜冷美后",
+    "nature": "Jolly",
+    "evs": {"atk": 252, "def": 4, "spe": 252},
+    "moves": ["powerwhip", "uturn", "highjumpkick"]
   },
   "comfey": {
     "nameZh": "花疗环环",
@@ -1500,18 +1907,27 @@
     "item": "Life Orb",
     "moves": ["drainingkiss", "calmmind", "storedpower"]
   },
+  "palossand": {
+    "nameZh": "噬沙堡爷",
+    "nature": "Bold",
+    "evs": {"hp": 252, "def": 164, "spd": 92},
+    "moves": ["earthpower", "shoreup", "stealthrock"]
+  },
   "pyukumuku": {
     "nameZh": "拳海参",
-    "nature": "Bold",
-    "evs": {"hp": 252, "def": 252, "spd": 4},
     "item": "Leftovers",
-    "moves": ["block", "recover", "spite"]
+    "moves": ["block", "recover", "soak"]
+  },
+  "silvallysteel": {
+    "nameZh": "银伴战兽",
+    "nature": "Calm",
+    "evs": {"hp": 252, "spd": 200, "spe": 56},
+    "item": "Steel Memory",
+    "moves": ["defog", "flamethrower", "partingshot"]
   },
   "mimikyu": {
     "nameZh": "谜拟丘",
-    "nature": "Jolly",
-    "evs": {"atk": 252, "spd": 4, "spe": 252},
-    "moves": ["shadowsneak", "playrough", "swordsdance"]
+    "moves": ["playrough", "shadowclaw", "shadowsneak"]
   },
   "kommoo": {
     "nameZh": "杖尾鳞甲龙",
@@ -1543,6 +1959,12 @@
     "item": "Leftovers",
     "moves": ["moonblast", "scald", "taunt"]
   },
+  "nihilego": {
+    "nameZh": "虚吾伊德",
+    "nature": "Timid",
+    "evs": {"spa": 252, "spd": 4, "spe": 252},
+    "moves": ["sludgewave", "thunderbolt", "powergem"]
+  },
   "buzzwole": {
     "nameZh": "爆肌蚊",
     "nature": "Impish",
@@ -1563,17 +1985,31 @@
     "evs": {"atk": 252, "spd": 4, "spe": 252},
     "moves": ["leafblade", "smartstrike", "knockoff"]
   },
+  "necrozma": {
+    "nameZh": "奈克洛兹玛",
+    "nature": "Modest",
+    "evs": {"hp": 108, "spa": 252, "spe": 144},
+    "moves": ["heatwave", "photongeyser", "signalbeam"]
+  },
   "magearna": {
     "nameZh": "玛机雅娜",
     "nature": "Modest",
     "evs": {"hp": 248, "def": 28, "spa": 172, "spd": 16, "spe": 44},
     "moves": ["fleurcannon", "thunderbolt", "calmmind"]
   },
+  "stakataka": {
+    "nameZh": "垒磊石",
+    "moves": ["gyroball", "stoneedge", "trickroom"]
+  },
   "blacephalon": {
     "nameZh": "砰头小丑",
     "nature": "Timid",
     "evs": {"spa": 252, "spd": 4, "spe": 252},
     "moves": ["fireblast", "shadowball", "trick"]
+  },
+  "zeraora": {
+    "nameZh": "捷拉奥拉",
+    "moves": ["closecombat", "plasmafists", "bulkup"]
   },
   "rillaboom": {
     "nameZh": "轰擂金刚猩",

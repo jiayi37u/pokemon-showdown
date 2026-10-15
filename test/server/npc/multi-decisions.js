@@ -12,7 +12,9 @@ const vibrava = { species: 'Vibrava', ability: 'Levitate', item: 'Eviolite', nat
 const porygon = { species: 'Porygon-Z', ability: 'Adaptability', item: 'Choice Scarf', moves: ['icebeam', 'thunderbolt'] };
 const partner = { species: 'Blissey', ability: 'Natural Cure', moves: ['icebeam'] };
 const venusaur = { species: 'Venusaur', ability: 'Overgrow', moves: ['energyball'] };
-const scizor = { species: 'Scizor', ability: 'Technician', moves: ['bulletpunch'] };
+// Keep this reserve below the incoming-damage limit against Lanturn's public preset.
+const scizor = { species: 'Scizor', ability: 'Technician', nature: 'Careful',
+	evs: { hp: 252, spd: 252, def: 4 }, moves: ['bulletpunch'] };
 
 function createMulti(teams, preview = false, difficulty = 'smart') {
 	const battle = new Battle({

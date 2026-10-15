@@ -52,6 +52,16 @@ export interface OpponentMoveKnowledge {
 	remainingSlots: number;
 	/** Slot alternatives from a detailed set, when available. */
 	slots?: string[][];
+	/** Alternative complete movesets or conservative role pools; never combine different rows. */
+	movePools?: string[][];
+}
+
+export interface OpponentModel {
+	name: string;
+	pokemon: AIPokemon;
+	weight: number;
+	moves: { id: string, availability: number }[];
+	matched: boolean;
 }
 
 /** Simplified Pokemon data for AI evaluation */
@@ -97,6 +107,8 @@ export interface AIPokemon {
 	itemLost: boolean;
 	/** True when the held item comes from observation rather than a preset. */
 	itemKnown?: boolean;
+	/** An item (including no item) assigned inside a hypothetical configuration. */
+	itemAssumed?: boolean;
 	/** Native public evidence, separate from temporary ability/item changes and inferred presets. */
 	observedAbility?: string;
 	originalItem?: string;
@@ -109,6 +121,8 @@ export interface AIPokemon {
 	moves: string[];
 	/** Opponent inference only; never written into tracker observations. */
 	moveKnowledge?: OpponentMoveKnowledge;
+	/** Shared random-battle inference from public rules and observations. */
+	presetModels?: OpponentModel[];
 
 	/**
 	 * Last move used (for Encore/Disable evaluation)

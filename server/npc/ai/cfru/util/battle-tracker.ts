@@ -12,6 +12,16 @@
 import { Dex, toID } from '../../../../../sim/dex';
 import { defaultBoosts } from '../types';
 
+/** Protocol names and engine IDs share one vocabulary in AI calculations. */
+export function normalizeWeather(weather: string): string {
+	const id = toID(weather);
+	const names: Record<string, string> = {
+		sunnyday: 'sun', desolateland: 'sun', raindance: 'rain', primordialsea: 'rain',
+		sandstorm: 'sand', snowscape: 'snow', none: '',
+	};
+	return names[id] ?? id;
+}
+
 /**
  * Tracked Pokemon information
  */
@@ -108,6 +118,10 @@ export class BattleTracker {
 	private acted = new Set<string>();
 	private wishes = new Map<string, number>();
 	private teamSizes = new Map<string, number>();
+	private formatId = '';
+	private activeIdentities = new Map<string, string>();
+	/** Successful Rest followed by public cant|slp actions; random sleep stays unknown. */
+	private restSleep = new Map<string, number>();
 
 	/** All known opponent Pokemon (keyed by player and public nickname for team tracking) */
 	private opponentTeam: Map<string, TrackedPokemon> = new Map();
@@ -329,6 +343,10 @@ export class BattleTracker {
 			break;
 		case 'cant':
 			this.acted.add(parts[1].split(':')[0].trim());
+			if (parts[2] === 'slp') {
+				const ident = this.sleepIdentity(parts[1]);
+				if (this.restSleep.has(ident)) this.restSleep.set(ident, this.restSleep.get(ident)! + 1);
+			}
 			break;
 		case 'move':
 			this.acted.add(parts[1].split(':')[0].trim());
@@ -381,6 +399,18 @@ export class BattleTracker {
 		const side = position.slice(0, 2); // "p1"
 		const slot = position.slice(2); // "a" or "b"
 
+		const sleepIdent = this.sleepIdentity(positionPart);
+		this.activeIdentities.set(position, sleepIdent);
+		if (!parts[3]?.split(' ').includes('slp')) {
+			this.restSleep.delete(sleepIdent);
+		} else if (this.formatId && this.restSleep.has(sleepIdent)) {
+			const dex = Dex.forFormat(this.formatId);
+			// Gen 5 resets sleep on re-entry; MMO explicitly removes that reset.
+			if (dex.gen === 5 && dex.currentMod !== 'mmo') this.restSleep.set(sleepIdent, 0);
+			// Gen 3 refunds some Sleep Talk turns on switching; leave that count unknown.
+			if (dex.gen <= 3) this.restSleep.delete(sleepIdent);
+		}
+
 		this.activeVolatiles.set(position, new Set());
 		this.acted.delete(position);
 
@@ -411,7 +441,7 @@ export class BattleTracker {
 		// Parse level from "L50" or "L100" format, default to 100 (National Dex standard)
 		let level = 100;
 		for (const part of detailParts) {
-			if (part.startsWith('L')) {
+			if (/^L\d+$/.test(part)) {
 				const parsedLevel = parseInt(part.slice(1));
 				if (!isNaN(parsedLevel)) {
 					level = parsedLevel;
@@ -695,6 +725,10 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
 
+		const ident = this.sleepIdentity(positionPart);
+		if (parts[2] === 'slp' && parts.includes('[from] move: Rest')) this.restSleep.set(ident, 0);
+		else this.restSleep.delete(ident);
+
 		if (!this.isOpponentSide(side)) return;
 
 		const status = parts[2];
@@ -716,6 +750,12 @@ export class BattleTracker {
 
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
+
+		if (parts[0] === '-cureteam') {
+			for (const ident of this.restSleep.keys()) if (ident.startsWith(`${side}:`)) this.restSleep.delete(ident);
+		} else {
+			this.restSleep.delete(this.sleepIdentity(positionPart));
+		}
 
 		if (!this.isOpponentSide(side)) return;
 
@@ -786,12 +826,7 @@ export class BattleTracker {
 	 * Format: |-weather|Sandstorm
 	 */
 	private handleWeather(parts: string[]): void {
-		const weather = parts[1];
-		if (weather === 'none') {
-			this.fieldConditions.weather = '';
-		} else if (weather) {
-			this.fieldConditions.weather = weather;
-		}
+		if (parts[1]) this.fieldConditions.weather = normalizeWeather(parts[1]);
 	}
 
 	/**
@@ -1491,6 +1526,25 @@ export class BattleTracker {
 		return this.turn;
 	}
 
+	setFormat(formatId: string): void {
+		this.formatId = formatId;
+	}
+
+	private sleepIdentity(pokemon: string): string {
+		return `${pokemon.slice(0, 2)}:${pokemon.split(':').slice(1).join(':').trim()}`;
+	}
+
+	/** 1 means waking before the next move; 0 means no publicly known countdown. */
+	getSleepTurns(position: string, ability = ''): number {
+		const ident = position.includes(':') ? this.sleepIdentity(position) :
+			this.activeIdentities.get(position.startsWith('p') ? position : `${this.ourSide}${position}`);
+		const slept = ident ? this.restSleep.get(ident) : undefined;
+		if (slept === undefined) return 0;
+		const decrement = toID(ability) === 'earlybird' ? 2 : 1;
+		const remaining = 3 - slept * decrement;
+		return remaining <= decrement ? 1 : remaining;
+	}
+
 	getVolatiles(position: string): Set<string> {
 		const key = position.startsWith('p') ? position : `${this.ourSide}${position}`;
 		return new Set(this.activeVolatiles.get(key));
@@ -1502,6 +1556,8 @@ export class BattleTracker {
 		this.acted.clear();
 		this.wishes.clear();
 		this.teamSizes.clear();
+		this.activeIdentities.clear();
+		this.restSleep.clear();
 		this.activeVolatiles.clear();
 		this.opponentPokemon.clear();
 		this.opponentTeam.clear();

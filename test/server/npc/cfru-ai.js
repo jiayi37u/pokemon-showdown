@@ -1,7 +1,9 @@
 'use strict';
 
 const assert = require('../../assert');
-const { buildAIMove } = require('../../../dist/server/npc/ai/cfru/state-builder');
+const { Battle } = require('../../../dist/sim');
+const { buildAIMove, trackedPokemonToAIPokemon } = require('../../../dist/server/npc/ai/cfru/state-builder');
+const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 const { makeAIPokemonSkeleton } = require('../../../dist/server/npc/ai/cfru/util/pokemon-builder');
 const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
 const { rewardSetupMove, rewardEncore } = require('../../../dist/server/npc/ai/cfru/scoring/positives');
@@ -21,7 +23,9 @@ function pokemon(overrides = {}) {
 	};
 }
 
-function score(id, { actor = pokemon(), target = pokemon(), partner = false, field = {}, conditions = {}, positive } = {}) {
+function score(id, {
+	actor = pokemon(), target = pokemon(), partner = false, field = {}, conditions = {}, positive, formatId = '',
+} = {}) {
 	const own = partner ? [actor, target] : [actor];
 	const foes = partner ? [pokemon()] : [target];
 	const state = {
@@ -30,7 +34,7 @@ function score(id, { actor = pokemon(), target = pokemon(), partner = false, fie
 		opponent: { active: foes, reserve: [], team: foes, conditions },
 		field: { weather: '', terrain: '', trickroom: false, ...field },
 	};
-	const engine = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(1));
+	const engine = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId }, createAICache(1));
 	if (positive) engine.setScorers([], [positive]);
 	return engine.scoreMove(state, actor, buildAIMove({ id }, 1), target);
 }
@@ -38,6 +42,131 @@ function score(id, { actor = pokemon(), target = pokemon(), partner = false, fie
 const hasReason = (result, reason) => result.breakdown.details.some(detail => detail.reason.includes(reason));
 
 describe('CFRU scoring with production move metadata', () => {
+	for (const [formatId, immune] of [
+		['gen5customgame', false], ['gen6customgame', false], ['gen7customgame', true],
+		['gen8customgame', true], ['gen9customgame', true], ['gen5pokemmoou', true],
+		['gen5pokemmouu', true], ['gen5pokemmonu', true], ['gen5pokemmorandombattle', true],
+		['gen5pokemmomultirandombattle', true],
+	]) {
+		it(`matches actual Prankster immunity in ${formatId}`, () => {
+			const actor = pokemon({ species: 'Liepard', ability: 'Prankster', types: ['Dark'] });
+			const target = pokemon({ species: 'Weavile', types: ['Dark', 'Ice'] });
+			for (const id of ['thunderwave', 'taunt', 'toxic']) {
+				const result = score(id, { actor, target, formatId });
+				assert.equal(hasReason(result, 'Dark target immune to Prankster'), immune);
+				if (immune) {
+					assert.equal(result.score, 0);
+					assert.equal(result.breakdown.negatives, -100);
+					assert.equal(result.breakdown.positives, 0);
+					assert.equal(result.flags.hasNoEffect, true);
+					assert.equal(result.flags.isImmune, true);
+				} else {
+					assert(result.score > 0);
+				}
+			}
+			// Validate against a real battle, including format/ruleset onBattleStart hooks.
+			const multi = formatId.includes('multi');
+			const partner = { species: 'Magikarp', ability: 'Swift Swim', moves: ['splash'] };
+			const battle = new Battle({
+				formatid: formatId, seed: [1, 2, 3, 4],
+				p1: { name: 'Player', team: [{ species: 'Weavile', ability: 'Pressure', moves: ['splash'] }] },
+				p2: { name: 'NPC', team: [{ species: 'Liepard', ability: 'Prankster', moves: ['taunt'] }] },
+				...(multi ? { p3: { name: 'Ally1', team: [partner] }, p4: { name: 'Ally2', team: [partner] } } : {}),
+			});
+			try {
+				if (battle.requestState === 'teampreview') battle.makeChoices();
+				if (multi) battle.makeChoices('move 1', 'move 1 1', 'move 1', 'move 1');
+				else battle.makeChoices('move 1', 'move 1');
+				assert.equal(!!battle.p1.active[0].volatiles.taunt, !immune);
+				assert.equal(battle.log.some(line => line.startsWith('|-immune|p1a: Weavile')), immune);
+			} finally {
+				battle.destroy();
+			}
+		});
+	}
+
+	it('does not apply Prankster immunity to attacks, self/field moves, allies or a different ability', () => {
+		const actor = pokemon({ ability: 'Prankster' });
+		const target = pokemon({ types: ['Dark'] });
+		for (const id of ['darkpulse', 'protect', 'swordsdance', 'curse', 'sunnyday', 'electricterrain', 'stealthrock', 'haze']) {
+			assert(!hasReason(score(id, { actor, target }), 'Dark target immune to Prankster'), id);
+		}
+		assert(!hasReason(score('thunderwave', { actor: pokemon({ ability: 'Limber' }), target }), 'Prankster'));
+		assert(!hasReason(score('thunderwave', { actor, target: pokemon({ types: ['Water'] }) }), 'Prankster'));
+		assert(!hasReason(score('swagger', { actor, target, partner: true }), 'Prankster'));
+	});
+
+	for (const status of ['psn', 'tox', 'par', 'brn', 'slp', 'frz']) {
+		it(`does not reward inflicting status against a target with ${status}`, () => {
+			for (const id of ['toxic', 'willowisp', 'thunderwave', 'stunspore', 'glare', 'sleeppowder', 'spore']) {
+				const result = score(id, { target: pokemon({ status }) });
+				assert.equal(result.breakdown.positives, 0, id);
+				assert.equal(100 + result.breakdown.details.reduce((sum, d) => sum + d.amount, 0), result.score);
+			}
+		});
+	}
+
+	it('does not reward Toxic when the target is immune to poison', () => {
+		for (const target of [pokemon({ types: ['Steel'] }), pokemon({ ability: 'Immunity' })]) {
+			const result = score('toxic', { target });
+			assert.equal(result.breakdown.positives, 0);
+			assert.equal(result.flags.hasNoEffect, true);
+		}
+	});
+
+	it('logs every paralysis bonus and does not reward burning or paralyzing immune targets', () => {
+		const result = score('thunderwave');
+		assert.equal(result.breakdown.positives, 6);
+		assert(hasReason(result, 'Reliable accuracy for paralysis'));
+		assert.equal(100 + result.breakdown.details.reduce((sum, d) => sum + d.amount, 0), result.score);
+		for (const [id, target] of [
+			['willowisp', pokemon({ types: ['Fire'] })], ['willowisp', pokemon({ ability: 'Water Veil' })],
+			['thunderwave', pokemon({ types: ['Ground'] })], ['thunderwave', pokemon({ ability: 'Limber' })],
+		]) {
+			assert.equal(score(id, { target }).breakdown.positives, 0);
+		}
+	});
+
+	it('requires evidence of no recovery, including Wish, before rewarding Toxic', () => {
+		for (const [moves, expected] of [
+			[['tackle'], 108], [['recover'], 108], [['wish'], 108],
+			[['tackle', 'psychic', 'psychocut', 'swordsdance'], 111],
+			[['tackle', 'psychic', 'psychocut', 'wish'], 108],
+		]) {
+			const result = score('toxic', { target: pokemon({ moves }) });
+			assert.equal(result.score, expected);
+			assert.equal(hasReason(result, 'No recovery in'), expected === 111);
+			assert.equal(100 + result.breakdown.details.reduce((sum, d) => sum + d.amount, 0), result.score);
+		}
+	});
+
+	it('uses compatible preset candidates for recovery without filling unknown slots', () => {
+		const revealedMoves = ['tackle'];
+		const target = pokemon({ moves: revealedMoves, moveKnowledge: {
+			revealedMoves, presetCandidates: ['wish'], remainingSlots: 3,
+		} });
+		assert.equal(score('toxic', { target }).score, 108);
+		target.moveKnowledge.presetCandidates = ['psychic'];
+		assert.equal(score('toxic', { target }).score, 108, 'A partial preset does not rule out recovery');
+		target.moveKnowledge.movePools = [['tackle', 'psychic', 'psychocut', 'swordsdance']];
+		assert.equal(score('toxic', { target }).score, 111, 'A bounded pool can rule out recovery');
+		assert.equal(score('saltcure', { target }).score,
+			score('saltcure', { target: pokemon({ moves: revealedMoves }) }).score + 2);
+	});
+
+	it('recognizes recovery in both Gen5 random Blissey roles before a healing move is revealed', () => {
+		for (const moves of [[], ['protect'], ['softboiled']]) {
+			const tracker = createBattleTracker('p2');
+			tracker.parseMessage('|switch|p1a: Foe|Blissey, L84|100/100');
+			for (const move of moves) tracker.parseMessage(`|move|p1a: Foe|${move}|p1a: Foe`);
+			const target = trackedPokemonToAIPokemon(tracker.getActiveOpponent(), 1, true, 'gen5pokemmorandombattle');
+			assert.equal(target.presetModels.length, moves.length ? 1 : 2);
+			assert.equal(score('toxic', { target }).score, 108);
+			assert(!hasReason(score('saltcure', { target }), 'No recovery in'));
+			assert.deepEqual(target.moves, moves);
+		}
+	});
+
 	for (const [ability, species, types, field, reason] of [
 		['Flower Veil', 'Florges', ['Grass'], {}, 'Flower Veil protects'],
 		['Shields Down', 'Minior-Meteor', ['Rock', 'Flying'], {}, 'Shields Down blocks status'],

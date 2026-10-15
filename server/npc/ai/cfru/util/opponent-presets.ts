@@ -139,6 +139,8 @@ export function canHaveOpponentMoves(knowledge: OpponentMoveKnowledge, moves: re
 	const combined = [...new Set([...knowledge.revealedMoves, ...requested])].filter(m =>
 		!(m === 'hiddenpower' && requested.some(id => id !== 'hiddenpower' && id.startsWith('hiddenpower'))));
 	if (combined.filter(m => m.startsWith('hiddenpower')).length > 1) return false;
+	if (knowledge.movePools && !knowledge.movePools.some(pool =>
+		compatibleMoveSlots(pool.map(move => [move]), combined))) return false;
 	return !knowledge.slots || compatibleMoveSlots(knowledge.slots, combined);
 }
 

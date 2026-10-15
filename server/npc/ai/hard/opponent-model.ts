@@ -5,7 +5,9 @@
  */
 import { FS } from '../../../../lib';
 import { Dex, toID } from '../../../../sim/dex';
-import type { AIPokemon, AIMove, BattleState, MoveScore } from '../cfru/types';
+import type { AIPokemon, AIMove, BattleState, MoveScore, OpponentModel as OpponentHypothesis } from '../cfru/types';
+export type { OpponentModel as OpponentHypothesis } from '../cfru/types';
+import { inferRandomBattle } from '../cfru/util/random-presets';
 import { buildAIMove } from '../cfru/state-builder';
 import {
 	computeStatsFromPreset, getOpponentPreset, getOpponentMoveKnowledge, canHaveOpponentMoves, compatibleMoveSlots,
@@ -64,15 +66,6 @@ interface StrategySet {
 	ivs?: Partial<AIPokemon['baseStats']>[];
 }
 
-export interface OpponentHypothesis {
-	name: string;
-	pokemon: AIPokemon;
-	weight: number;
-	/** Marginal availability, preserving observed move-slot constraints. */
-	moves: { id: string, availability: number }[];
-	matched: boolean;
-}
-
 const strategyFormats: Record<string, string> = { gen7ou: 'gen7ou', gen7customgame: 'gen7ou' };
 const strategies = new Map<string, Record<string, StrategySet[]>>();
 function strategyData(formatId: string): Record<string, StrategySet[]> {
@@ -91,6 +84,8 @@ export function compatibleSlots(slots: string[][], revealed: string[]): boolean 
 
 /** Recomputed from tracker evidence: an inference never becomes a public observation. */
 export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHypothesis[] {
+	const randomModels = opponent.presetModels || inferRandomBattle(opponent, formatId);
+	if (randomModels) return randomModels;
 	const dex = formatId ? Dex.forFormat(formatId) : Dex;
 	const species = dex.species.get(opponent.species);
 	const revealed: string[] = [...new Set(opponent.moves.map(toID))];

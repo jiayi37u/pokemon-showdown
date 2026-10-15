@@ -6,7 +6,7 @@ import { Dex, toID } from '../../../sim/dex';
 import { NPCBattleAI, type MoveChoice, type SwitchChoice } from './index';
 import { DEFAULT_AI_CONFIG, type AIPokemon, type BattleState, type CFRUAIConfig, type MoveScore } from './cfru/types';
 import { buildBattleStateWithTracker, buildPokemonFromRequest } from './cfru/state-builder';
-import { createBattleTracker } from './cfru/util/battle-tracker';
+import { createBattleTracker, normalizeWeather } from './cfru/util/battle-tracker';
 import { createBattleLogger, type LogLevel } from './cfru/logger';
 import { HardEvaluation } from './hard/evaluation';
 import { fightingStyle, hardMove } from './hard/opponent-model';
@@ -37,6 +37,7 @@ export class HardAI extends NPCBattleAI {
 
 	setBattle(battle: AnyObject): void {
 		this.battleRef = battle;
+		this.tracker.setFormat(battle.format || '');
 		if (battle.format) this.configCFRU.formatId = battle.format;
 		if (battle.stream) this.tracker.attachToStream(battle.stream);
 	}
@@ -54,13 +55,8 @@ export class HardAI extends NPCBattleAI {
 	/** Multi supplies a combined public state, with reserves scoped to this controller's own request. */
 	receiveRequestWithState(request: ChoiceRequest, state: BattleState, activeSlot = 1): void {
 		this.activeSlot = activeSlot;
-		// Tracker keeps protocol names; calculation helpers expect canonical weather/terrain names.
-		const weather: Record<string, string> = {
-			raindance: 'rain', primordialsea: 'rain', sunnyday: 'sun', desolateland: 'sun',
-			sandstorm: 'sand', hail: 'hail', snow: 'snow', snowscape: 'snow',
-		};
 		this.state = { ...state, field: { ...state.field,
-			weather: weather[toID(state.field.weather)] || state.field.weather,
+			weather: normalizeWeather(state.field.weather),
 			terrain: toID(state.field.terrain.replace(/^move: /, '')).replace(/terrain$/, ''),
 		} };
 		try {

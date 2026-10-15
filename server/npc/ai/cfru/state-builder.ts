@@ -18,7 +18,7 @@ import type {
 	CFRUAIConfig,
 } from './types';
 import { DEFAULT_AI_CONFIG, resolveLevel, defaultBoosts } from './types';
-import type { BattleTracker, TrackedPokemon } from './util/battle-tracker';
+import { normalizeWeather, type BattleTracker, type TrackedPokemon } from './util/battle-tracker';
 import {
 	parseCondition,
 	parseDetails,
@@ -26,6 +26,7 @@ import {
 	makeAIPokemonSkeleton,
 } from './util/pokemon-builder';
 import { getOpponentPreset, getOpponentMoveKnowledge, computeStatsFromPreset } from './util/opponent-presets';
+import { applyRandomBattlePresets } from './util/random-presets';
 
 /**
  * Build BattleState from Pokemon Showdown request and battle data
@@ -479,7 +480,7 @@ function buildFieldConditions(battle: AnyObject | null): FieldConditions {
 	let weather = '';
 	let weatherTurns = -1;
 	if (field.weather) {
-		weather = field.weather;
+		weather = normalizeWeather(field.weather);
 		weatherTurns = field.weatherData?.duration || 0;
 	}
 
@@ -648,6 +649,7 @@ function buildSelfActiveWithTracker(request: AnyObject, tracker: BattleTracker, 
 		// Get lastMove for consecutive Protect detection
 		// CFRU: gLastResultingMoves[bankAtk]
 		aiPokemon.lastMove = tracker.getOurLastMove(slot);
+		aiPokemon.sleepTurns = aiPokemon.status === 'slp' ? tracker.getSleepTurns(slot, aiPokemon.ability) : 0;
 		aiPokemon.volatiles = tracker.getVolatiles(slot);
 		aiPokemon.activeMoveActions = tracker.hasActed(slot) ? 1 : 0;
 
@@ -669,12 +671,14 @@ function buildOpponentActiveFromTracker(tracker: BattleTracker, isDoubles: boole
 			// Extract slot from position: p1a -> 1, p1b -> 2
 			const slotChar = position.charAt(position.length - 1); // 'a' or 'b'
 			const slot = slotChar === 'a' ? 1 : 2;
-			active.push(trackedPokemonToAIPokemon(pokemon, slot, true, formatId));
+			active.push(trackedPokemonToAIPokemon(pokemon, slot, true, formatId, tracker.getSleepTurns(position, pokemon.ability)));
 		}
 	} else {
 		const opponent = tracker.getActiveOpponent();
 		if (opponent) {
-			active.push(trackedPokemonToAIPokemon(opponent, 1, true, formatId));
+			active.push(trackedPokemonToAIPokemon(
+				opponent, 1, true, formatId, tracker.getSleepTurns(opponent.position, opponent.ability)
+			));
 		}
 	}
 
@@ -693,7 +697,9 @@ function buildOpponentReserveFromTracker(tracker: BattleTracker, active: AIPokem
 		if (mon.active) continue;
 		if (mon.hpPercent <= 0) continue; // Skip fainted
 
-		reserve.push(trackedPokemonToAIPokemon(mon, slot++, false, formatId));
+		reserve.push(trackedPokemonToAIPokemon(
+			mon, slot++, false, formatId, tracker.getSleepTurns(mon.ident || mon.position, mon.ability)
+		));
 	}
 
 	return reserve;
@@ -712,7 +718,8 @@ export function trackedPokemonToAIPokemon(
 	tracked: TrackedPokemon,
 	slot: number,
 	isActive: boolean,
-	formatId: string = ''
+	formatId = '',
+	sleepTurns = 0
 ): AIPokemon {
 	// CFRU AI Fix: Use tracked.level directly instead of resolveLevel
 	// This ensures opponent level matches the actual level parsed from protocol messages
@@ -768,13 +775,14 @@ export function trackedPokemonToAIPokemon(
 		gender: 'N',
 	});
 	pokemon.volatiles = new Set(tracked.volatiles);
+	pokemon.sleepTurns = pokemon.status === 'slp' ? sleepTurns : 0;
 	pokemon.itemKnown = !!tracked.item || tracked.itemLost;
 	pokemon.observedAbility = tracked.baseAbility || '';
 	pokemon.itemChanged = tracked.itemChanged;
 	pokemon.originalItem = tracked.originalItem || '';
 	pokemon.abilityChanged = tracked.abilityChanged;
 	pokemon.moveKnowledge = getOpponentMoveKnowledge(tracked.species, tracked.knownMoves, formatId);
-	return pokemon;
+	return applyRandomBattlePresets(pokemon, formatId);
 }
 
 /**
@@ -790,7 +798,7 @@ function buildFieldConditionsFromTracker(tracker: BattleTracker, battle: AnyObje
 
 	// Otherwise use tracker data
 	return {
-		weather: trackerField.weather || '',
+		weather: normalizeWeather(trackerField.weather || ''),
 		weatherTurns: -1, // Not tracked
 		terrain: trackerField.terrain || '',
 		terrainTurns: 0, // Not tracked

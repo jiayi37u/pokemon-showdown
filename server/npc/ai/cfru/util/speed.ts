@@ -167,7 +167,9 @@ export function goesFirst(
 	defender: AIPokemon,
 	attackerMove: AIMove,
 	defenderMoves: AIMove[],
-	field: FieldConditions
+	field: FieldConditions,
+	attackerSideConditions?: SideConditions,
+	defenderSideConditions?: SideConditions
 ): boolean {
 	// Get attacker's priority
 	let attackerPriority = attackerMove.priority;
@@ -222,7 +224,7 @@ export function goesFirst(
 	}
 
 	// Same priority, compare speed
-	return isFaster(attacker, defender, field);
+	return isFaster(attacker, defender, field, undefined, attackerSideConditions, defenderSideConditions);
 }
 
 /**

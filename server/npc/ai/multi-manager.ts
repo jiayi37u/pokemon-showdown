@@ -46,6 +46,7 @@ export class NPCMultiManager {
 	constructor(roomBattle: AnyObject, options: NPCMultiManagerOptions = {}) {
 		this.roomBattle = roomBattle;
 		this.tracker = createBattleTracker('p2', true);
+		this.tracker.setFormat(roomBattle.format || '');
 		if (roomBattle.stream) this.tracker.attachToStream(roomBattle.stream);
 		const controller = (side: NPCSide) => {
 			const difficulty = side === 'p4' ? options.partnerDifficulty || options.difficulty : options.difficulty;
@@ -182,7 +183,9 @@ export class NPCMultiManager {
 			const slot = side === 'p1' ? 1 : 2;
 			// Pass formatId for consistent level resolution
 			const formatId = this.roomBattle?.format || '';
-			opponentActive.push(trackedPokemonToAIPokemon(pokemon, slot, true, formatId));
+			opponentActive.push(trackedPokemonToAIPokemon(
+				pokemon, slot, true, formatId, this.tracker.getSleepTurns(position, pokemon.ability)
+			));
 		}
 
 		// Get field and side conditions from tracker
@@ -279,6 +282,7 @@ export class NPCMultiManager {
 			pokemon.boosts = this.tracker.getOurActiveBoosts(position);
 			pokemon.abilityStatMod = this.tracker.getOurAbilityStatMod(position);
 			pokemon.lastMove = this.tracker.getOurLastMove(position);
+			pokemon.sleepTurns = pokemon.status === 'slp' ? this.tracker.getSleepTurns(position, pokemon.ability) : 0;
 			pokemon.volatiles = this.tracker.getVolatiles(position);
 			pokemon.activeMoveActions = this.tracker.hasActed(position) ? 1 : 0;
 		}

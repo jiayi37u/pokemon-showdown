@@ -8,7 +8,7 @@
 |------|------|------|------|
 | Basic | BasicAI | ✅ 可用 | 优先最大伤害 |
 | Normal | NormalAI | ✅ 策略固定 | CFRU 基础评分；保留正确性修复 |
-| Hard | HardAI | ✅ 可用，迁移进行中 | 分级配置推断与通用 preset 回退、战术换人和招式评估，见 [Hard 逻辑](./HardAI/logic.md) |
+| Hard | HardAI | ✅ 可用，迁移进行中 | 随机／分级配置推断与通用 preset 回退、战术换人和招式评估，见 [Hard 逻辑](./HardAI/logic.md) |
 | Expert | ExpertAI | ⏳ 计划中 | 完整策略 + 双打协作 |
 
 ## 文档结构

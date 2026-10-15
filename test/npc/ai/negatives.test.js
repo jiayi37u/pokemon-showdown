@@ -1211,7 +1211,7 @@ function runNegativesScoringTests() {
 			attackerStatus: '', // Not asleep
 		});
 		const penalty = checkSleepTalkSnore(ctx);
-		assertEqual(penalty, -10, '非睡眠状态使用梦话应扣 10 分');
+		assertEqual(penalty, -100, '非睡眠状态使用梦话应扣 100 分');
 		assertEqual(ctx.flags.hasNoEffect, true, 'hasNoEffect 应为 true');
 	});
 
@@ -1230,7 +1230,7 @@ function runNegativesScoringTests() {
 			sleepTurns: 1, // Last turn of sleep
 		});
 		const penalty = checkSleepTalkSnore(ctx);
-		assertEqual(penalty, -10, '睡眠最后一回合使用梦话应扣 10 分');
+		assertEqual(penalty, -100, '睡眠最后一回合使用梦话应扣 100 分');
 		assertEqual(ctx.flags.hasNoEffect, true, 'hasNoEffect 应为 true');
 	});
 
@@ -1250,7 +1250,7 @@ function runNegativesScoringTests() {
 		ctx.move.id = 'snore';
 		ctx.move.name = 'Snore';
 		const penalty = checkSleepTalkSnore(ctx);
-		assertEqual(penalty, -10, '非睡眠状态使用打鼾应扣 10 分');
+		assertEqual(penalty, -100, '非睡眠状态使用打鼾应扣 100 分');
 	});
 
 	test('打鼾：睡眠状态不应扣分 / Snore while asleep should not penalize', () => {

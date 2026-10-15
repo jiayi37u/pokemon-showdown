@@ -13,7 +13,24 @@ import type { ScoringContext, PositiveScoringFunction } from './index';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
 import { isFaster, goesFirst } from '../util/speed';
 import { getTypeEffectiveness } from '../util/type-calc';
+import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
 import { getHazeBenefit } from './negatives';
+
+/** Unknown slots are not evidence that a target lacks recovery. */
+function targetLacksRecovery(ctx: ScoringContext): boolean {
+	const knowledge = ctx.target.moveKnowledge ||
+		getOpponentMoveKnowledge(ctx.target.species, ctx.target.moves, ctx.config.formatId);
+	const moves = [...ctx.target.moves, ...knowledge.revealedMoves,
+		...knowledge.presetCandidates.filter(id => canHaveOpponentMoves(knowledge, [id]))];
+	if (moves.some(id => {
+		const move = Dex.moves.get(id);
+		return (move.heal && ['self', 'allies'].includes(move.target)) ||
+			['wish', 'rest', 'strengthsap', 'junglehealing', 'lunarblessing'].includes(move.id);
+	})) return false;
+	const slots = knowledge.revealedMoves.length + knowledge.remainingSlots;
+	return knowledge.remainingSlots === 0 || (knowledge.slots?.length || 0) >= slots ||
+		!!knowledge.movePools?.length && knowledge.movePools.every(pool => pool.length >= slots);
+}
 
 // =============================================================================
 // Damage Move Rewards
@@ -196,7 +213,7 @@ export const rewardSleepMove: PositiveScoringFunction = (ctx) => {
 	if (!sleepMoves.includes(moveId)) return 0;
 
 	// Don't reward if move has no effect (Sleep Clause, immunity, etc.)
-	if (ctx.flags.hasNoEffect) return 0;
+	if (ctx.target.status || ctx.flags.hasNoEffect || ctx.flags.isImmune) return 0;
 
 	let bonus = 0;
 
@@ -238,6 +255,7 @@ export const rewardParalysisMove: PositiveScoringFunction = (ctx) => {
 	const paralysisMoves = ['thunderwave', 'stunspore', 'glare', 'nuzzle'];
 
 	if (!paralysisMoves.includes(moveId)) return 0;
+	if (ctx.target.status || ctx.flags.hasNoEffect || ctx.flags.isImmune) return 0;
 
 	let bonus = 0;
 
@@ -262,6 +280,7 @@ export const rewardParalysisMove: PositiveScoringFunction = (ctx) => {
 	// Extra bonus for high accuracy
 	if (ctx.move.accuracy === true || ctx.move.accuracy >= 90) {
 		bonus += 2;
+		ctx.adjustments.push({ reason: 'Reliable accuracy for paralysis', amount: 2, category: 'positive' });
 	}
 
 	return bonus;
@@ -275,6 +294,7 @@ export const rewardBurnMove: PositiveScoringFunction = (ctx) => {
 	const burnMoves = ['willowisp', 'inferno'];
 
 	if (!burnMoves.includes(moveId)) return 0;
+	if (ctx.target.status || ctx.flags.hasNoEffect || ctx.flags.isImmune) return 0;
 
 	let bonus = 0;
 
@@ -314,6 +334,7 @@ export const rewardBurnMove: PositiveScoringFunction = (ctx) => {
  */
 export const rewardToxic: PositiveScoringFunction = (ctx) => {
 	if (toID(ctx.move.id) !== 'toxic') return 0;
+	if (ctx.target.status || ctx.flags.hasNoEffect || ctx.flags.isImmune) return 0;
 
 	let bonus = 0;
 
@@ -338,14 +359,13 @@ export const rewardToxic: PositiveScoringFunction = (ctx) => {
 		});
 	}
 
-	// Bonus if target lacks recovery
-	const hasRecovery = ctx.target.moves.some(m => {
-		return ['recover', 'softboiled', 'roost', 'slackoff', 'synthesis',
-			'moonlight', 'morningsun', 'shoreup', 'rest'].includes(toID(m));
-	});
-
-	if (!hasRecovery) {
+	if (targetLacksRecovery(ctx)) {
 		bonus += 3;
+		ctx.adjustments.push({
+			reason: 'No recovery in revealed moves or compatible presets',
+			amount: 3,
+			category: 'positive',
+		});
 	}
 
 	return bonus;
@@ -2037,16 +2057,10 @@ export const rewardSaltCure: PositiveScoringFunction = (ctx) => {
 		});
 	}
 
-	// Bonus if target lacks recovery
-	const hasRecovery = ctx.target.moves.some(m => {
-		return ['recover', 'softboiled', 'roost', 'slackoff', 'synthesis',
-			'moonlight', 'morningsun', 'shoreup', 'rest'].includes(toID(m));
-	});
-
-	if (!hasRecovery) {
+	if (targetLacksRecovery(ctx)) {
 		bonus += 2;
 		ctx.adjustments.push({
-			reason: 'Target lacks recovery',
+			reason: 'No recovery in revealed moves or compatible presets',
 			amount: 2,
 			category: 'positive',
 		});

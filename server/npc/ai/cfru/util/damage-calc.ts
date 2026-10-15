@@ -655,7 +655,7 @@ function getVariableBasePower(
 	}
 
 	// Acrobatics: doubles without item
-	if (moveId === 'acrobatics' && !attacker.item && (attacker.itemKnown || attacker.itemLost)) {
+	if (moveId === 'acrobatics' && !attacker.item && (attacker.itemKnown || attacker.itemLost || attacker.itemAssumed)) {
 		return 110;
 	}
 

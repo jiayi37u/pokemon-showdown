@@ -34,6 +34,7 @@ import {
 	buildBattleState, buildBattleStateWithTracker, buildMovesFromRequest, buildAIMove, buildPokemonFromRequest,
 } from './cfru/state-builder';
 import { calculateDamage } from './cfru/util/damage-calc';
+import { goesFirst } from './cfru/util/speed';
 import { getOpponentThreatMoves } from './cfru/util/opponent-presets';
 import { createCache, updateCacheTurn } from './cfru/util/cache';
 import { AIDecisionLogger, LogLevel, createBattleLogger, SwitchScoreLog } from './cfru/logger';
@@ -147,6 +148,7 @@ export class NormalAI extends NPCBattleAI {
 	 */
 	setBattle(battle: AnyObject): void {
 		this.battleRef = battle;
+		this.tracker.setFormat(battle.format || '');
 
 		// Update formatId in cfruConfig for level resolution
 		if (battle.format) {
@@ -412,6 +414,7 @@ export class NormalAI extends NPCBattleAI {
 				aiMoves,
 				target
 			);
+			this.preferReliableKOs(attacker, target, scores);
 
 			// Store scores for this target (for logging)
 			allScoresByTarget.set(targetSlot, scores);
@@ -512,19 +515,91 @@ export class NormalAI extends NPCBattleAI {
 	private static readonly SWITCH_THREAT_TRIGGER = 0.7;
 	private static readonly SWITCH_THREAT_LIMIT = 0.4;
 
+	/** Immediate, usable attacks that KO using the existing average-damage estimate. */
+	private canKOWithAverageDamage(attacker: AIPokemon, target: AIPokemon, move: AIMove): boolean {
+		const state = this.battleState!;
+		if (move.disabled || move.category === 'Status' || attacker.volatiles.has('mustrecharge')) return false;
+		if (attacker.status === 'slp' && attacker.sleepTurns !== 1 && move.id !== 'snore') return false;
+		if (attacker.status === 'frz' && !move.flags.defrost) return false;
+		// These attacks do not deal their calculated damage before the opponent acts this turn.
+		if (['counter', 'mirrorcoat', 'metalburst', 'focuspunch', 'beakblast', 'shelltrap',
+			'futuresight', 'doomdesire'].includes(move.id)) return false;
+		if (move.flags.charge && !attacker.volatiles.has(move.id) && !attacker.volatiles.has('twoturnmove') &&
+			toID(attacker.item) !== 'powerherb' &&
+			!(['solarbeam', 'solarblade'].includes(move.id) && state.field.weather === 'sun')) return false;
+		if (target.volatiles.has('substitute') && !move.flags.sound && toID(attacker.ability) !== 'infiltrator') return false;
+		const numAliveTargets = this.battleState!.opponent.active.filter(p => !p.fainted).length +
+			(move.target === 'allAdjacent' ? state.self.active.filter(p => !p.fainted && p !== attacker).length : 0);
+		return calculateDamage(attacker, target, move, state.field, undefined,
+			{ isDoubles: state.isDoubles, numAliveTargets }).average >= target.hp;
+	}
+
+	/** A likely KO before the sole opponent acts takes precedence over incoming damage. */
+	private canKOFirst(attacker: AIPokemon, target: AIPokemon, move: AIMove): boolean {
+		if (!this.canKOWithAverageDamage(attacker, target, move)) return false;
+		const state = this.battleState!;
+		const knowledge = target.moveKnowledge;
+		const responseIds = knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] :
+			getOpponentThreatMoves(target.species, target.moves, this.cfruConfig.formatId);
+		const responses = responseIds.map(id => buildAIMove({ id }, 1));
+		// No known moves still means an ordinary-priority action, not a free turn.
+		if (!responses.length) responses.push(buildAIMove({ id: 'tackle' }, 1));
+		if (!goesFirst(attacker, target, move, responses, state.field, state.self.conditions, state.opponent.conditions)) {
+			return false;
+		}
+		// goesFirst includes speed ties; the reverse comparison excludes those 50% ties.
+		if (responses.some(response => goesFirst(target, attacker, response, [move], state.field,
+			state.opponent.conditions, state.self.conditions))) return false;
+		return true;
+	}
+
+	/** Prefer accuracy among lethal moves; retain ordinary scores as the tie-breaker. */
+	private preferReliableKOs(attacker: AIPokemon, target: AIPokemon, scores: MoveScore[]): void {
+		const kos = scores.filter(s => !s.flags.hasNoEffect && !s.flags.isImmune &&
+			this.canKOWithAverageDamage(attacker, target, s.move));
+		// Do not penalize a first-strike KO in favour of a more accurate move that goes second.
+		const first = kos.filter(s => this.canKOFirst(attacker, target, s.move));
+		const candidates = first.length ? first : kos;
+		if (candidates.length < 2) return;
+		const accuracy = (move: AIMove) => {
+			const weather = this.battleState!.field.weather;
+			if (move.accuracy === true || toID(attacker.ability) === 'noguard' || toID(target.ability) === 'noguard') return 100;
+			if ((['thunder', 'hurricane'].includes(move.id) && weather === 'rain') ||
+				(move.id === 'blizzard' && ['hail', 'snow'].includes(weather))) return 100;
+			return ['thunder', 'hurricane'].includes(move.id) && weather === 'sun' ? 50 : move.accuracy;
+		};
+		const reliable = candidates.reduce((best, candidate) =>
+			accuracy(candidate.move) > accuracy(best.move) ||
+			(accuracy(candidate.move) === accuracy(best.move) && candidate.score > best.score) ? candidate : best);
+		for (const candidate of candidates) {
+			if (accuracy(candidate.move) >= accuracy(reliable.move) || candidate.score < reliable.score) continue;
+			const penalty = reliable.score - candidate.score - 1;
+			candidate.score += penalty;
+			candidate.breakdown.negatives += penalty;
+			candidate.breakdown.final = candidate.score;
+			candidate.breakdown.details.push({
+				reason: `Prefer reliable KO: ${reliable.move.name} (${accuracy(reliable.move)}% vs ${accuracy(candidate.move)}%)`,
+				amount: penalty, category: 'negative',
+			});
+		}
+	}
+
 	/** Maximum average damage from revealed/preset attacks, relative to the defender's current HP. */
 	private getIncomingThreat(defender: AIPokemon, opponents: AIPokemon[]): number {
 		if (defender.hp <= 0) return Infinity;
 		const state = this.battleState!;
 		let threat = 0;
 		for (const opponent of opponents) {
-			for (const moveId of getOpponentThreatMoves(opponent.species, opponent.moves, this.cfruConfig.formatId)) {
+			const models = opponent.presetModels || [{ pokemon: opponent,
+				moves: getOpponentThreatMoves(opponent.species, opponent.moves, this.cfruConfig.formatId).map(id => ({ id })),
+			}];
+			for (const model of models) for (const { id: moveId } of model.moves) {
 				const move = buildAIMove({ id: moveId }, 1);
 				if (move.category === 'Status') continue;
 				const numAliveTargets = state.self.active.filter(p => !p.fainted).length +
 					(move.target === 'allAdjacent' ? opponents.length - 1 : 0);
 				// Reversed sides and bench slots can collide with the outgoing damage cache.
-				const damage = calculateDamage(opponent, defender, move, state.field, undefined, {
+				const damage = calculateDamage(model.pokemon, defender, move, state.field, undefined, {
 					isDoubles: state.isDoubles, numAliveTargets,
 				});
 				threat = Math.max(threat, damage.average / defender.hp);
@@ -572,6 +647,10 @@ export class NormalAI extends NPCBattleAI {
 		for (const target of opponents) {
 			const scores = this.scoringEngine.scoreMoves(this.battleState, attacker, aiMoves, target);
 			for (let i = 0; i < scores.length; i++) {
+				if (opponents.length === 1 && !scores[i].flags.hasNoEffect && !scores[i].flags.isImmune &&
+					this.canKOFirst(attacker, target, aiMoves[i])) {
+					return { ...noSwitch, reason: 'Can KO first with average damage (ignoring accuracy)' };
+				}
 				const score = scores[i].score;
 				if (aiMoves[i].category === 'Status') {
 					maxStatusScore = Math.max(maxStatusScore, score);

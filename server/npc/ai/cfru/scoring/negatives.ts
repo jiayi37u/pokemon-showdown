@@ -17,6 +17,19 @@ import { calculateDamage } from '../util/damage-calc';
 // Type and Ability Immunity Checks
 // =============================================================================
 
+/** Use the format's type chart: MMO backports Dark's immunity despite its Gen 5 dex. */
+export const checkPranksterImmunity: NegativeScoringFunction = ctx => {
+	if (ctx.move.category !== 'Status' || toID(ctx.attacker.ability) !== 'prankster' || ctx.isTargetingPartner) return 0;
+	if (!['normal', 'any', 'allAdjacent', 'allAdjacentFoes'].includes(ctx.move.target)) return 0;
+	if (ctx.move.id === 'curse' && !ctx.attacker.types.includes('Ghost')) return 0;
+	const dex = ctx.config.formatId ? Dex.forFormat(ctx.config.formatId) : Dex;
+	if (dex.getImmunity('prankster', ctx.target.types)) return 0;
+	ctx.flags.isImmune = true;
+	ctx.flags.hasNoEffect = true;
+	ctx.adjustments.push({ reason: 'Dark target immune to Prankster status move', amount: -100, category: 'negative' });
+	return -100;
+};
+
 /**
  * Check for complete type immunity
  */
@@ -2141,11 +2154,11 @@ export const checkSleepTalkSnore: NegativeScoringFunction = (ctx) => {
 	if (ctx.attacker.status !== 'slp') {
 		ctx.adjustments.push({
 			reason: `${ctx.move.name} fails when not asleep`,
-			amount: -10,
+			amount: -100,
 			category: 'negative',
 		});
 		ctx.flags.hasNoEffect = true;
-		return -10;
+		return -100;
 	}
 
 	// Last turn of sleep (sleepTurns === 1) - will wake up before move executes
@@ -2153,11 +2166,11 @@ export const checkSleepTalkSnore: NegativeScoringFunction = (ctx) => {
 	if (ctx.attacker.sleepTurns === 1) {
 		ctx.adjustments.push({
 			reason: `${ctx.move.name} fails on last turn of sleep (will wake first)`,
-			amount: -10,
+			amount: -100,
 			category: 'negative',
 		});
 		ctx.flags.hasNoEffect = true;
-		return -10;
+		return -100;
 	}
 
 	return 0;
@@ -3100,6 +3113,7 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkSpreadMoveHitsPartner,
 
 	// Type and ability immunity
+	checkPranksterImmunity,
 	checkTypeImmunity,
 	checkTypeResistance,  // NEW: Penalize resisted moves
 	checkAbilityTypeImmunity,

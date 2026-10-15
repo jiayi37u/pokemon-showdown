@@ -42,7 +42,7 @@ export function parseDetails(details: string): {
 	const parts = (details || '').split(',').map(s => s.trim());
 	const species = parts[0] || 'Unknown';
 	// L 开头的段才是等级；缺省时按 National Dex 等格式的默认 L100
-	const levelPart = parts.find(p => p.startsWith('L')) || 'L100';
+	const levelPart = parts.find(p => /^L\d+$/.test(p)) || 'L100';
 	const level = parseInt(levelPart.replace('L', '')) || 100;
 	// 性别段是单字母 M/F/N
 	const genderPart = parts.find(p => /^[MFN]$/.test(p)) || 'N';

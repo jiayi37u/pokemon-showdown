@@ -3,7 +3,8 @@
 const assert = require('assert').strict;
 const { Battle } = require('../../../dist/sim');
 const { NormalAI } = require('../../../dist/server/npc/ai/normal');
-const { buildPokemonFromRequest } = require('../../../dist/server/npc/ai/cfru/state-builder');
+const { buildAIMove, buildPokemonFromRequest } = require('../../../dist/server/npc/ai/cfru/state-builder');
+const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 
 function pokemon(species, hp, maxHp = hp, moves = ['surf']) {
 	return {
@@ -20,6 +21,7 @@ function decision({ hp = 100, reserves = [pokemon('Swampert', 175)], revealed = 
 	if (revealed) ai.getTracker().parseMessage('|move|p1a: Haunter|Night Shade|p2a: Blastoise');
 	const move = weak ? 'Tackle' : 'Surf'; // Haunter is immune to Tackle.
 	const current = { ...pokemon('Blastoise', hp, 200, [move.toLowerCase()]), active: true };
+	current.stats.spa = 100; // Keep Haunter outside KO range so these fixtures exercise the threat thresholds.
 	const request = {
 		side: { id: 'p2', pokemon: [current, ...reserves] },
 		active: [{ trapped, moves: [{ move, id: move.toLowerCase(), pp: 10, maxpp: 10, target: weak ? 'normal' : 'allAdjacent' }] }],
@@ -36,6 +38,77 @@ function decision({ hp = 100, reserves = [pokemon('Swampert', 175)], revealed = 
 }
 
 describe('NormalAI incoming threat switching', () => {
+	it('should keep Victini in to finish Slowking with Bolt Strike despite lethal incoming Scald', () => {
+		const battle = new Battle({
+			formatid: 'gen7customgame', seed: [1, 2, 3, 4],
+			p1: { name: 'Player', team: [{ species: 'Slowking', ability: 'Regenerator', item: 'Leftovers',
+				nature: 'Calm', evs: { hp: 252, def: 4, spd: 252 }, moves: ['scald'] }] },
+			p2: { name: 'NPC', team: [
+				{ species: 'Victini', ability: 'Victory Star', nature: 'Jolly', evs: { atk: 252, spe: 252 },
+					moves: ['boltstrike'] },
+				{ species: 'Wigglytuff', ability: 'Frisk', item: 'Leftovers', moves: ['hypervoice'] },
+			] },
+		});
+		const stream = { push() {}, write() {} };
+		const ai = new NormalAI(stream, { seed: [1, 2, 3, 4] });
+		ai.setBattle({ stream, format: 'gen7customgame' });
+		let choice;
+		ai.choose = value => { choice = value; };
+		try {
+			battle.makeChoices();
+			battle.makeChoices('move 1', 'move 1');
+			assert(battle.p1.active[0].hp > 0);
+			stream.push(battle.log.join('\n'));
+			ai.receiveRequest(JSON.parse(JSON.stringify(battle.p2.activeRequest)));
+			const state = ai.battleState;
+			assert(ai.getIncomingThreat(state.self.active[0], state.opponent.active) >= 1);
+			assert.equal(choice, 'move 1');
+			assert(battle.choose('p2', choice), battle.p2.choice.error);
+			assert(battle.choose('p1', 'move 1'), battle.p1.choice.error);
+			assert.equal(battle.p1.active[0].hp, 0);
+		} finally {
+			battle.destroy();
+		}
+	});
+
+	it('should use average damage, not the highest roll or accuracy, for the KO threshold', () => {
+		const { ai } = decision();
+		const state = ai.battleState;
+		const actor = state.self.active[0];
+		const target = state.opponent.active[0];
+		actor.baseStats.spe = target.baseStats.spe + 1;
+		const move = buildAIMove({ id: 'hydropump' }, 1);
+		const damage = calculateDamage(actor, target, move, state.field);
+		assert(damage.max > damage.average);
+		target.hp = damage.average;
+		target.hpPercent = target.hp / target.maxHp * 100;
+		assert.equal(ai.canKOFirst(actor, target, move), true);
+		target.hp++;
+		target.hpPercent = target.hp / target.maxHp * 100;
+		assert.equal(ai.canKOFirst(actor, target, move), false);
+	});
+
+	it('should require first strike, accounting for ties, Trick Room, Tailwind and known priority', () => {
+		const { ai } = decision();
+		const state = ai.battleState;
+		const actor = state.self.active[0];
+		const target = state.opponent.active[0];
+		const move = buildAIMove({ id: 'surf' }, 1);
+		target.hp = 1;
+		target.hpPercent = 100 / target.maxHp;
+		actor.baseStats.spe = target.baseStats.spe;
+		assert.equal(ai.canKOFirst(actor, target, move), false, 'A speed tie is not a first strike');
+		actor.baseStats.spe--;
+		assert.equal(ai.canKOFirst(actor, target, move), false, 'Slower');
+		state.field.trickroom = true;
+		assert.equal(ai.canKOFirst(actor, target, move), true, 'Slower in Trick Room');
+		state.field.trickroom = false;
+		state.self.conditions.tailwind = 3;
+		assert.equal(ai.canKOFirst(actor, target, move), true, 'Faster with Tailwind');
+		target.moveKnowledge = { revealedMoves: ['suckerpunch'], presetCandidates: [], remainingSlots: 3 };
+		assert.equal(ai.canKOFirst(actor, target, move), false, 'Opponent has priority');
+	});
+
 	it('should switch at exactly 70% threat and admit a replacement at exactly 40%', () => {
 		assert.equal(decision().choice, 'switch 2');
 	});

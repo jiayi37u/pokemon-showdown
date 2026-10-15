@@ -6,6 +6,7 @@
 const { section, test, assertEqual, assert, deepMerge } = require('./test-utils');
 
 function runPositivesScoringTests() {
+	const { DEFAULT_AI_CONFIG } = require('../../../dist/server/npc/ai/cfru/types');
 	const { rewardDrainMove, rewardDisable, rewardEncore, rewardWeatherMove, rewardTailwind, rewardSaltCure, rewardSpreadMove } = require('../../../dist/server/npc/ai/cfru/scoring/positives');
 
 	// =============================================================================
@@ -433,6 +434,7 @@ function runPositivesScoringTests() {
 
 	function createSaltCureContext(targetTypes, targetAbility = '', targetVolatiles = []) {
 		return {
+			config: DEFAULT_AI_CONFIG,
 			move: {
 				id: 'saltcure',
 				name: 'Salt Cure',

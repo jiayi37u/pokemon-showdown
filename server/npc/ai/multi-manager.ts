@@ -276,7 +276,7 @@ export class NPCMultiManager {
 
 	/** Share request parsing with singles/doubles, then add publicly tracked active state. */
 	private buildAIPokemon(mon: AnyObject, slot: number, isActive: boolean, side?: NPCSide): AIPokemon {
-		const pokemon = buildPokemonFromRequest(mon, slot, isActive);
+		const pokemon = buildPokemonFromRequest(mon, slot, isActive, this.roomBattle?.format || '');
 		if (isActive && side) {
 			const position = side === 'p2' ? 'p2a' : 'p4b';
 			pokemon.boosts = this.tracker.getOurActiveBoosts(position);

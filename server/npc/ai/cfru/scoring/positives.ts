@@ -1028,6 +1028,7 @@ export const rewardDrainMove: PositiveScoringFunction = (ctx) => {
 	} else {
 		// Still small bonus at high HP - healing is always somewhat useful
 		bonus += 1;
+		ctx.adjustments.push({ reason: 'Drain move at high HP', amount: 1, category: 'positive' });
 	}
 
 	// Extra bonus for Oblivion Wing (75% heal instead of 50%)

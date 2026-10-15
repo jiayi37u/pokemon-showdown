@@ -8,7 +8,15 @@
  */
 
 import { Dex, toID } from '../../../../../sim/dex';
-import type { AIPokemon, AICache } from '../types';
+import type { AIPokemon, AIMove, AICache, FieldConditions } from '../types';
+
+/** Item-based Ground immunity, including public grounding and item suppression. */
+export function airBalloonBlocks(defender: AIPokemon, move: AIMove, field: FieldConditions): boolean {
+	return move.type === 'Ground' && move.category !== 'Status' && toID(move.id) !== 'thousandarrows' &&
+		toID(defender.item) === 'airballoon' && toID(defender.ability) !== 'klutz' &&
+		!field.gravity && !field.magicroom && !defender.volatiles.has('embargo') &&
+		!defender.volatiles.has('ingrain') && !defender.volatiles.has('smackdown');
+}
 
 /** Type effectiveness multipliers */
 export const TYPE_EFFECTIVENESS = {

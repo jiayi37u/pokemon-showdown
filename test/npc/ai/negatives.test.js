@@ -101,6 +101,7 @@ function runNegativesScoringTests() {
 
 	function createCounterContext(overrides = {}) {
 		return {
+			config: { formatId: 'gen5customgame' },
 			state: {
 				isDoubles: false,
 				field: { weather: '', terrain: '' },
@@ -117,6 +118,7 @@ function runNegativesScoringTests() {
 				status: '',
 			},
 			target: {
+				species: 'Unknown',
 				slot: 1,
 				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
 				hpPercent: 100,
@@ -141,7 +143,7 @@ function runNegativesScoringTests() {
 
 	test('对手无物理招式时Counter应扣分 / Counter fails vs no physical moves', () => {
 		const ctx = createCounterContext({
-			targetMoves: ['thunderbolt', 'psychic', 'flamethrower'],
+			targetMoves: ['thunderbolt', 'psychic', 'flamethrower', 'surf'],
 		});
 		const penalty = checkCounterMirrorCoat(ctx);
 		assertEqual(penalty, -10, '对手无物理招式时Counter应扣分');
@@ -150,7 +152,7 @@ function runNegativesScoringTests() {
 	test('对手无特殊招式时Mirror Coat应扣分 / Mirror Coat fails vs no special moves', () => {
 		const ctx = createCounterContext({
 			moveId: 'mirrorcoat',
-			targetMoves: ['earthquake', 'stoneedge', 'closecombat'],
+			targetMoves: ['earthquake', 'stoneedge', 'closecombat', 'tackle'],
 		});
 		const penalty = checkCounterMirrorCoat(ctx);
 		assertEqual(penalty, -10, '对手无特殊招式时Mirror Coat应扣分');

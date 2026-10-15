@@ -42,8 +42,8 @@ export function buildBattleState(
 
 	// Build self (full information)
 	// Pass battle object to get boosts and volatiles from battle.sides[0].active
-	const selfActive = buildSelfActive(request, battle);
-	const selfReserve = buildSelfReserve(request, selfActive);
+	const selfActive = buildSelfActive(request, battle, 0, config.formatId);
+	const selfReserve = buildSelfReserve(request, selfActive, config.formatId);
 	const selfConditions = buildSideConditions(battle?.sides?.[0]?.sideConditions);
 
 	// Build opponent (revealed or full based on config)
@@ -86,7 +86,9 @@ export function buildBattleState(
  * @param battle - The battle object (may be null)
  * @param ourSideIndex - The index of our side in battle.sides (0 for p1, 1 for p2)
  */
-function buildSelfActive(request: AnyObject, battle: AnyObject | null, ourSideIndex: number = 0): AIPokemon[] {
+function buildSelfActive(
+	request: AnyObject, battle: AnyObject | null, ourSideIndex = 0, formatId = ''
+): AIPokemon[] {
 	const active: AIPokemon[] = [];
 	const pokemon = request.side.pokemon;
 	const activeData = request.active || [];
@@ -97,7 +99,7 @@ function buildSelfActive(request: AnyObject, battle: AnyObject | null, ourSideIn
 		const mon = pokemon[i];
 		if (!mon || mon.condition.endsWith(' fnt')) continue;
 
-		const aiPokemon = buildPokemonFromRequest(mon, i + 1, true);
+		const aiPokemon = buildPokemonFromRequest(mon, i + 1, true, formatId);
 
 		// Get boosts and volatiles from battle object if available
 		// CFRU AI Fix: This is critical for setup move scoring to work correctly
@@ -131,7 +133,7 @@ function buildSelfActive(request: AnyObject, battle: AnyObject | null, ourSideIn
 /**
  * Build self reserve Pokemon from request
  */
-function buildSelfReserve(request: AnyObject, active: AIPokemon[]): AIPokemon[] {
+function buildSelfReserve(request: AnyObject, active: AIPokemon[], formatId = ''): AIPokemon[] {
 	const reserve: AIPokemon[] = [];
 	const pokemon = request.side.pokemon;
 	const activeSlots = new Set(active.map(p => p.slot));
@@ -143,7 +145,7 @@ function buildSelfReserve(request: AnyObject, active: AIPokemon[]): AIPokemon[] 
 		const mon = pokemon[i];
 		if (!mon) continue;
 
-		reserve.push(buildPokemonFromRequest(mon, slot, false));
+		reserve.push(buildPokemonFromRequest(mon, slot, false, formatId));
 	}
 
 	return reserve;
@@ -154,15 +156,15 @@ function buildSelfReserve(request: AnyObject, active: AIPokemon[]): AIPokemon[] 
  * Note: This function builds basic Pokemon info from request.
  * For active Pokemon with boosts, use buildSelfActiveWithBoosts which requires battle object.
  */
-export function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: boolean): AIPokemon {
+export function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: boolean, formatId = ''): AIPokemon {
 	const { currentHp, maxHp, hpPercent, status, fainted } = parseCondition(mon.condition);
 	const { species, level, gender } = parseDetails(mon.details);
-	const { types } = speciesDefaults(species);
+	const { types } = speciesDefaults(species, formatId);
 
 	// CFRU AI Fix: Use actual stats from request instead of base stats (species stats)
 	// mon.stats contains the actual computed stats: { atk, def, spa, spd, spe }
 	// This is critical for damage calculation accuracy!
-	const { baseStats: fallbackBaseStats } = speciesDefaults(species);
+	const { baseStats: fallbackBaseStats } = speciesDefaults(species, formatId);
 	const actualStats = mon.stats ? {
 		hp: maxHp, // Use actual max HP from condition
 		atk: mon.stats.atk,
@@ -577,8 +579,8 @@ export function buildBattleStateWithTracker(
 	// Build self (full information from request)
 	// CFRU AI Fix: battle.sides is not accessible in server environment
 	// Use tracker.getOurActiveBoosts() to get boosts from stream messages
-	const selfActive = buildSelfActiveWithTracker(request, tracker, isDoubles);
-	const selfReserve = buildSelfReserve(request, selfActive);
+	const selfActive = buildSelfActiveWithTracker(request, tracker, isDoubles, config.formatId);
+	const selfReserve = buildSelfReserve(request, selfActive, config.formatId);
 	const selfConditions = { ...tracker.getOurSideConditions(), wish: tracker.getWish(), futuremove: 0 };
 
 	// Build opponent from tracker
@@ -614,7 +616,9 @@ export function buildBattleStateWithTracker(
  * Build self active Pokemon from request, using tracker for boosts
  * This is used in server environment where battle.sides is not accessible
  */
-function buildSelfActiveWithTracker(request: AnyObject, tracker: BattleTracker, isDoubles: boolean): AIPokemon[] {
+function buildSelfActiveWithTracker(
+	request: AnyObject, tracker: BattleTracker, isDoubles: boolean, formatId = ''
+): AIPokemon[] {
 	const active: AIPokemon[] = [];
 	const pokemon = request.side.pokemon;
 	const activeData = request.active || [];
@@ -623,7 +627,7 @@ function buildSelfActiveWithTracker(request: AnyObject, tracker: BattleTracker, 
 		const mon = pokemon[i];
 		if (!mon || mon.condition.endsWith(' fnt')) continue;
 
-		const aiPokemon = buildPokemonFromRequest(mon, i + 1, true);
+		const aiPokemon = buildPokemonFromRequest(mon, i + 1, true, formatId);
 
 		// CFRU AI Fix: Get boosts from tracker instead of battle.sides
 		// Tracker listens to stream messages and tracks our boosts

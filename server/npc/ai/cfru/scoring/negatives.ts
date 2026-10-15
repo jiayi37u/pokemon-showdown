@@ -10,8 +10,9 @@
 
 import { Dex, toID } from '../../../../../sim/dex';
 import type { ScoringContext, NegativeScoringFunction } from './index';
-import { getTypeEffectiveness, getAbilityTypeImmunity, wonderGuardBlocks } from '../util/type-calc';
+import { getTypeEffectiveness, airBalloonBlocks } from '../util/type-calc';
 import { calculateDamage } from '../util/damage-calc';
+import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
 
 // =============================================================================
 // Type and Ability Immunity Checks
@@ -226,20 +227,16 @@ export const checkAbilityTypeImmunity: NegativeScoringFunction = (ctx) => {
  * Covers: Air Balloon (Ground immunity)
  */
 export const checkItemTypeImmunity: NegativeScoringFunction = (ctx) => {
-	if (ctx.move.category === 'Status') return 0;
-
-	const itemId = toID(ctx.target.item);
-	const moveType = ctx.move.type;
-
 	// Air Balloon - Ground immunity
-	if (moveType === 'Ground' && itemId === 'airballoon') {
+	if (airBalloonBlocks(ctx.target, ctx.move, ctx.state.field)) {
 		ctx.adjustments.push({
 			reason: 'Item immunity: Air Balloon',
-			amount: -20,
+			amount: -100,
 			category: 'negative',
 		});
 		ctx.flags.isImmune = true;
-		return -20;
+		ctx.flags.hasNoEffect = true;
+		return -100;
 	}
 
 	return 0;
@@ -770,12 +767,9 @@ function isStatLoweringMove(move: { id: string; category: string }): boolean {
 		'metalsound', 'faketears', 'acidspray', 'acid',
 		// Accuracy lowering
 		'sandattack', 'smokescreen', 'kinesis', 'flash', 'mudslap',
-		'mirrorshot', 'mudshot', 'octazooka', 'leafstorm',
+		'mirrorshot', 'mudshot', 'octazooka',
 		// Evasion lowering
 		'sweetscent', 'defog',
-		// Multiple stat lowering
-		'vcreate', 'closecombat', 'superpower', 'hammerarm', 'dracometeor',
-		'overheat', 'psychoboost', 'fleurcannon', 'hyperspacefury',
 	];
 
 	return statLoweringMoves.includes(moveId);
@@ -784,6 +778,20 @@ function isStatLoweringMove(move: { id: string; category: string }): boolean {
 // =============================================================================
 // Status Move Checks
 // =============================================================================
+
+/** Team status cures fail when no living teammate has a status condition. */
+export const checkTeamStatusCure: NegativeScoringFunction = ctx => {
+	if (!['aromatherapy', 'healbell'].includes(toID(ctx.move.id))) return 0;
+	if (ctx.state.self.team.some(mon => !mon.fainted && mon.status && mon.status !== 'fnt')) return 0;
+
+	ctx.adjustments.push({
+		reason: `${ctx.move.name} fails: no teammate has a status condition`,
+		amount: -100,
+		category: 'negative',
+	});
+	ctx.flags.hasNoEffect = true;
+	return -100;
+};
 
 /**
  * Check if sleep move will fail
@@ -1919,16 +1927,22 @@ export const checkExplosion: NegativeScoringFunction = (ctx) => {
  */
 export const checkCounterMirrorCoat: NegativeScoringFunction = (ctx) => {
 	const moveId = toID(ctx.move.id);
+	if (!['counter', 'mirrorcoat', 'metalburst'].includes(moveId)) return 0;
+	const knowledge = ctx.target.moveKnowledge ||
+		getOpponentMoveKnowledge(ctx.target.species, ctx.target.moves, ctx.config.formatId);
+	const possibleMoves = [...ctx.target.moves, ...knowledge.revealedMoves,
+		...knowledge.presetCandidates.filter(id => canHaveOpponentMoves(knowledge, [id]))];
+	const slots = knowledge.revealedMoves.length + knowledge.remainingSlots;
+	const complete = knowledge.remainingSlots === 0 || (knowledge.slots?.length || 0) >= slots ||
+		!!knowledge.movePools?.length && knowledge.movePools.every(pool => pool.length >= slots);
+	const canUseCategory = (category: string) => !complete || possibleMoves.some(id => {
+		const move = Dex.moves.get(id);
+		return move.exists && move.category === category;
+	});
 
 	// Counter - only works against physical moves
 	if (moveId === 'counter') {
-		// If target has no physical moves, Counter is likely useless
-		const targetHasPhysical = ctx.target.moves?.some(m => {
-			const dexMove = Dex.moves.get(m);
-			return dexMove.category === 'Physical' && dexMove.basePower > 0;
-		}) ?? true; // Default to assuming they have physical if unknown
-
-		if (!targetHasPhysical) {
+		if (!canUseCategory('Physical')) {
 			ctx.adjustments.push({
 				reason: 'Counter fails - target has no physical moves',
 				amount: -10,
@@ -1955,12 +1969,7 @@ export const checkCounterMirrorCoat: NegativeScoringFunction = (ctx) => {
 
 	// Mirror Coat - only works against special moves
 	if (moveId === 'mirrorcoat') {
-		const targetHasSpecial = ctx.target.moves?.some(m => {
-			const dexMove = Dex.moves.get(m);
-			return dexMove.category === 'Special' && dexMove.basePower > 0;
-		}) ?? true;
-
-		if (!targetHasSpecial) {
+		if (!canUseCategory('Special')) {
 			ctx.adjustments.push({
 				reason: 'Mirror Coat fails - target has no special moves',
 				amount: -10,
@@ -3150,6 +3159,7 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkLeafGuard,
 
 	// Status moves
+	checkTeamStatusCure,
 	checkSleepMove,
 	checkParalysisMove,
 	checkBurnMove,

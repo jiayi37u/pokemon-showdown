@@ -103,8 +103,10 @@ export function makeAIPokemonSkeleton(spec: {
 }
 
 /** 共享的"species → types + baseStats fallback"查询，带默认空数组/中性 baseStats。 */
-export function speciesDefaults(species: string): { types: string[]; baseStats: AIPokemon['baseStats'] } {
-	const data = Dex.species.get(species);
+export function speciesDefaults(
+	species: string, formatId = ''
+): { types: string[], baseStats: AIPokemon['baseStats'] } {
+	const data = (formatId ? Dex.forFormat(formatId) : Dex).species.get(species);
 	return {
 		types: data?.types || [],
 		baseStats: data?.baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 },

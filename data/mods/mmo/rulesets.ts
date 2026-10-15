@@ -5,7 +5,7 @@ export const Rulesets: import('../../../sim/dex-formats').ModdedFormatDataTable 
 		effectType: 'Rule',
 		name: 'PokeMMO Standard',
 		ruleset: [
-			'Species Clause', 'Sleep Clause MMO', 'PokeMMO Hidden Power', 'No Event Abilities',
+			'Species Clause', 'Stadium Sleep Clause', 'PokeMMO Hidden Power', 'No Event Abilities',
 			'OHKO Clause', 'Evasion Moves Clause', 'Team Preview',
 			'Obtainable Moves', 'Obtainable Abilities', 'Obtainable Formes', 'EV Limit = 510',
 			'HP Percentage Mod', 'Cancel Mod', 'Endless Battle Clause', 'Adjust Level = 50',
@@ -57,27 +57,6 @@ export const Rulesets: import('../../../sim/dex-formats').ModdedFormatDataTable 
 			if (species.abilities.S && ability === this.dex.toID(species.abilities.S) &&
 				!regularAbilities.some(name => name && this.dex.toID(name) === ability)) {
 				return [`${species.name}'s ${species.abilities.S} is an event-exclusive ability.`];
-			}
-		},
-	},
-	sleepclausemmo: {
-		effectType: 'Rule',
-		name: 'Sleep Clause MMO',
-		desc: 'Each player may only put one opposing Pokemon to sleep during the entire battle.',
-		onBegin() {
-			this.field.pseudoWeather['sleepclausemmo'].sleptSides = {};
-			this.add('rule', 'Sleep Clause MMO: Limit one foe put to sleep per battle');
-		},
-		onSetStatus(status, target, source) {
-			if (status.id !== 'slp' || !source || source.isAlly(target)) return;
-			if (this.effectState.sleptSides[target.side.id]) {
-				this.add('-message', 'Sleep Clause MMO activated.');
-				return false;
-			}
-		},
-		onAfterSetStatus(status, target, source) {
-			if (status.id === 'slp' && source && !source.isAlly(target)) {
-				this.effectState.sleptSides[target.side.id] = true;
 			}
 		},
 	},

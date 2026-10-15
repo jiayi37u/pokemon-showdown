@@ -144,7 +144,8 @@ export class HardAI extends NPCBattleAI {
 		}
 		const best = this.prng.sample(top);
 		const replacements = switches.map(sw =>
-			evaluator.scoreSwitch(buildPokemonFromRequest(sw.pokemon, sw.slot, false), predictions, false))
+			evaluator.scoreSwitch(
+				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId), predictions, false))
 			.sort((a, b) => b.score - a.score);
 		const replacement = replacements.find(p => p.safe);
 		if (!active.trapped && replacement) {
@@ -196,7 +197,7 @@ export class HardAI extends NPCBattleAI {
 		if (!this.state || !switches.length) return super.chooseSwitch(active, switches);
 		const evaluator = new HardEvaluation(this.state, this.configCFRU.formatId);
 		const candidates = switches.map(sw => {
-			const mon = buildPokemonFromRequest(sw.pokemon, sw.slot, false);
+			const mon = buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId);
 			return evaluator.scoreSwitch(mon, evaluator.predictions(mon), true);
 		});
 		const bestScore = Math.max(...candidates.map(c => c.score));

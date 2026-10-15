@@ -146,7 +146,17 @@ describe('PokeMMO tiers', () => {
 		assert(validate(set('Pikachu', 'Static', ['hiddenpowerice'], { ivs: { ...ivs } }), 'gen5ou'));
 	});
 
-	it('should limit successful opposing sleep to once per side for the whole battle', () => {
+	it('should reuse Stadium Sleep Clause in MMO tiers and random formats', () => {
+		for (const format of [...formats, 'gen5pokemmorandombattle', 'gen5pokemmomultirandombattle',
+			'gen5pokemmo', 'gen5pokemmotest', 'gen5pokemmodoubles']) {
+			const rules = Dex.formats.getRuleTable(Dex.formats.get(format));
+			assert(rules.has('stadiumsleepclause'), format);
+			assert(!rules.has('sleepclausemmo'), format);
+			assert(!rules.has('sleepclausemod'), format);
+		}
+	});
+
+	it('should count Rest, allow sleep again after waking or fainting, and allow voluntary Rest', () => {
 		battle = common.createBattle({ formatid: formats[0] }, [
 			[set('Smeargle', 'Own Tempo', ['spore'])],
 			[set('Snorlax', 'Immunity', ['rest']), set('Pikachu', 'Static')],
@@ -154,14 +164,19 @@ describe('PokeMMO tiers', () => {
 		battle.makeChoices();
 		const user = battle.p1.active[0];
 		const target = battle.p2.active[0];
-		assert(target.trySetStatus('slp', target, battle.dex.moves.get('rest')));
+		const reserve = battle.p2.pokemon[1];
+		const spore = battle.dex.moves.get('spore');
+		const rest = battle.dex.moves.get('rest');
+		assert(target.trySetStatus('slp', target, rest));
+		assert.equal(reserve.trySetStatus('slp', user, spore), false, 'Rest occupies the opposing sleep allowance');
 		target.cureStatus();
-		assert(target.trySetStatus('slp', user, battle.dex.moves.get('spore')));
+		assert(reserve.trySetStatus('slp', user, spore), 'Waking frees the allowance');
+		assert(target.trySetStatus('slp', target, rest), 'Voluntary Rest remains allowed');
 		target.cureStatus();
-		assert.equal(target.trySetStatus('slp', user, battle.dex.moves.get('spore')), false);
-		assert.equal(battle.p2.pokemon[1].trySetStatus('slp', user, battle.dex.moves.get('spore')), false);
-		assert(target.trySetStatus('slp', target, battle.dex.moves.get('rest')));
-		assert(user.trySetStatus('slp', target, battle.dex.moves.get('spore')));
+		assert.equal(target.trySetStatus('slp', user, spore), false);
+		reserve.faint();
+		assert(target.trySetStatus('slp', user, spore), 'Fainted sleepers do not occupy the allowance');
+		assert(user.trySetStatus('slp', target, spore), 'Opposing sides have separate allowances');
 	});
 
 	it('should not consume the sleep allowance on an immune target', () => {
@@ -269,17 +284,18 @@ describe('PokeMMO tiers', () => {
 		assert(battle.log.some(line => /\|-hitcount\|.*\|[45]$/.test(line)));
 	});
 
-	it('should preserve the once-per-battle sleep allowance across serialization', () => {
+	it('should preserve current sleepers across serialization without a lifetime sleep limit', () => {
 		const { Battle } = require('../../../dist/sim');
 		battle = common.createBattle({ formatid: formats[0] }, [
-			[set('Smeargle', 'Own Tempo', ['spore'])], [set('Snorlax', 'Immunity')],
+			[set('Smeargle', 'Own Tempo', ['spore'])], [set('Snorlax', 'Immunity'), set('Pikachu', 'Static')],
 		]);
 		battle.makeChoices();
 		assert(battle.p2.active[0].trySetStatus('slp', battle.p1.active[0], battle.dex.moves.get('spore')));
 		const serialized = battle.toJSON();
 		battle.destroy();
 		battle = Battle.fromJSON(serialized);
+		assert.equal(battle.p2.pokemon[1].trySetStatus('slp', battle.p1.active[0], battle.dex.moves.get('spore')), false);
 		battle.p2.active[0].cureStatus();
-		assert.equal(battle.p2.active[0].trySetStatus('slp', battle.p1.active[0], battle.dex.moves.get('spore')), false);
+		assert(battle.p2.pokemon[1].trySetStatus('slp', battle.p1.active[0], battle.dex.moves.get('spore')));
 	});
 });

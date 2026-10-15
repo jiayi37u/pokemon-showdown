@@ -55,7 +55,7 @@ export const Formats: import('../sim/dex-formats').FormatList = [
 		rated: false,
 		// Keep Gen 5 random sets and levels; MMO singles availability/bans do not apply.
 		ruleset: [
-			'Species Clause', 'Sleep Clause MMO', 'PokeMMO Hidden Power',
+			'Species Clause', 'Stadium Sleep Clause', 'PokeMMO Hidden Power',
 			'HP Percentage Mod', 'Cancel Mod', 'Endless Battle Clause', 'Illusion Level Mod', 'Dynamax Clause',
 		],
 		onBattleStart() {
@@ -99,7 +99,7 @@ export const Formats: import('../sim/dex-formats').FormatList = [
 		rated: false,
 		mod: 'mmo',
 		ruleset: [
-			'Species Clause', 'Sleep Clause Mod', 'Team Preview',
+			'Species Clause', 'Stadium Sleep Clause', 'Team Preview',
 			'HP Percentage Mod', 'Cancel Mod', 'Endless Battle Clause',
 		],
 
@@ -113,7 +113,7 @@ export const Formats: import('../sim/dex-formats').FormatList = [
 		rated: true,
 		mod: 'mmo',
 		ruleset: [
-			'Species Clause', 'Sleep Clause Mod', 'Adjust Level = 50', 'Team Preview',
+			'Species Clause', 'Stadium Sleep Clause', 'Adjust Level = 50', 'Team Preview',
 			'HP Percentage Mod', 'Cancel Mod', 'Endless Battle Clause',
 			'Obtainable Abilities', 'Obtainable Formes', 'EV Limit = Auto',
 		],
@@ -129,7 +129,7 @@ export const Formats: import('../sim/dex-formats').FormatList = [
 		rated: true,
 		mod: 'mmo',
 		ruleset: [
-			'Species Clause', 'Sleep Clause Mod', 'Adjust Level = 50', 'Team Preview',
+			'Species Clause', 'Stadium Sleep Clause', 'Adjust Level = 50', 'Team Preview',
 			'HP Percentage Mod', 'Cancel Mod', 'Endless Battle Clause',
 			'Obtainable Abilities', 'Obtainable Formes', 'EV Limit = Auto',
 		],

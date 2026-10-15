@@ -38,6 +38,47 @@ function decision({ hp = 100, reserves = [pokemon('Swampert', 175)], revealed = 
 }
 
 describe('NormalAI incoming threat switching', () => {
+	it('distinguishes neutral damage, resistance and immunity when ranking replacements', () => {
+		const ai = new NormalAI({ write() {} });
+		ai.setBattle({ format: 'gen5pokemmorandombattle' });
+		const target = { types: ['Electric', 'Ground'], moves: ['discharge', 'earthpower'] };
+		const neutral = ai.scoreSwitchOption(pokemon('Persian', 300, 300, []), target);
+		assert.equal(neutral.score, 10, 'Neutral hits only receive the full-HP bonus');
+		assert(!neutral.reasons.some(reason => /Immune|Resists/.test(reason)));
+		const immune = ai.scoreSwitchOption(pokemon('Swampert', 300, 300, []), target);
+		assert(immune.reasons.includes('Immune to 1 move(s)'));
+		const resisted = ai.scoreSwitchOption(pokemon('Tangrowth', 300, 300, []), target);
+		assert(resisted.reasons.includes('Resists 2 move(s)'));
+		const weak = ai.scoreSwitchOption(pokemon('Charizard', 300, 300, []), {
+			types: ['Water'], moves: ['surf'],
+		});
+		assert(!weak.reasons.some(reason => /Immune|Resists/.test(reason)), 'Neutral Flying does not erase Fire weakness');
+		const attack = ai.scoreSwitchOption(pokemon('Swampert', 300, 300, ['surf']), {
+			types: ['Fire', 'Normal'], moves: [],
+		});
+		assert(attack.reasons.includes('STAB super effective (Surf)'), 'Neutral second type does not erase weakness');
+	});
+
+	for (const [format, type] of [['gen5pokemmorandombattle', 'Normal'], ['gen9customgame', 'Fairy']]) {
+		it(`uses ${type} for active, reserve and opposing Granbull in ${format}`, () => {
+			const ai = new NormalAI({ write() {} }, { seed: [1, 2, 3, 4] });
+			ai.setBattle({ format });
+			ai.getTracker().parseMessage('|switch|p1a: Granbull|Granbull, L100|100/100');
+			const own = { ...pokemon('Granbull', 300, 300, ['return']), active: true };
+			ai.choose = () => {};
+			ai.receiveRequest({
+				side: { id: 'p2', pokemon: [own, pokemon('Granbull', 300)] },
+				active: [{ moves: [{ id: 'return', move: 'Return', pp: 10, maxpp: 10, target: 'normal' }] }],
+			});
+			for (const mon of [...ai.battleState.self.team, ...ai.battleState.opponent.active]) {
+				assert.deepEqual(mon.types, [type]);
+			}
+			const details = ai.lastMoveScores[0].breakdown.details;
+			assert.equal(details.some(detail => detail.reason === 'STAB bonus'), type === 'Normal');
+			assert.deepEqual(buildPokemonFromRequest(own, 1, false, format).types, [type]);
+		});
+	}
+
 	it('should keep Victini in to finish Slowking with Bolt Strike despite lethal incoming Scald', () => {
 		const battle = new Battle({
 			formatid: 'gen7customgame', seed: [1, 2, 3, 4],
@@ -136,7 +177,7 @@ describe('NormalAI incoming threat switching', () => {
 	});
 
 	it('should exclude an unsafe replacement even if its existing score is higher', () => {
-		const reserves = [pokemon('Swampert', 174), pokemon('Blastoise', 175, 350)];
+		const reserves = [pokemon('Swampert', 174), pokemon('Blastoise', 175, 280)];
 		assert.equal(decision({ reserves }).choice, 'switch 3');
 	});
 

@@ -42,6 +42,42 @@ function score(id, {
 const hasReason = (result, reason) => result.breakdown.details.some(detail => detail.reason.includes(reason));
 
 describe('CFRU scoring with production move metadata', () => {
+	it('assigns zero damage and no KO rewards to Ground attacks blocked by Air Balloon', () => {
+		const actor = pokemon({ types: ['Ground'], moves: ['earthquake'], baseStats: {
+			hp: 300, atk: 400, def: 200, spa: 200, spd: 200, spe: 300,
+		} });
+		const target = pokemon({ species: 'Bastiodon', types: ['Rock', 'Steel'], item: 'Air Balloon' });
+		const result = score('earthquake', { actor, target });
+		assert.equal(result.score, 0);
+		assert.equal(result.flags.canKO, false);
+		assert.equal(result.flags.can2HKO, false);
+		assert.equal(result.flags.isImmune, true);
+		assert.equal(result.flags.hasNoEffect, true);
+		assert.equal(result.breakdown.positives, 0);
+		assert.equal(calculateDamage(actor, target, buildAIMove({ id: 'earthquake' }, 1), {}).average, 0);
+		for (const overrides of [
+			{ field: { gravity: true } }, { field: { magicroom: true } },
+			{ target: { ...target, item: '', itemLost: true } },
+			{ target: { ...target, ability: 'Klutz' } },
+			...['embargo', 'ingrain', 'smackdown'].map(id => ({ target: { ...target, volatiles: new Set([id]) } })),
+		]) {
+			const grounded = score('earthquake', { actor, target, ...overrides });
+			assert(!hasReason(grounded, 'Air Balloon'));
+			assert.equal(grounded.flags.canKO, true);
+		}
+		assert(!hasReason(score('thousandarrows', { actor, target }), 'Air Balloon'));
+	});
+
+	for (const id of ['gigadrain', 'drainpunch']) {
+		it(`logs every drain reward for ${id}`, () => {
+			for (const hpPercent of [100, 70, 50, 25]) {
+				const result = score(id, { actor: pokemon({ hp: hpPercent * 3, hpPercent }) });
+				assert.equal(result.breakdown.details.reduce((sum, d) => sum + d.amount, 100), result.score);
+				if (hpPercent === 100) assert(hasReason(result, 'Drain move at high HP'));
+			}
+		});
+	}
+
 	for (const [formatId, immune] of [
 		['gen5customgame', false], ['gen6customgame', false], ['gen7customgame', true],
 		['gen8customgame', true], ['gen9customgame', true], ['gen5pokemmoou', true],

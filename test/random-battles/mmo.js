@@ -15,7 +15,8 @@ describe('PokeMMO Random Battle', () => {
 		const rules = Dex.formats.getRuleTable(data);
 		assert.equal(data.mod, 'mmo');
 		assert.equal(data.team, 'random');
-		assert(rules.has('sleepclausemmo'));
+		assert(rules.has('stadiumsleepclause'));
+		assert(!rules.has('sleepclausemmo'));
 		assert(rules.has('pokemmohiddenpower'));
 		assert(rules.has('dynamaxclause'));
 		assert(rules.has('illusionlevelmod'));

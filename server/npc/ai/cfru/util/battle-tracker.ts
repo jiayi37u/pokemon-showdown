@@ -311,7 +311,7 @@ export class BattleTracker {
 		case '-formechange': {
 			const tracked = this.opponentPokemon.get(parts[1]?.split(':')[0].trim());
 			if (tracked) {
-				const species = Dex.species.get(parts[2].split(',')[0]);
+				const species = (this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(parts[2].split(',')[0]);
 				tracked.species = species.name;
 				tracked.types = species.types;
 				if (species.isMega || species.id === 'greninjaash') {
@@ -467,7 +467,7 @@ export class BattleTracker {
 		}
 
 		// Get species data
-		const speciesData = Dex.species.get(species);
+		const speciesData = (this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(species);
 		const types = speciesData.types || [];
 
 		// Check for known ability from species (if only one possible)

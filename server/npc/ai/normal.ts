@@ -678,7 +678,7 @@ export class NormalAI extends NPCBattleAI {
 				// Get Pokemon name
 				const pokemonName = switchOption.pokemon.details?.split(',')[0]?.trim() || `Slot ${switchOption.slot}`;
 				// Build from this player's request: Multi teammates can have identical party slots.
-				const defender = buildPokemonFromRequest(switchOption.pokemon, switchOption.slot, false);
+				const defender = buildPokemonFromRequest(switchOption.pokemon, switchOption.slot, false, this.cfruConfig.formatId);
 				const switchThreat = this.getIncomingThreat(defender, opponents);
 				if (switchThreat > NormalAI.SWITCH_THREAT_LIMIT) {
 					switchScores.push({
@@ -748,6 +748,7 @@ export class NormalAI extends NPCBattleAI {
 		let score = 0;
 		const reasons: string[] = [];
 
+		const dex = this.cfruConfig.formatId ? Dex.forFormat(this.cfruConfig.formatId) : Dex;
 		// Get Pokemon types and species data
 		let types: string[] = [];
 		let speciesData: AnyObject = {};
@@ -755,7 +756,7 @@ export class NormalAI extends NPCBattleAI {
 			types = pokemon.types;
 		} else if (pokemon.details) {
 			const speciesName = pokemon.details.split(',')[0].trim();
-			speciesData = Dex.species.get(speciesName);
+			speciesData = dex.species.get(speciesName);
 			types = speciesData.types || [];
 		}
 
@@ -767,19 +768,10 @@ export class NormalAI extends NPCBattleAI {
 		let immuneCount = 0;
 		let weakCount = 0;
 		for (const moveId of target.moves) {
-			const move = Dex.moves.get(moveId);
+			const move = dex.moves.get(moveId);
 			if (move.category === 'Status') continue;
 
-			let effectiveness = 1;
-			for (const type of types) {
-				const eff = Dex.getEffectiveness(move.type, type);
-				if (eff === 1) effectiveness *= 2;
-				else if (eff === -1) effectiveness *= 0.5;
-				else if (eff === 0 || Dex.data.TypeChart[type]?.damageTaken?.[move.type] === 3) {
-					effectiveness = 0;
-					break;
-				}
-			}
+			const effectiveness = dex.getImmunity(move.type, types) ? 2 ** dex.getEffectiveness(move.type, types) : 0;
 
 			if (effectiveness === 0) {
 				immuneCount++;
@@ -802,23 +794,15 @@ export class NormalAI extends NPCBattleAI {
 
 		// 2. Check if we have STAB super effective moves against target
 		for (const moveId of pokemonMoves) {
-			const move = Dex.moves.get(moveId);
+			const move = dex.moves.get(moveId);
 			if (move.category === 'Status' || move.basePower < 50) continue;
 
 			// Check if STAB
 			const isSTAB = types.includes(move.type);
 
 			// Check effectiveness against target
-			let effectiveness = 1;
-			for (const targetType of target.types) {
-				const eff = Dex.getEffectiveness(move.type, targetType);
-				if (eff === 1) effectiveness *= 2;
-				else if (eff === -1) effectiveness *= 0.5;
-				else if (eff === 0) {
-					effectiveness = 0;
-					break;
-				}
-			}
+			const effectiveness = dex.getImmunity(move.type, target.types) ?
+				2 ** dex.getEffectiveness(move.type, target.types) : 0;
 
 			if (effectiveness >= 2 && isSTAB) {
 				score += 8;
@@ -862,12 +846,8 @@ export class NormalAI extends NPCBattleAI {
 		// 5. Check opponent's STAB types specifically (high priority danger)
 		for (const opponentType of target.types) {
 			// Check if we're weak to this type (opponent likely has STAB moves)
-			let effectiveness = 1;
-			for (const myType of types) {
-				const eff = Dex.getEffectiveness(opponentType, myType);
-				if (eff === 1) effectiveness *= 2;
-				else if (eff === -1) effectiveness *= 0.5;
-			}
+			const effectiveness = dex.getImmunity(opponentType, types) ?
+				2 ** dex.getEffectiveness(opponentType, types) : 0;
 
 			if (effectiveness >= 2) {
 				// Already penalized above for known moves, add small extra penalty for STAB threat
@@ -884,31 +864,23 @@ export class NormalAI extends NPCBattleAI {
 	 * Check if a Pokemon has a better matchup against the target
 	 */
 	private hasBetterMatchup(pokemon: AnyObject, target: AIPokemon): boolean {
+		const dex = this.cfruConfig.formatId ? Dex.forFormat(this.cfruConfig.formatId) : Dex;
 		// Get Pokemon types
 		let types: string[] = [];
 		if (pokemon.types) {
 			types = pokemon.types;
 		} else if (pokemon.details) {
 			const speciesName = pokemon.details.split(',')[0].trim();
-			const species = Dex.species.get(speciesName);
+			const species = dex.species.get(speciesName);
 			types = species.types || [];
 		}
 
 		// Check if we resist opponent's known moves
 		for (const moveId of target.moves) {
-			const move = Dex.moves.get(moveId);
+			const move = dex.moves.get(moveId);
 			if (move.category === 'Status') continue;
 
-			let effectiveness = 1;
-			for (const type of types) {
-				const eff = Dex.getEffectiveness(move.type, type);
-				if (eff === 1) effectiveness *= 2;
-				else if (eff === -1) effectiveness *= 0.5;
-				else if (eff === 0 || Dex.data.TypeChart[type]?.damageTaken?.[move.type] === 3) {
-					effectiveness = 0;
-					break;
-				}
-			}
+			const effectiveness = dex.getImmunity(move.type, types) ? 2 ** dex.getEffectiveness(move.type, types) : 0;
 
 			// If we resist this move, that's good
 			if (effectiveness < 1) {

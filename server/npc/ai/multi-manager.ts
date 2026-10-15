@@ -1,18 +1,22 @@
 /**
- * Coordinates the p2 and p4 requests using the shared NormalAI decision logic.
+ * Coordinates the p2 and p4 requests using Normal or Hard controllers and shared public observations.
  * Battle state comes only from player requests and public protocol messages.
  */
 import { ObjectReadWriteStream } from '../../../lib/streams';
 import type { ChoiceRequest } from '../../../sim/side';
+import type { PRNGSeed } from '../../../sim/prng';
 import type { AIPokemon, BattleState, SideConditions } from './cfru/types';
 import type { LogLevel } from './cfru/logger';
 import { type BattleTracker, createBattleTracker } from './cfru/util/battle-tracker';
 import { buildPokemonFromRequest, trackedPokemonToAIPokemon } from './cfru/state-builder';
 import { NormalAI } from './normal';
+import { HardAI } from './hard';
 
 export interface NPCMultiManagerOptions {
 	battleId?: string;
 	difficulty?: string;
+	partnerDifficulty?: string;
+	seed?: PRNGSeed;
 	logging?: {
 		console?: LogLevel,
 		file?: LogLevel,
@@ -31,7 +35,7 @@ interface CachedRequest {
 export class NPCMultiManager {
 	private roomBattle: AnyObject;
 	private tracker: BattleTracker;
-	private controllers: Record<NPCSide, NormalAI>;
+	private controllers: Record<NPCSide, NormalAI | HardAI>;
 	private currentTurn = 0;
 	private pendingRequests: Partial<Record<NPCSide, CachedRequest>> = {};
 	private latestRequests: Partial<Record<NPCSide, CachedRequest>> = {};
@@ -43,14 +47,19 @@ export class NPCMultiManager {
 		this.roomBattle = roomBattle;
 		this.tracker = createBattleTracker('p2', true);
 		if (roomBattle.stream) this.tracker.attachToStream(roomBattle.stream);
-		const controller = (side: NPCSide) => new NormalAI(new ObjectReadWriteStream<string>({
-			write: choice => { this.choices.set(side, choice); },
-		}), {
-			battleId: options.battleId,
-			side,
-			logging: options.logging,
-			cfruConfig: { isDoubles: true, formatId: roomBattle.format || '' },
-		});
+		const controller = (side: NPCSide) => {
+			const difficulty = side === 'p4' ? options.partnerDifficulty || options.difficulty : options.difficulty;
+			const Controller = difficulty === 'hard' ? HardAI : NormalAI;
+			return new Controller(new ObjectReadWriteStream<string>({
+				write: choice => { this.choices.set(side, choice); },
+			}), {
+				seed: options.seed,
+				battleId: options.battleId,
+				side,
+				logging: options.logging,
+				cfruConfig: { isDoubles: true, formatId: roomBattle.format || '' },
+			});
+		};
 		this.controllers = { p2: controller('p2'), p4: controller('p4') };
 	}
 
@@ -191,6 +200,7 @@ export class NPCMultiManager {
 				conditions: this.convertSideConditions(ourSideConditions),
 			},
 			opponent: {
+				remaining: this.tracker.getRemainingOpponents(),
 				active: opponentActive,
 				reserve: [], // Don't track opponent reserves in tracker yet
 				team: opponentActive,
@@ -269,6 +279,8 @@ export class NPCMultiManager {
 			pokemon.boosts = this.tracker.getOurActiveBoosts(position);
 			pokemon.abilityStatMod = this.tracker.getOurAbilityStatMod(position);
 			pokemon.lastMove = this.tracker.getOurLastMove(position);
+			pokemon.volatiles = this.tracker.getVolatiles(position);
+			pokemon.activeMoveActions = this.tracker.hasActed(position) ? 1 : 0;
 		}
 		return pokemon;
 	}

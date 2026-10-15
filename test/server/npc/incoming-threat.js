@@ -87,7 +87,7 @@ describe('NormalAI incoming threat switching', () => {
 		assert.equal(decision({ forced: true, reserves: [pokemon('Swampert', 1, 400)] }).choice, 'switch 2');
 	});
 
-	it('should reuse preset stats and the 31 IV / 85 EV fallback, considering only revealed moves', () => {
+	it('should reuse preset stats and the 31 IV / 85 EV fallback, keeping preset candidates separate from revealed moves', () => {
 		const { ai } = decision();
 		ai.getTracker().parseMessage('|switch|p1a: Hydreigon|Hydreigon, L100|100/100');
 		const request = {
@@ -96,7 +96,8 @@ describe('NormalAI incoming threat switching', () => {
 		};
 		ai.receiveRequest(request);
 		assert.equal(ai.battleState.opponent.active[0].baseStats.spa, 349); // Timid, 252 SpA EVs.
-		assert.equal(ai.getIncomingThreat(ai.battleState.self.active[0], ai.battleState.opponent.active), 0);
+		assert(ai.getIncomingThreat(ai.battleState.self.active[0], ai.battleState.opponent.active) > 0);
+		assert.deepEqual(ai.battleState.opponent.active[0].moves, []);
 		ai.getTracker().parseMessage('|switch|p1a: Charizard|Charizard, L100|100/100');
 		ai.getTracker().parseMessage('|move|p1a: Charizard|Flamethrower|p2a: Blastoise');
 		ai.receiveRequest(request);
@@ -132,7 +133,7 @@ describe('NormalAI incoming threat switching', () => {
 			p1: { name: 'Player', team: [{ species: 'Charizard', ability: 'Blaze', moves: ['flamethrower'] }] },
 			p2: { name: 'NPC', team: [
 				{ species: 'Scizor', ability: 'Technician', moves: ['protect', 'rockslide'] },
-				{ species: 'Blissey', ability: 'Natural Cure', moves: ['seismictoss'] },
+				{ species: 'Slowbro', ability: 'Regenerator', nature: 'Bold', evs: { hp: 252, def: 252 }, moves: ['surf'] },
 			] },
 		});
 		const stream = { push() {}, write() {} };
@@ -153,7 +154,7 @@ describe('NormalAI incoming threat switching', () => {
 			assert.equal(decide(), 'switch 2');
 			assert(battle.choose('p2', choice), battle.p2.choice.error);
 			assert(battle.choose('p1', 'move 1'), battle.p1.choice.error);
-			assert.equal(battle.p2.active[0].species.id, 'blissey');
+			assert.equal(battle.p2.active[0].species.id, 'slowbro');
 			assert(decide().startsWith('move '), choice);
 			assert(battle.choose('p2', choice), battle.p2.choice.error);
 			assert(battle.choose('p1', 'move 1'), battle.p1.choice.error);

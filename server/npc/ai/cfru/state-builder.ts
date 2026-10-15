@@ -25,7 +25,7 @@ import {
 	speciesDefaults,
 	makeAIPokemonSkeleton,
 } from './util/pokemon-builder';
-import { getOpponentPreset, computeStatsFromPreset } from './util/opponent-presets';
+import { getOpponentPreset, getOpponentMoveKnowledge, computeStatsFromPreset } from './util/opponent-presets';
 
 /**
  * Build BattleState from Pokemon Showdown request and battle data
@@ -182,6 +182,7 @@ export function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: 
 		types,
 		ability: mon.ability || mon.baseAbility || '',
 		item: mon.item || '',
+		itemKnown: true,
 		moves: mon.moves || [],
 		baseStats: actualStats,
 		active: isActive,
@@ -242,6 +243,8 @@ function buildOpponentReserveRevealed(battle: AnyObject | null, active: AIPokemo
 			item: '', // Unknown
 			itemLost: false, // Unknown, assume has item
 			moves: [], // Unknown
+			lastMove: '',
+			abilityStatMod: { stat: null, multiplier: 1 },
 			baseStats: Dex.species.get(mon.speciesForme || mon.species).baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 },
 			boosts: defaultBoosts(),
 			volatiles: new Set(),
@@ -311,7 +314,10 @@ function buildOpponentPokemonRevealed(mon: AnyObject, slot: number, isActive: bo
 		types: speciesData.types || [],
 		ability,
 		item,
+		itemLost: !!mon.itemRevealed && !mon.item,
+		itemKnown: !!mon.itemRevealed,
 		moves,
+		lastMove: toID(mon.lastMove),
 		baseStats: speciesData.baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 },
 		boosts,
 		abilityStatMod: { stat: null, multiplier: 1 },
@@ -401,8 +407,10 @@ function buildOpponentPokemonFull(mon: AnyObject, slot: number, isActive: boolea
 		types: speciesData.types || [],
 		ability: mon.ability || mon.baseAbility || '',
 		item: mon.item || '',
-		itemLost: !mon.item,  // If no item, it's lost (for self this is accurate)
+		itemLost: !mon.item,
+		itemKnown: true,
 		moves,
+		lastMove: toID(mon.lastMove),
 		baseStats: speciesData.baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 },
 		boosts,
 		abilityStatMod: { stat: null, multiplier: 1 },
@@ -532,6 +540,9 @@ export function buildAIMove(moveData: AnyObject, slot: number): AIMove {
 		priority: dexMove.priority || 0,
 		target: moveData.target || dexMove.target || 'normal',
 		flags: isReturn || isFrustration ? { contact: 1, protect: 1 } : (dexMove.flags || {}),
+		status: dexMove.status,
+		boosts: dexMove.boosts,
+		recoil: dexMove.recoil,
 		secondaryChance: dexMove.secondary?.chance || 0,
 		disabled: moveData.disabled || false,
 		isZMove: !!moveData.zMove,
@@ -562,16 +573,12 @@ export function buildBattleStateWithTracker(
 	const isDoubles = (request.active || request.forceSwitch || []).length > 1 || config.isDoubles;
 	const turn = battle?.turn ?? 1;
 
-	// Determine which side index we are (p1 = 0, p2 = 1)
-	const ourSide = tracker.getOurSide();
-	const ourSideIndex = ourSide === 'p1' ? 0 : 1;
-
 	// Build self (full information from request)
 	// CFRU AI Fix: battle.sides is not accessible in server environment
 	// Use tracker.getOurActiveBoosts() to get boosts from stream messages
 	const selfActive = buildSelfActiveWithTracker(request, tracker, isDoubles);
 	const selfReserve = buildSelfReserve(request, selfActive);
-	const selfConditions = buildSideConditions(battle?.sides?.[ourSideIndex]?.sideConditions);
+	const selfConditions = { ...tracker.getOurSideConditions(), wish: tracker.getWish(), futuremove: 0 };
 
 	// Build opponent from tracker
 	const formatId = config.formatId || '';
@@ -592,6 +599,7 @@ export function buildBattleStateWithTracker(
 			conditions: selfConditions,
 		},
 		opponent: {
+			remaining: tracker.getRemainingOpponents(),
 			active: opponentActive,
 			reserve: opponentReserve,
 			team: [...opponentActive, ...opponentReserve],
@@ -640,6 +648,8 @@ function buildSelfActiveWithTracker(request: AnyObject, tracker: BattleTracker, 
 		// Get lastMove for consecutive Protect detection
 		// CFRU: gLastResultingMoves[bankAtk]
 		aiPokemon.lastMove = tracker.getOurLastMove(slot);
+		aiPokemon.volatiles = tracker.getVolatiles(slot);
+		aiPokemon.activeMoveActions = tracker.hasActed(slot) ? 1 : 0;
 
 		active.push(aiPokemon);
 	}
@@ -677,11 +687,10 @@ function buildOpponentActiveFromTracker(tracker: BattleTracker, isDoubles: boole
 function buildOpponentReserveFromTracker(tracker: BattleTracker, active: AIPokemon[], formatId: string = ''): AIPokemon[] {
 	const reserve: AIPokemon[] = [];
 	const team = tracker.getOpponentTeam();
-	const activeSpecies = new Set(active.map(p => p.species));
 
 	let slot = active.length + 1;
 	for (const mon of team) {
-		if (activeSpecies.has(mon.species)) continue;
+		if (mon.active) continue;
 		if (mon.hpPercent <= 0) continue; // Skip fainted
 
 		reserve.push(trackedPokemonToAIPokemon(mon, slot++, false, formatId));
@@ -709,11 +718,11 @@ export function trackedPokemonToAIPokemon(
 	// This ensures opponent level matches the actual level parsed from protocol messages
 	// Previously resolveLevel could return 100 for unrecognized formats, causing level mismatch
 	const level = tracked.level || 100;
-	const { baseStats } = speciesDefaults(tracked.species);
+	const { baseStats } = (formatId ? Dex.forFormat(formatId) : Dex).species.get(tracked.species);
 
 	// 优先使用 opponent-presets.json 的常见练度；未命中回退到 IV=31 / EV=85 / 无性格的默认估算
 	// 协议里暴露的道具（tracked.item）优先于 preset.item：对手已经被观察到持有某物就以观察为准
-	const preset = getOpponentPreset(tracked.species);
+	const preset = getOpponentPreset(tracked.species, formatId);
 	let calculatedStats: AIPokemon['baseStats'];
 	let presetItem: string | undefined;
 	if (preset) {
@@ -738,7 +747,7 @@ export function trackedPokemonToAIPokemon(
 	// item 的来源优先级：协议暴露的（tracked.item） > preset.item > 空字符串
 	const effectiveItem = tracked.item || (tracked.itemLost ? '' : (presetItem || ''));
 
-	return makeAIPokemonSkeleton({
+	const pokemon = makeAIPokemonSkeleton({
 		slot,
 		species: tracked.species,
 		hp: estimatedHp,
@@ -758,6 +767,14 @@ export function trackedPokemonToAIPokemon(
 		level,
 		gender: 'N',
 	});
+	pokemon.volatiles = new Set(tracked.volatiles);
+	pokemon.itemKnown = !!tracked.item || tracked.itemLost;
+	pokemon.observedAbility = tracked.baseAbility || '';
+	pokemon.itemChanged = tracked.itemChanged;
+	pokemon.originalItem = tracked.originalItem || '';
+	pokemon.abilityChanged = tracked.abilityChanged;
+	pokemon.moveKnowledge = getOpponentMoveKnowledge(tracked.species, tracked.knownMoves, formatId);
+	return pokemon;
 }
 
 /**

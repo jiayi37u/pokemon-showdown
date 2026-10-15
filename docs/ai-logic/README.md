@@ -7,13 +7,13 @@
 | 难度 | 类名 | 状态 | 说明 |
 |------|------|------|------|
 | Basic | BasicAI | ✅ 可用 | 优先最大伤害 |
-| Normal | NormalAI | ✅ 可用 | CFRU 评分系统 |
-| Hard | HardAI | ⏳ 计划中 | 战斗风格 + 预测 |
+| Normal | NormalAI | ✅ 策略固定 | CFRU 基础评分；保留正确性修复 |
+| Hard | HardAI | ✅ 可用，迁移进行中 | 分级配置推断与通用 preset 回退、战术换人和招式评估，见 [Hard 逻辑](./HardAI/logic.md) |
 | Expert | ExpertAI | ⏳ 计划中 | 完整策略 + 双打协作 |
 
 ## 文档结构
 
-每个 AI 包含三个文档：
+Basic / Normal 的文档按以下结构组织；Hard 的实现和迁移边界集中在 `HardAI/logic.md`：
 
 ```
 BasicAI/
@@ -55,15 +55,15 @@ AI 逻辑移植自 CFRU (Complete-Fire-Red-Upgrade) 项目。
 
 - [CFRU 迁移对照清单](./CFRU-Migration-Checklist.md) - 功能迁移状态追踪，包含：
   - 评分系统 (negatives/positives) 迁移状态
-  - 待迁移模块：切换决策、战斗风格、招式预测、双打协作
+  - 迁移中的模块：切换决策、战斗风格、招式预测；待实现双打协作
 
 - [CFRU 迁移复查报告](./CFRU-Review-Report.md) - 详细复查结果，包含：
   - M1-M3 模块的已实现/遗漏功能对照
   - P0/P1/P2 级别修复优先级
   - 完成率统计和主要差距分析
 
-**CFRU 源码位置**: `/ssd3/lvjiawei01/projects/Complete-Fire-Red-Upgrade/src/Battle_AI/`
+**CFRU 源码位置**: `/home/lvjiawei.376/myproj/Complete-Fire-Red-Upgrade/src/Battle_AI/`
 
 ---
 
-*最后更新: 2026-01-24*
+*最后更新: 2026-10-15*

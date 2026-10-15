@@ -4,7 +4,7 @@
 
 ## CFRU 源码位置
 
-**路径**: `/ssd3/lvjiawei01/projects/Complete-Fire-Red-Upgrade/src/Battle_AI/`
+**路径**: `/home/lvjiawei.376/myproj/Complete-Fire-Red-Upgrade/src/Battle_AI/`
 
 ## 模块迁移总览
 
@@ -14,10 +14,10 @@
 | ai_negatives.c | 负面评分 (~50 个 case) | M2 | v1.1 | ✅ 完成（Sucker Punch 简化版 v1.2.21） | ~100% |
 | ai_positives.c | 正面评分 (~30 个 case) | M3 | v1.1 | ✅ 完成 | ~100% |
 | - | NormalAI 整合 | M4 | v1.1 | ✅ 核心完成 | 100% |
-| ai_switching.c | 切换决策 | M5 | v1.2 | ⏳ 待开始 | 0% |
-| ai_advanced.c | 战斗风格识别 | M6 | v1.2 | ⏳ 待开始 | 0% |
-| ai_advanced.c | 招式预测 | M7 | v1.2 | ⏳ 待开始 | 0% |
-| - | HardAI 整合 | M8 | v1.2 | ⏳ 待开始 | 0% |
+| ai_switching.c | 切换决策 | M5 | v1.3 | ⚠️ 候选配置下的入场风险、条件换人和祈愿接血，见 Hard 逻辑 | 未量化 |
+| ai_advanced.c | 战斗风格识别 | M6 | v1.3 | ⚠️ 简化角色识别，见 Hard 逻辑 | 未量化 |
+| ai_master.c / ai_advanced.c | 招式预测 | M7 | v1.3 | ⚠️ gen7 OU 多配置筛选及不确定行动预测，见 Hard 逻辑 | 未量化 |
+| - | HardAI 整合 | M8 | v1.3 | ⚠️ Hard 单打、双打和 Multi 接入，见 Hard 逻辑 | 未量化 |
 | ai_partner.c | 双打协作 | M9 | v1.3 | ⏳ 待开始 | 0% |
 | - | ExpertAI 整合 | M10 | v1.3 | ⏳ 待开始 | 0% |
 
@@ -338,7 +338,9 @@
 
 ---
 
-## 待迁移模块
+## 后续模块与 Hard 适配范围
+
+M5–M7 的适配实现和限制见 [HardAI/logic.md](./HardAI/logic.md)。以下 CFRU 功能列表是对照目标，不代表所有分支完全迁移。
 
 ### M5: 切换决策 (ai_switching.c)
 
@@ -346,15 +348,15 @@
 - `ShouldSwitch()` - 判断是否应该切换
 - `GetMostSuitableMonToSwitchInto()` - 选择最佳换入
 
-**切换条件** (待实现):
+**切换条件** (Hard 启发式适配):
 | 条件 | 说明 | 状态 |
 |------|------|------|
-| 灭亡之歌倒计时=1 | 必须切换 | ⏳ |
+| 灭亡之歌倒计时=1 | 必须切换 | ⚠️ 条件与承伤评估覆盖，未逐分支等价 |
 | 神奇守护无克制招式 | 应该切换 | ⏳ |
-| 特性吸收 (蓄电/储水/引火) | 可以换入吸收 | ⏳ |
-| 自然回复/再生力 | 有状态/低血量时切换 | ⏳ |
-| 哈欠且无保护 | 可以切换 | ⏳ |
-| 即将被击杀 | 有更好替换时切换 | ⏳ |
+| 特性吸收 (蓄电/储水/引火) | 可以换入吸收 | ⚠️ 条件与承伤评估覆盖，未逐分支等价 |
+| 自然回复/再生力 | 有状态/低血量时切换 | ⚠️ 条件与承伤评估覆盖，未逐分支等价 |
+| 哈欠且无保护 | 可以切换 | ⚠️ 条件与承伤评估覆盖，未逐分支等价 |
+| 即将被击杀 | 有更好替换时切换 | ⚠️ 条件与承伤评估覆盖，未逐分支等价 |
 
 **切换评分权重** (来自 CFRU):
 ```c
@@ -387,7 +389,7 @@ POKEMON_FAINTS_FROM_FOE = -39
 
 ---
 
-### M7: 招式预测 (ai_advanced.c)
+### M7: 招式预测 (ai_master.c / ai_advanced.c)
 
 **预测内容**:
 - 对手下回合招式预测

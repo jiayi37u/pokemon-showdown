@@ -3,21 +3,22 @@
  *
  * 配置文件：`data/npc/opponent-presets.json`
  *   key = toID(species)（例：'garchomp'、'charizardmegay'）
- *   value = { nature?, evs?, ivs?, item?, moves? }
+ *   value = { nameZh?, nature?, evs?, ivs?, item?, moves? }
  *
  * 缺省 EV 使用每项 85；显式 EV 表中未写的项目为 0。缺省 IV=31，性格无修正。
- * moves 仅补充承伤威胁候选，不写入已揭露信息；实露四招后忽略预设招式。
+ * moves 提供候选，不写入已揭露信息；剩余槽限制共存组合，实露四招后忽略预设招式。
  *
  * JSON 文件在编译时拷到 dist/data/npc/，运行时按 cwd 读取；加载失败不报错，静默回退。
  */
 
 import { FS } from '../../../../../lib';
 import { Dex, toID } from '../../../../../sim/dex';
-import type { AIPokemon } from '../types';
+import type { AIPokemon, OpponentMoveKnowledge } from '../types';
 
 type StatKey = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
 
 export interface OpponentPreset {
+	nameZh?: string;
 	nature?: string;
 	evs?: Partial<Record<StatKey, number>>;
 	ivs?: Partial<Record<StatKey, number>>;
@@ -81,31 +82,70 @@ function loadPresetsIfNeeded(): PresetFile {
 }
 
 /** 按 species 名字查 preset。找不到或字段非法时返回 null。 */
-export function getOpponentPreset(species: string): OpponentPreset | null {
+export function getOpponentPreset(species: string, formatId = ''): OpponentPreset | null {
 	const presets = loadPresetsIfNeeded();
 	const key = toID(species);
 	const entry = presets[key];
 	if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
 	// 过滤以 "_" 开头的注释字段
-	if (key.startsWith('_')) return null;
+	if (species.startsWith('_')) return null;
+	if (formatId && entry.item) {
+		const dex = Dex.forFormat(formatId);
+		if (dex.items.get(entry.item).gen > dex.gen) return { ...entry, item: undefined };
+	}
 	return entry;
 }
 
-/** Threat-only candidates. Keep the observed moves intact for all other AI decisions. */
-export function getOpponentThreatMoves(species: string, revealedMoves: readonly string[]): string[] {
+/** Keep facts and possible moves separate, including the number of unobserved slots. */
+export function getOpponentMoveKnowledge(
+	species: string, revealedMoves: readonly string[], formatId = ''
+): OpponentMoveKnowledge {
+	const dex = formatId ? Dex.forFormat(formatId) : Dex;
 	const revealed = new Set(
-		revealedMoves.map(move => Dex.moves.get(move)).filter(move => move.exists).map(move => move.id)
+		revealedMoves.map(move => dex.moves.get(move)).filter(move => move.exists).map(move => move.id)
 	);
-	if (revealed.size >= 4) return [...revealed];
+	const remainingSlots = Math.max(0, 4 - revealed.size);
+	const candidates = new Set<string>();
 	const presetMoves = getOpponentPreset(species)?.moves;
-	if (Array.isArray(presetMoves)) {
+	if (remainingSlots && Array.isArray(presetMoves)) {
 		for (const name of presetMoves) {
 			if (typeof name !== 'string') continue;
-			const move = Dex.moves.get(name);
-			if (move.exists) revealed.add(move.id);
+			const move = dex.moves.get(name);
+			if (move.exists && move.gen <= dex.gen && !revealed.has(move.id) &&
+				!(revealed.has('hiddenpower' as ID) && move.id.startsWith('hiddenpower'))) candidates.add(move.id);
 		}
 	}
-	return [...revealed];
+	return { revealedMoves: [...revealed], presetCandidates: [...candidates], remainingSlots };
+}
+
+/** Injectively match moves to slots; overlapping slash options must not consume one slot twice. */
+export function compatibleMoveSlots(slots: string[][], moves: readonly string[]): boolean {
+	const unique = [...new Set(moves.map(toID))];
+	const matches = (known: string, candidate: string) => known === candidate ||
+		(known === 'hiddenpower' && candidate.startsWith('hiddenpower'));
+	const assign = (index: number, used: number): boolean => index === unique.length ||
+		slots.some((slot, i) => !(used & (1 << i)) && slot.some(m => matches(unique[index], m)) &&
+			assign(index + 1, used | (1 << i)));
+	return unique.length <= slots.length && assign(0, 0);
+}
+
+/** Whether these moves can coexist with public observations, not whether they are guaranteed. */
+export function canHaveOpponentMoves(knowledge: OpponentMoveKnowledge, moves: readonly string[]): boolean {
+	const requested = [...new Set(moves.map(toID))];
+	if (requested.some(m => !knowledge.revealedMoves.includes(m) && !knowledge.presetCandidates.includes(m))) return false;
+	const additional = requested.filter(m => !knowledge.revealedMoves.includes(m) &&
+		!(m.startsWith('hiddenpower') && knowledge.revealedMoves.includes('hiddenpower')));
+	if (additional.length > knowledge.remainingSlots) return false;
+	const combined = [...new Set([...knowledge.revealedMoves, ...requested])].filter(m =>
+		!(m === 'hiddenpower' && requested.some(id => id !== 'hiddenpower' && id.startsWith('hiddenpower'))));
+	if (combined.filter(m => m.startsWith('hiddenpower')).length > 1) return false;
+	return !knowledge.slots || compatibleMoveSlots(knowledge.slots, combined);
+}
+
+/** Normal evaluates each possible attack independently; this is not a complete moveset. */
+export function getOpponentThreatMoves(species: string, revealedMoves: readonly string[], formatId = ''): string[] {
+	const knowledge = getOpponentMoveKnowledge(species, revealedMoves, formatId);
+	return [...knowledge.revealedMoves, ...knowledge.presetCandidates];
 }
 
 /**
@@ -134,7 +174,8 @@ export function computeStatsFromPreset(
 		Math.floor((2 * baseStats[k] + iv(k) + Math.floor(ev(k) / 4)) * level / 100) + 5
 	) * nmul(k));
 	// HP 的公式稍有不同：无性格修正，+level+10
-	const hp = Math.floor((2 * baseStats.hp + iv('hp') + Math.floor(ev('hp') / 4)) * level / 100) + level + 10;
+	const hp = baseStats.hp === 1 ? 1 :
+		Math.floor((2 * baseStats.hp + iv('hp') + Math.floor(ev('hp') / 4)) * level / 100) + level + 10;
 	return {
 		hp,
 		atk: stat('atk'),

@@ -16,21 +16,21 @@ describe('NPC PokeMMO Random Battle integration', () => {
 			assert(NPC.getSupportedFormats(id).includes(format));
 		}
 
-		const originalRooms = global.Rooms;
+		const originalCreateBattle = Rooms.createBattle;
 		const originalGenerate = Teams.generate;
 		let generated = 0;
 		let captured;
 		const room = { settings: {} };
-		global.Rooms = { createBattle: options => {
+		Rooms.createBattle = options => {
 			captured = options;
 			return room;
-		} };
+		};
 		Teams.generate = (id, options) => {
 			assert.equal(id, format);
 			return originalGenerate.call(Teams, id, { ...options, seed: [++generated, 2, 3, 4] });
 		};
 		const restore = () => {
-			global.Rooms = originalRooms;
+			Rooms.createBattle = originalCreateBattle;
 			Teams.generate = originalGenerate;
 		};
 		try {

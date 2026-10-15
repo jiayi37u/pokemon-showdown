@@ -1061,7 +1061,7 @@ export const checkPoisonMove: NegativeScoringFunction = (ctx) => {
 	// CFRU: ai_util.c line 2889 - exception for Venoshock
 	if (abilityId === 'magicguard') {
 		// Check if attacker has Venoshock - poisoning still has value
-		const hasVenoshock = ctx.attacker.moves?.some(m => toID(m.id) === 'venoshock');
+		const hasVenoshock = ctx.attacker.moves?.some(m => toID(m) === 'venoshock');
 		if (!hasVenoshock) {
 			ctx.adjustments.push({
 				reason: 'Magic Guard prevents poison damage',

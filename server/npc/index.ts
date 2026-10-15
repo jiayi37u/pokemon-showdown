@@ -8,10 +8,11 @@
  */
 
 export { NPC, NPCManager } from './manager';
-export type { NPCTemplate, NPCTeamConfig, NPCTeamFile } from './manager';
+export type { NPCTemplate, NPCTeamFile } from './manager';
 export { NPCBattleAI } from './ai/index';
 export type { AIConfig, MoveChoice, SwitchChoice } from './ai/index';
 export { BasicAI } from './ai/basic';
+export { HardAI } from './ai/hard';
 export { createNPCBattle, getAvailableFormats, isFormatSupported } from './room';
 export type { NPCBattleCreateOptions, NPCBattleResult } from './room';
 

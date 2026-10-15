@@ -21,6 +21,7 @@ import { Dex } from '../../../sim/dex';
 import * as readline from 'readline';
 
 import { BasicAI } from '../../../server/npc/ai/basic';
+import { HardAI } from '../../../server/npc/ai/hard';
 import { NormalAI, NormalAIOptions } from '../../../server/npc/ai/normal';
 import { LogLevel } from '../../../server/npc/ai/cfru/logger';
 import { createBattleTracker } from '../../../server/npc/ai/cfru/util/battle-tracker';
@@ -35,7 +36,7 @@ export interface StrategyContext {
 	script?: ScriptEntry[];
 	// mirror-npc-only
 	mirrorOptions?: NormalAIOptions;
-	mirrorDifficulty?: 'basic' | 'normal'; // mirror 的 AI 等级，默认 normal
+	mirrorDifficulty?: 'basic' | 'normal' | 'hard'; // mirror 的 AI 等级，默认 normal
 	// mirror-npc / shared：挂同一个 BattleTracker 用的 stream，当 label=p1/p3 时 ourSide='p1'
 	ourSide?: 'p1' | 'p2';
 	isMulti?: boolean;
@@ -187,10 +188,12 @@ class MaxDamagePlayer extends BattlePlayer implements StrategyPlayer {
 	private trace: boolean;
 	// 维护一个最简陋的 opponent 快照：species + types + hp%
 	private opponentTypes: Map<string, string[]> = new Map();
+	private isMulti: boolean;
 	constructor(ctx: StrategyContext) {
 		super(ctx.stream);
 		this.labelName = ctx.label;
 		this.trace = ctx.trace ?? true;
+		this.isMulti = !!ctx.isMulti;
 	}
 
 	override receiveLine(line: string): void {
@@ -203,6 +206,7 @@ class MaxDamagePlayer extends BattlePlayer implements StrategyPlayer {
 				if (data.exists) this.opponentTypes.set(pos, data.types.slice());
 			}
 		}
+		if (line.startsWith('|faint|')) this.opponentTypes.delete(line.split('|')[2].split(':')[0].trim());
 		super.receiveLine(line);
 	}
 
@@ -229,7 +233,7 @@ class MaxDamagePlayer extends BattlePlayer implements StrategyPlayer {
 				continue;
 			}
 			if (!slot?.moves?.length) { choices.push('default'); continue; }
-			const choice = this.pickMaxMove(slot, mon);
+			const choice = this.pickMaxMove(slot, mon, req.active.length > 1 || this.isMulti);
 			choices.push(choice);
 		}
 		const final = choices.join(', ');
@@ -242,7 +246,7 @@ class MaxDamagePlayer extends BattlePlayer implements StrategyPlayer {
 		throw error;
 	}
 
-	private pickMaxMove(slotData: AnyObject, mon: AnyObject): string {
+	private pickMaxMove(slotData: AnyObject, mon: AnyObject, needsTarget: boolean): string {
 		const atkerSpecies = Dex.species.get(mon.details?.split(',')[0] || mon.speciesForme || '');
 		const moves = slotData.moves as AnyObject[];
 		let best = { score: -1, idx: 0 };
@@ -259,6 +263,13 @@ class MaxDamagePlayer extends BattlePlayer implements StrategyPlayer {
 			if (score > best.score) best = { score, idx: i };
 		}
 		if (best.score < 0) return 'default';
+		const chosen = moves[best.idx];
+		if (needsTarget && ['normal', 'any', 'adjacentFoe'].includes(chosen.target)) {
+			const type = Dex.moves.get(chosen.move).type;
+			const targets = [...this.opponentTypes].sort((a, b) => this.typeEff(type, b[1]) - this.typeEff(type, a[1]));
+			const position = targets[0]?.[0];
+			if (position) return `move ${best.idx + 1} ${position.endsWith('b') ? 2 : 1}`;
+		}
 		return `move ${best.idx + 1}`;
 	}
 
@@ -295,24 +306,25 @@ class MaxDamagePlayer extends BattlePlayer implements StrategyPlayer {
 // ---------------------------------------------------------------------------
 
 class MirrorNPCPlayer implements StrategyPlayer {
-	private ai: BasicAI | NormalAI;
+	private ai: BasicAI | NormalAI | HardAI;
 	constructor(ctx: StrategyContext) {
 		const ourSide: 'p1' | 'p2' = (ctx.label === 'p1' || ctx.label === 'p3') ? 'p1' : 'p2';
 		const difficulty = ctx.mirrorDifficulty || 'normal';
 		if (difficulty === 'basic') {
-			this.ai = new BasicAI(ctx.stream);
+			this.ai = new BasicAI(ctx.stream, { seed: ctx.seed });
 		} else {
 			const options: NormalAIOptions = {
+				seed: ctx.seed,
 				battleId: `mirror-${ctx.label}-${Date.now()}`,
 				logging: { console: LogLevel.NONE },
 				...ctx.mirrorOptions,
 			};
-			this.ai = new NormalAI(ctx.stream, options);
+			this.ai = difficulty === 'hard' ? new HardAI(ctx.stream, options) : new NormalAI(ctx.stream, options);
 		}
 		// 替换 tracker：根据 label 决定 ourSide，并打开 multi 模式支持 p1+p3 / p2+p4 共享
 		(this.ai as AnyObject).tracker = createBattleTracker(ourSide, !!ctx.isMulti);
 		this.ai.getTracker().attachToStream(ctx.stream);
-		if (this.ai instanceof NormalAI) {
+		if (this.ai instanceof NormalAI || this.ai instanceof HardAI) {
 			this.ai.setBattle({ stream: ctx.stream, format: ctx.formatId || '' } as AnyObject);
 		} else {
 			// BasicAI.setBattle 也会挂一次 tracker，上面已挂过，这里给个最小占位让它拿到 battleRef

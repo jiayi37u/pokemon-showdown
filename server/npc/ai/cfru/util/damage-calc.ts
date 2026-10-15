@@ -432,7 +432,7 @@ export function getModifiedBasePower(
 	}
 
 	// Reckless
-	if (attackerAbility === 'reckless' && (move.flags['recoil'] || moveId === 'jumpkick' || moveId === 'highjumpkick')) {
+	if (attackerAbility === 'reckless' && (move.recoil || moveId === 'jumpkick' || moveId === 'highjumpkick')) {
 		basePower = Math.floor(basePower * 1.2);
 	}
 
@@ -655,7 +655,7 @@ function getVariableBasePower(
 	}
 
 	// Acrobatics: doubles without item
-	if (moveId === 'acrobatics' && !attacker.item) {
+	if (moveId === 'acrobatics' && !attacker.item && (attacker.itemKnown || attacker.itemLost)) {
 		return 110;
 	}
 
@@ -769,6 +769,9 @@ export function computeFixedDamage(
 			priority: lastDex.priority || 0,
 			target: lastDex.target || 'normal',
 			flags: lastDex.flags || {},
+			status: lastDex.status,
+			boosts: lastDex.boosts,
+			recoil: lastDex.recoil,
 			secondaryChance: lastDex.secondary?.chance || 0,
 			disabled: false,
 			isZMove: false,

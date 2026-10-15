@@ -8,6 +8,8 @@
  * @license MIT
  */
 
+import type { Move } from '../../../../sim/dex-moves';
+
 // =============================================================================
 // AI Configuration
 // =============================================================================
@@ -42,6 +44,15 @@ export const DEFAULT_AI_CONFIG: CFRUAIConfig = {
 // =============================================================================
 // Battle State
 // =============================================================================
+
+/** Public moves and fallible preset candidates; candidates do not fill unknown slots. */
+export interface OpponentMoveKnowledge {
+	revealedMoves: string[];
+	presetCandidates: string[];
+	remainingSlots: number;
+	/** Slot alternatives from a detailed set, when available. */
+	slots?: string[][];
+}
 
 /** Simplified Pokemon data for AI evaluation */
 export interface AIPokemon {
@@ -84,9 +95,20 @@ export interface AIPokemon {
 	 * false = item unknown or item is known to exist
 	 */
 	itemLost: boolean;
+	/** True when the held item comes from observation rather than a preset. */
+	itemKnown?: boolean;
+	/** Native public evidence, separate from temporary ability/item changes and inferred presets. */
+	observedAbility?: string;
+	originalItem?: string;
+	abilityChanged?: boolean;
+	itemChanged?: boolean;
+	/** Last move is cleared on entry, but a failed action still consumes Fake Out's first turn. */
+	activeMoveActions?: number;
 
 	/** Known moves (only revealed moves for opponent) */
 	moves: string[];
+	/** Opponent inference only; never written into tracker observations. */
+	moveKnowledge?: OpponentMoveKnowledge;
 
 	/**
 	 * Last move used (for Encore/Disable evaluation)
@@ -228,6 +250,8 @@ export interface BattleState {
 
 	/** Opponent's side */
 	opponent: {
+		/** Public team size minus observed fainted members. */
+		remaining?: number;
 		/** Active Pokemon */
 		active: AIPokemon[];
 		/** Reserve Pokemon (only team preview info if not useFullInfo) */
@@ -282,7 +306,12 @@ export interface AIMove {
 	target: string;
 
 	/** Move flags from Dex */
-	flags: { [k: string]: number };
+	flags: Move['flags'];
+
+	/** Direct status/stat effects and recoil from the move's Dex entry. */
+	status?: Move['status'];
+	boosts?: Move['boosts'];
+	recoil?: Move['recoil'];
 
 	/** Secondary effect chance (0-100) */
 	secondaryChance: number;
@@ -297,7 +326,7 @@ export interface AIMove {
 	isMaxMove: boolean;
 
 	/** Multi-hit move info: number for fixed hits, [min, max] for range, null for single hit */
-	multihit: number | [number, number] | null;
+	multihit: NonNullable<Move['multihit']> | null;
 }
 
 // =============================================================================

@@ -8,7 +8,8 @@ const porygon = { species: 'Porygon-Z', ability: 'Adaptability', item: 'Choice S
 const partner = { species: 'Blissey', ability: 'Natural Cure', moves: ['icebeam'] };
 const lanturn = { species: 'Lanturn', ability: 'Volt Absorb', moves: ['splash'] };
 // Electric immunity without preset attacks keeps these cases focused on switch targeting.
-const flygon = { species: 'Flygon', ability: 'Levitate', moves: ['splash'] };
+const vibrava = { species: 'Vibrava', ability: 'Levitate', item: 'Eviolite', nature: 'Calm',
+	evs: { hp: 252, spd: 252 }, moves: ['splash'] };
 const venusaur = { species: 'Venusaur', ability: 'Overgrow', moves: ['energyball'] };
 
 /** Feed the production NormalAI only protocol and requests, then validate its choice in the simulator. */
@@ -51,7 +52,7 @@ describe('NormalAI doubles switching', () => {
 		it(`should switch active slot ${poryIndex + 1} to a reserve when both targets are immune`, () => {
 			const team = poryIndex ? [partner, porygon, venusaur] : [porygon, partner, venusaur];
 			const opening = poryIndex ? 'move 1 2, move 1 1' : 'move 1 1, move 1 2';
-			scenario([lanturn, flygon], team, 'move 1, move 1', opening, ({ actions, battle }) => {
+			scenario([lanturn, vibrava], team, 'move 1, move 1', opening, ({ actions, battle }) => {
 				assert.equal(actions[poryIndex], 'switch 3');
 				assert(actions[1 - poryIndex].startsWith('move '));
 				assert(battle.choose('p1', 'move 1, move 1'), battle.p1.choice.error);
@@ -76,7 +77,7 @@ describe('NormalAI doubles switching', () => {
 	for (const reserves of [[], [venusaur], [venusaur, { species: 'Scizor', ability: 'Technician', moves: ['bulletpunch'] }]]) {
 		it(`should allocate ${reserves.length} reserves without duplicate or active switch targets`, () => {
 			const raichu = { species: 'Raichu', ability: 'Static', item: 'Choice Scarf', moves: ['thunderbolt'] };
-			scenario([lanturn, flygon], [porygon, raichu, ...reserves], 'move 1, move 1', 'move 1 1, move 1 1', ({ actions }) => {
+			scenario([lanturn, vibrava], [porygon, raichu, ...reserves], 'move 1, move 1', 'move 1 1, move 1 1', ({ actions }) => {
 				assert.equal(actions.filter(action => action.startsWith('switch ')).length, reserves.length);
 			});
 		});
@@ -84,7 +85,7 @@ describe('NormalAI doubles switching', () => {
 
 	it('should keep a trapped Pokemon in even with a healthy reserve', () => {
 		const trappingLanturn = { ...lanturn, moves: ['meanlook'] };
-		scenario([trappingLanturn, flygon], [porygon, partner, venusaur], 'move 1 1, move 1', 'move 1 1, move 1 2', ({ actions, request }) => {
+		scenario([trappingLanturn, vibrava], [porygon, partner, venusaur], 'move 1 1, move 1', 'move 1 1, move 1 2', ({ actions, request }) => {
 			assert.equal(request.active[0].trapped, true);
 			assert(actions[0].startsWith('move '));
 		});
@@ -101,7 +102,7 @@ describe('NormalAI doubles switching', () => {
 
 	it('should choose only a reserve during a forced replacement and leave the partner in place', () => {
 		const sacrificingPartner = { ...partner, moves: ['healingwish'] };
-		scenario([lanturn, flygon], [sacrificingPartner, porygon, venusaur], 'move 1, move 1', 'move 1, move 1 1', ({ actions, battle, request, ai }) => {
+		scenario([lanturn, vibrava], [sacrificingPartner, porygon, venusaur], 'move 1, move 1', 'move 1, move 1 1', ({ actions, battle, request, ai }) => {
 			assert.deepEqual(request.forceSwitch, [true, false]);
 			assert.deepEqual(ai.battleState.opponent.active.map(p => p.slot), [1, 2]);
 			assert.deepEqual(actions, ['switch 3', 'pass']);
@@ -113,7 +114,7 @@ describe('NormalAI doubles switching', () => {
 	it('should keep slot identities after the first Pokemon on each side faints', () => {
 		const sacrificingLanturn = { ...lanturn, moves: ['memento'] };
 		const sacrificingPartner = { ...partner, moves: ['memento'] };
-		scenario([sacrificingLanturn, flygon], [sacrificingPartner, porygon], 'move 1 2, move 1', 'move 1 2, move 1 1', ({ actions }) => {
+		scenario([sacrificingLanturn, vibrava], [sacrificingPartner, porygon], 'move 1 2, move 1', 'move 1 2, move 1 1', ({ actions }) => {
 			assert.deepEqual(actions, ['pass', 'move 1 2']);
 		});
 	});

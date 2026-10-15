@@ -518,7 +518,7 @@ export class NormalAI extends NPCBattleAI {
 		const state = this.battleState!;
 		let threat = 0;
 		for (const opponent of opponents) {
-			for (const moveId of getOpponentThreatMoves(opponent.species, opponent.moves)) {
+			for (const moveId of getOpponentThreatMoves(opponent.species, opponent.moves, this.cfruConfig.formatId)) {
 				const move = buildAIMove({ id: moveId }, 1);
 				if (move.category === 'Status') continue;
 				const numAliveTargets = state.self.active.filter(p => !p.fainted).length +

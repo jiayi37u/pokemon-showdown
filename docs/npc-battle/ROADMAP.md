@@ -8,17 +8,17 @@
 | M2 | v1.1 | 负面评分规则 | ai_negatives.c | ✅ 完成 |
 | M3 | v1.1 | 正面评分规则 | ai_positives.c | ✅ 完成 |
 | M4 | v1.1 | NormalAI 整合 | - | ✅ 完成 |
-| M-Multi | v1.2 | 多人组队对战 NPC | - | 🚧 规划中 |
-| M5 | v1.3 | 切换决策系统 | ai_switching.c | ⏳ 待开始 |
-| M6 | v1.3 | 战斗风格识别 | ai_advanced.c | ⏳ 待开始 |
-| M7 | v1.3 | 招式预测系统 | ai_advanced.c | ⏳ 待开始 |
-| M8 | v1.3 | HardAI 整合 | - | ⏳ 待开始 |
+| M-Multi | v1.2 | 多人组队对战 NPC | - | ✅ 可用 |
+| M5 | v1.3 | 切换决策系统 | ai_switching.c | ⚠️ Hard 适配可用，继续完善 |
+| M6 | v1.3 | 战斗风格识别 | ai_advanced.c | ⚠️ Hard 适配可用，继续完善 |
+| M7 | v1.3 | 招式预测系统 | ai_master.c / ai_advanced.c | ⚠️ Hard 适配可用，继续完善 |
+| M8 | v1.3 | HardAI 整合 | - | ⚠️ Hard 适配可用，继续完善 |
 | M9 | v1.4 | 双打协作逻辑 | ai_partner.c | ⏳ 待开始 |
 | M10 | v1.4 | ExpertAI 整合 | - | ⏳ 待开始 |
 
 ## 当前进度
 
-**进行中**: v1.2 多人组队对战 NPC 需求设计
+**进行中**: Hard 的 CFRU 机制适配与行为验证。Normal 的策略固定，保留公共正确性修复。实现范围和未迁移部分见 [Hard 逻辑](../ai-logic/HardAI/logic.md)。
 
 **已完成**:
 - 评分引擎框架 (types.ts, scoring/)
@@ -34,7 +34,7 @@
 
 ## 版本规划
 
-### v1.2 - 多人组队对战 NPC (规划中)
+### v1.2 - 多人组队对战 NPC (可用)
 
 **M-Multi: 多人组队对战 NPC**
 
@@ -61,7 +61,7 @@
 
 详见 [v1.2 版本文档](./versions/v1.2/README.md)。
 
-### v1.3 - HardAI (计划中)
+### v1.3 - HardAI (迁移进行中)
 
 **M5: 切换决策系统**
 - 切换条件检查 (灭亡之歌、神奇守护、特性吸收等)
@@ -148,9 +148,9 @@
 | ai_negatives.c | M2 | scoring/negatives.ts | ✅ 核心完成 |
 | ai_positives.c | M3 | scoring/positives.ts | ✅ 核心完成 |
 | - | M4 | NormalAI 整合 | ✅ 核心完成 |
-| ai_switching.c | M5 | - | ⏳ 待开始 |
-| ai_advanced.c | M6-M7 | - | ⏳ 待开始 |
-| - | M8 | HardAI 整合 | ⏳ 待开始 |
+| ai_switching.c | M5 | - | ⚠️ Hard 适配可用，继续完善 |
+| ai_master.c / ai_advanced.c | M6-M7 | hard/opponent-model.ts | ⚠️ 启发式适配 |
+| - | M8 | HardAI 整合 | ⚠️ Hard 适配可用，继续完善 |
 | ai_partner.c | M9 | - | ⏳ 待开始 |
 | - | M10 | ExpertAI 整合 | ⏳ 待开始 |
 
@@ -158,4 +158,4 @@
 
 ---
 
-*最后更新: 2026-01-24 (v1.2 规划 - 多人组队对战 NPC)*
+*最后更新: 2026-10-15 (Hard 适配与 Normal 策略固定)*

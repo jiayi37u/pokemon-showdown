@@ -7,13 +7,14 @@ const { buildAIMove } = require('../../../dist/server/npc/ai/cfru/state-builder'
 
 const lanturn = { species: 'Lanturn', ability: 'Volt Absorb', moves: ['splash'] };
 // Electric immunity without preset attacks keeps these cases focused on switch targeting.
-const flygon = { species: 'Flygon', ability: 'Levitate', moves: ['splash'] };
+const vibrava = { species: 'Vibrava', ability: 'Levitate', item: 'Eviolite', nature: 'Calm',
+	evs: { hp: 252, spd: 252 }, moves: ['splash'] };
 const porygon = { species: 'Porygon-Z', ability: 'Adaptability', item: 'Choice Scarf', moves: ['icebeam', 'thunderbolt'] };
 const partner = { species: 'Blissey', ability: 'Natural Cure', moves: ['icebeam'] };
 const venusaur = { species: 'Venusaur', ability: 'Overgrow', moves: ['energyball'] };
 const scizor = { species: 'Scizor', ability: 'Technician', moves: ['bulletpunch'] };
 
-function createMulti(teams, preview = false) {
+function createMulti(teams, preview = false, difficulty = 'smart') {
 	const battle = new Battle({
 		format: { ...Dex.formats.get('gen9customgame'), gameType: 'multi', playerCount: 4 }, seed: [1, 2, 3, 4],
 		p1: { name: 'Player1', team: teams[0] }, p2: { name: 'NPC1', team: teams[1] },
@@ -38,7 +39,7 @@ function createMulti(teams, preview = false) {
 			},
 		},
 	};
-	const manager = new NPCMultiManager(room);
+	const manager = new NPCMultiManager(room, { difficulty, seed: [1, 2, 3, 4] });
 	Object.defineProperty(room.stream, 'battle', { get() { throw new Error('AI must not read the simulator Battle'); } });
 	for (const ai of Object.values(manager.controllers || {})) ai.prng = new PRNG([1, 2, 3, 4]);
 	let cursor = 0;
@@ -79,7 +80,7 @@ afterEach(() => { game?.destroy(); game = undefined; });
 
 describe('Production NPCMultiManager decisions', () => {
 	it('should handle team preview before both NPCs start choosing moves', () => {
-		game = createMulti([[lanturn], [partner, venusaur], [flygon], [partner, scizor]], true);
+		game = createMulti([[lanturn], [partner, venusaur], [vibrava], [partner, scizor]], true);
 		assert.deepEqual(game.decide(), [{ side: 'p2', choice: 'default' }, { side: 'p4', choice: 'default' }]);
 		game.play(['default', '', 'default', '']);
 		game.decide();
@@ -88,7 +89,7 @@ describe('Production NPCMultiManager decisions', () => {
 	});
 
 	it('should use the simulator-provided Struggle when PP is exhausted', () => {
-		game = createMulti([[lanturn], [partner], [flygon], [partner]]);
+		game = createMulti([[lanturn], [partner], [vibrava], [partner]]);
 		for (const move of game.battle.p2.active[0].moveSlots) move.pp = 0;
 		game.battle.makeRequest('move');
 		assert.equal(game.battle.p2.activeRequest.active[0].moves[0].id, 'struggle');
@@ -100,21 +101,21 @@ describe('Production NPCMultiManager decisions', () => {
 		it(`should switch threatened ${side} into its own safe reserve after Flamethrower is revealed`, () => {
 			const charizard = { species: 'Charizard', ability: 'Blaze', moves: ['flamethrower'] };
 			const protectedScizor = { species: 'Scizor', ability: 'Technician', moves: ['protect', 'rockslide'] };
-			const blissey = { species: 'Blissey', ability: 'Natural Cure', moves: ['seismictoss'] };
+			const slowbro = { species: 'Slowbro', ability: 'Regenerator', nature: 'Bold', evs: { hp: 252, def: 252 }, moves: ['surf'] };
 			const magikarp = { species: 'Magikarp', ability: 'Swift Swim', moves: ['splash'] };
 			game = createMulti([
-				[charizard], side === 'p2' ? [protectedScizor, blissey] : [magikarp, scizor],
-				[magikarp], side === 'p4' ? [protectedScizor, blissey] : [magikarp, scizor],
+				[charizard], side === 'p2' ? [protectedScizor, slowbro] : [magikarp, scizor],
+				[magikarp], side === 'p4' ? [protectedScizor, slowbro] : [magikarp, scizor],
 			]);
 			game.play([`move 1 ${side === 'p2' ? 1 : 2}`, 'move 1', 'move 1', 'move 1']);
 			game.decide();
 			assert.equal(game.choices.find(c => c.side === side).choice, 'switch 2');
 			game.play([`move 1 ${side === 'p2' ? 1 : 2}`, '', 'move 1', '']);
-			assert.equal(game.battle[side].active[0].species.id, 'blissey');
+			assert.equal(game.battle[side].active[0].species.id, 'slowbro');
 		});
 
 		it(`should switch ${side} out of a revealed immunity using only its own reserve`, () => {
-			game = createMulti([[lanturn], side === 'p2' ? [porygon, venusaur] : [partner, venusaur], [flygon], side === 'p4' ? [porygon, scizor] : [partner, scizor]]);
+			game = createMulti([[lanturn], side === 'p2' ? [porygon, venusaur] : [partner, venusaur], [vibrava], side === 'p4' ? [porygon, scizor] : [partner, scizor]]);
 			game.play(['move 1', side === 'p2' ? 'move 2 1' : 'move 1 2', 'move 1', side === 'p4' ? 'move 2 1' : 'move 1 2']);
 			game.decide();
 			assert.equal(game.choices.find(c => c.side === side).choice, 'switch 2');
@@ -134,7 +135,7 @@ describe('Production NPCMultiManager decisions', () => {
 		}
 
 		it(`should keep ${side} in when trapped even with a healthy reserve`, () => {
-			game = createMulti([[{ ...lanturn, moves: ['meanlook'] }], side === 'p2' ? [porygon, venusaur] : [partner], [flygon], side === 'p4' ? [porygon, scizor] : [partner]]);
+			game = createMulti([[{ ...lanturn, moves: ['meanlook'] }], side === 'p2' ? [porygon, venusaur] : [partner], [vibrava], side === 'p4' ? [porygon, scizor] : [partner]]);
 			game.play([`move 1 ${side === 'p2' ? 1 : 2}`, side === 'p2' ? 'move 2 1' : 'move 1 2', 'move 1', side === 'p4' ? 'move 2 1' : 'move 1 2']);
 			assert.equal(game.battle[side].activeRequest.active[0].trapped, true);
 			game.decide();
@@ -143,20 +144,20 @@ describe('Production NPCMultiManager decisions', () => {
 
 		it(`should target the other NPC with Helping Hand from ${side}`, () => {
 			const support = { species: 'Blissey', ability: 'Natural Cure', moves: ['helpinghand'] };
-			game = createMulti([[lanturn], side === 'p2' ? [support] : [partner], [flygon], side === 'p4' ? [support] : [partner]]);
+			game = createMulti([[lanturn], side === 'p2' ? [support] : [partner], [vibrava], side === 'p4' ? [support] : [partner]]);
 			game.decide();
 			assert.equal(game.choices.find(c => c.side === side).choice, `move 1 ${side === 'p2' ? -2 : -1}`);
 		});
 	}
 
 	it('should allow both NPCs to use their own reserve slot 2', () => {
-		game = createMulti([[lanturn], [porygon, venusaur], [flygon], [porygon, scizor]]);
+		game = createMulti([[lanturn], [porygon, venusaur], [vibrava], [porygon, scizor]]);
 		game.play(['move 1', 'move 2 1', 'move 1', 'move 2 1']);
 		assert.deepEqual(game.decide(), [{ side: 'p2', choice: 'switch 2' }, { side: 'p4', choice: 'switch 2' }]);
 	});
 
 	it('should not use a partner reserve when its own team has none', () => {
-		game = createMulti([[lanturn], [porygon], [flygon], [partner, venusaur]]);
+		game = createMulti([[lanturn], [porygon], [vibrava], [partner, venusaur]]);
 		game.play(['move 1', 'move 2 1', 'move 1', 'move 1 2']);
 		game.decide();
 		assert(game.choices.find(c => c.side === 'p2').choice.startsWith('move 2 '));
@@ -164,7 +165,7 @@ describe('Production NPCMultiManager decisions', () => {
 
 	it('should exclude fainted reserves while preserving the original team slot', () => {
 		const sacrifice = { ...partner, moves: ['memento'] };
-		game = createMulti([[lanturn], [sacrifice, porygon, venusaur], [flygon], [partner]]);
+		game = createMulti([[lanturn], [sacrifice, porygon, venusaur], [vibrava], [partner]]);
 		game.play(['move 1', 'move 1 2', 'move 1', 'move 1 2']);
 		game.play(['', 'switch 2', '', '']);
 		game.play(['move 1', 'move 2 1', 'move 1', 'move 1 2']);
@@ -173,7 +174,7 @@ describe('Production NPCMultiManager decisions', () => {
 	});
 
 	it('should wait for a delayed partner request and never repeat submitted choices', () => {
-		game = createMulti([[lanturn], [partner], [flygon], [partner]]);
+		game = createMulti([[lanturn], [partner], [vibrava], [partner]]);
 		game.sync(['p2']);
 		game.poll();
 		assert.equal(game.choices.length, 0);
@@ -192,7 +193,7 @@ describe('Production NPCMultiManager decisions', () => {
 	});
 
 	it('should handle a forced switch while the living partner waits', () => {
-		game = createMulti([[lanturn], [{ ...partner, moves: ['healingwish'] }, venusaur], [flygon], [partner, scizor]]);
+		game = createMulti([[lanturn], [{ ...partner, moves: ['healingwish'] }, venusaur], [vibrava], [partner, scizor]]);
 		game.play(['move 1', 'move 1', 'move 1', 'move 1 2']);
 		assert(game.battle.p2.activeRequest.forceSwitch);
 		assert.equal(game.battle.p4.activeRequest.wait, true);
@@ -211,7 +212,7 @@ describe('Production NPCMultiManager decisions', () => {
 
 	it('should replace both fainted NPCs independently', () => {
 		const sacrifice = { ...partner, moves: ['healingwish'] };
-		game = createMulti([[lanturn], [sacrifice, venusaur], [flygon], [sacrifice, scizor]]);
+		game = createMulti([[lanturn], [sacrifice, venusaur], [vibrava], [sacrifice, scizor]]);
 		game.play(['move 1', 'move 1', 'move 1', 'move 1']);
 		assert.deepEqual(game.decide(), [{ side: 'p2', choice: 'switch 2' }, { side: 'p4', choice: 'switch 2' }]);
 		assert.equal(game.battle.p2.active[0].species.id, 'venusaur');
@@ -219,7 +220,7 @@ describe('Production NPCMultiManager decisions', () => {
 	});
 
 	it('should retain p4 and p3 field positions after p2 and p1 faint', () => {
-		game = createMulti([[{ ...lanturn, moves: ['memento'] }], [{ ...partner, moves: ['memento'] }], [flygon], [partner]]);
+		game = createMulti([[{ ...lanturn, moves: ['memento'] }], [{ ...partner, moves: ['memento'] }], [vibrava], [partner]]);
 		game.play(['move 1 2', 'move 1 2', 'move 1', 'move 1 2']);
 		game.decide();
 		assert.equal(game.choices.find(c => c.side === 'p4').choice, 'move 1 2');
@@ -227,7 +228,7 @@ describe('Production NPCMultiManager decisions', () => {
 	});
 
 	it('should preserve current ability, level, last move, boosts and ability stat modifiers', () => {
-		game = createMulti([[lanturn], [{ species: 'Porygon2', ability: 'Trace', level: 50, moves: ['protect'] }], [flygon], [{ species: 'Iron Valiant', ability: 'Quark Drive', item: 'Booster Energy', level: 50, moves: ['swordsdance'] }]]);
+		game = createMulti([[lanturn], [{ species: 'Porygon2', ability: 'Trace', level: 50, moves: ['protect'] }], [vibrava], [{ species: 'Iron Valiant', ability: 'Quark Drive', item: 'Booster Energy', level: 50, moves: ['swordsdance'] }]]);
 		game.play(['move 1', 'move 1', 'move 1', 'move 1']);
 		game.decide();
 		const state = game.manager.controllers.p2.battleState;
@@ -261,7 +262,7 @@ describe('Production NPCMultiManager decisions', () => {
 
 	it('should complete a Multi battle through the production request coordinator', () => {
 		const magikarp = { species: 'Magikarp', ability: 'Swift Swim', moves: ['splash'] };
-		game = createMulti([[lanturn, magikarp], [porygon, venusaur], [flygon, magikarp], [partner, scizor]]);
+		game = createMulti([[lanturn, magikarp], [porygon, venusaur], [vibrava, magikarp], [partner, scizor]]);
 		game.play(['move 1', 'move 2 1', 'move 1', 'move 1 2']);
 		for (let step = 0; step < 60 && !game.battle.ended; step++) {
 			game.decide();
@@ -272,5 +273,24 @@ describe('Production NPCMultiManager decisions', () => {
 			}
 		}
 		assert(game.battle.ended, `Battle stalled on turn ${game.battle.turn}`);
+	});
+});
+
+describe('Hard production Multi integration', () => {
+	it('creates two Hard controllers and submits legal target choices through the shared coordinator', () => {
+		game = createMulti([[lanturn], [porygon, venusaur], [vibrava], [partner, scizor]], false, 'hard');
+		assert(Object.values(game.manager.controllers).every(ai => ai.difficulty === 'hard'));
+		game.decide();
+		assert.equal(game.choices.length, 2);
+		assert(game.choices.every(choice => choice.choice.startsWith('move ') || choice.choice.startsWith('switch ')));
+		for (let turn = 0; turn < 10 && !game.battle.ended; turn++) {
+			for (const side of ['p1', 'p3']) {
+				if (game.battle[side].activeRequest && !game.battle[side].activeRequest.wait) {
+					assert(game.battle.choose(side, 'default'));
+				}
+			}
+			if (!game.battle.ended) game.decide();
+		}
+		assert(game.battle.turn > 2 || game.battle.ended);
 	});
 });

@@ -65,6 +65,7 @@ export function makeAIPokemonSkeleton(spec: {
 	types: string[];
 	ability: string;
 	item: string;
+	itemKnown?: boolean,
 	moves: string[];
 	baseStats: AIPokemon['baseStats'];
 	boosts?: AIPokemon['boosts'];
@@ -86,6 +87,7 @@ export function makeAIPokemonSkeleton(spec: {
 		types: spec.types,
 		ability: spec.ability,
 		item: spec.item,
+		itemKnown: spec.itemKnown,
 		itemLost: spec.itemLost ?? false,
 		moves: spec.moves,
 		lastMove: spec.lastMove ?? '',

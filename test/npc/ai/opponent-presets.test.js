@@ -66,10 +66,10 @@ function runOpponentPresetTests() {
 		assertEqual(stats.spe, 324, 'Hydreigon Timid 252 Spe');
 	});
 
-	test('Tyranitar Adamant 252 HP / 252 Atk → hp 404, atk 403', () => {
+	test('Tyranitar Adamant 40 HP / 252 Atk → hp 351, atk 403', () => {
 		const bs = Dex.species.get('Tyranitar').baseStats;
 		const stats = computeStatsFromPreset(bs, 100, getOpponentPreset('Tyranitar'));
-		assertEqual(stats.hp, 404, 'TTar HP');
+		assertEqual(stats.hp, 351, 'TTar HP');
 		assertEqual(stats.atk, 403, 'TTar Atk');
 	});
 

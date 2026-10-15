@@ -9,6 +9,7 @@
 
 import { NPC, NPC_RANDOM_MULTI_FORMATS, NPCTemplate, MultiTeam } from './manager';
 import { BasicAI } from './ai/basic';
+import { HardAI } from './ai/hard';
 import { NormalAI, NormalAIOptions } from './ai/normal';
 import { NPCMultiManager, NPCMultiManagerOptions } from './ai/multi-manager';
 import { LogLevel } from './ai/cfru/logger';
@@ -110,10 +111,12 @@ export async function createNPCBattle(options: NPCBattleCreateOptions): Promise<
 	// Validate user team (skip for random battles)
 	if (!format.includes('randombattle')) {
 		const validator = TeamValidator.get(format);
-		const problems = validator.validateTeam(Teams.unpack(userTeam));
+		const validatedTeam = Teams.unpack(userTeam);
+		const problems = validator.validateTeam(validatedTeam);
 		if (problems) {
 			return { success: false, error: `Team validation failed: ${problems.join(', ')}` };
 		}
+		userTeam = Teams.pack(validatedTeam);
 	}
 
 	// Pack NPC team
@@ -264,9 +267,13 @@ function startNPCAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: strin
 
 	// Create AI instance based on difficulty (use override if provided)
 	const difficulty = overrideDifficulty || npc.difficulty || 'basic';
-	let ai: BasicAI | NormalAI;
+	let ai: BasicAI | NormalAI | HardAI;
 
 	switch (difficulty) {
+	case 'hard':
+		ai = new HardAI(battle.stream, { battleId: room.roomid, logging: { console: LogLevel.VERBOSE } });
+		ai.setBattle(battle);
+		break;
 	case 'smart':
 	case 'normal': {
 		// Use NormalAI with CFRU scoring system
@@ -513,8 +520,8 @@ export async function createNPCMultiBattle(options: NPCMultiBattleCreateOptions)
 		return { success: false, error: `${npc.name} does not support format: ${format}` };
 	}
 
-	if (isRandom && difficulty && difficulty !== 'smart') {
-		return { success: false, error: 'Random Multi battles use Smart AI' };
+	if (isRandom && difficulty && !['smart', 'hard'].includes(difficulty)) {
+		return { success: false, error: 'Random Multi battles support Smart or Hard AI' };
 	}
 
 	// Generate all four random teams only after the invitation has been accepted.
@@ -541,21 +548,25 @@ export async function createNPCMultiBattle(options: NPCMultiBattleCreateOptions)
 			return { success: false, error: 'No team provided for p1' };
 		}
 
-		const partnerTeam = isRandom ? Teams.pack(Teams.generate(format)) : teammateTeam!;
+		let partnerTeam = isRandom ? Teams.pack(Teams.generate(format)) : teammateTeam!;
 
 		// Fixed teams still use the format's normal validation.
 		if (!isRandom) {
 			const validator = TeamValidator.get(format);
-			const p1Problems = validator.validateTeam(Teams.unpack(userTeam));
+			const p1Team = Teams.unpack(userTeam);
+			const p1Problems = validator.validateTeam(p1Team);
 			if (p1Problems) {
 				return { success: false, error: `P1 team validation failed: ${p1Problems.join(', ')}` };
 			}
 
 			// Validate teammate team (p3)
-			const p3Problems = validator.validateTeam(Teams.unpack(partnerTeam));
+			const p3Team = Teams.unpack(partnerTeam);
+			const p3Problems = validator.validateTeam(p3Team);
 			if (p3Problems) {
 				return { success: false, error: `P3 team validation failed: ${p3Problems.join(', ')}` };
 			}
+			userTeam = Teams.pack(p1Team);
+			partnerTeam = Teams.pack(p3Team);
 		}
 
 		// Pack NPC teams
@@ -572,7 +583,7 @@ export async function createNPCMultiBattle(options: NPCMultiBattleCreateOptions)
 			partnerTeam,
 			npcP2TeamPacked,
 			npcP4TeamPacked,
-			isRandom ? 'smart' : difficulty
+			isRandom ? (difficulty || 'smart') : difficulty
 		);
 		if (!room) {
 			return { success: false, error: 'Failed to create multi battle room' };

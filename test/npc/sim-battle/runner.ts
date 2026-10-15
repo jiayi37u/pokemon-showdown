@@ -8,7 +8,7 @@
  * - 双打: p1 vs p2，各 2 只 active
  * - Multi: (p1 + p3) vs (p2 + p4)，每人一只 active
  *
- * 协议日志 → stdout，决策日志 → stderr。固定 seed 可复现一局。
+ * 协议与 NPC 控制台日志 → stdout，玩家策略日志与错误 → stderr。固定 seed 可复现一局。
  *
  * 用法示例：
  *   # 单打，max-damage p1 对 Normal NPC
@@ -19,8 +19,8 @@
  *
  *   # 双打，mirror-npc 对 Normal NPC
  *   node dist/test/npc/sim-battle/runner.js \
- *     --format gen9nationaldexdoublesou --game-type doubles \
- *     --player sample_team_1_gen7ou.txt --npc data/npc/teams/maxie-gen9nationaldexdoublesou.json \
+ *     --format gen9nationaldexdoubles --game-type doubles \
+ *     --player sample_team_1_gen7ou.txt --npc sample_team_2_gen7ou.txt \
  *     --p1-strategy mirror-npc
  *
  *   # Multi: p1 + p3 两位玩家策略对打 p2 + p4 两位 NPC
@@ -35,10 +35,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { BattleStream, getPlayerStreams, Teams } from '../../../sim';
+import { BattleStream, getPlayerStreams, Teams, Dex, TeamValidator } from '../../../sim';
 import type { PokemonSet } from '../../../sim/teams';
+import type { PRNGSeed } from '../../../sim/prng';
+import type { ObjectReadWriteStream } from '../../../lib/streams';
 
 import { BasicAI } from '../../../server/npc/ai/basic';
+import { HardAI } from '../../../server/npc/ai/hard';
+import { NPCMultiManager } from '../../../server/npc/ai/multi-manager';
 import { NormalAI, NormalAIOptions } from '../../../server/npc/ai/normal';
 import { LogLevel } from '../../../server/npc/ai/cfru/logger';
 import { createBattleTracker } from '../../../server/npc/ai/cfru/util/battle-tracker';
@@ -60,13 +64,15 @@ interface CliArgs {
 	scriptP1?: string;
 	scriptP3?: string;
 
-	npcDifficulty: 'basic' | 'normal';
-	npc2Difficulty: 'basic' | 'normal';
+	npcDifficulty: 'basic' | 'normal' | 'hard';
+	p1Difficulty: 'basic' | 'normal' | 'hard';
+	npc2Difficulty: 'basic' | 'normal' | 'hard';
 
-	seed?: [number, number, number, number];
+	seed?: PRNGSeed;
 	logLevel: 'NONE' | 'DECISION' | 'SCORING' | 'VERBOSE';
 	maxTurns: number;
 	debugAI: boolean;
+	allowIllegalTeams: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -94,12 +100,17 @@ function parseArgs(argv: string[]): CliArgs {
 	let seed: CliArgs['seed'];
 	if (args.seed) {
 		const parts = args.seed.split(',').map(s => Number(s.trim()));
-		if (parts.length !== 4 || parts.some(n => Number.isNaN(n))) {
+		if (parts.length !== 4 || parts.some(n => !Number.isInteger(n) || n < 0 || n > 65535)) {
 			throw new Error(`--seed expects "a,b,c,d"`);
 		}
-		seed = parts as [number, number, number, number];
+		seed = parts.join(',') as PRNGSeed;
 	}
 
+	for (const key of ['npc-difficulty', 'npc2-difficulty', 'p1-difficulty', 'difficulty']) {
+		if (args[key] && !['basic', 'normal', 'hard'].includes(args[key])) {
+			throw new Error(`--${key} must be basic | normal | hard`);
+		}
+	}
 	return {
 		format: args.format || 'gen9nationaldex',
 		gameType,
@@ -113,13 +124,15 @@ function parseArgs(argv: string[]): CliArgs {
 		scriptP1: args['script-p1'] || args.script,
 		scriptP3: args['script-p3'],
 
-		npcDifficulty: ((args['npc-difficulty'] || args.difficulty || 'normal')) as 'basic' | 'normal',
-		npc2Difficulty: ((args['npc2-difficulty'] || args['npc-difficulty'] || 'normal')) as 'basic' | 'normal',
+		p1Difficulty: ((args['p1-difficulty'] || args['npc-difficulty'] || args.difficulty || 'normal')) as 'basic' | 'normal' | 'hard',
+		npcDifficulty: ((args['npc-difficulty'] || args.difficulty || 'normal')) as 'basic' | 'normal' | 'hard',
+		npc2Difficulty: ((args['npc2-difficulty'] || args['npc-difficulty'] || args.difficulty || 'normal')) as 'basic' | 'normal' | 'hard',
 
 		seed,
 		logLevel: ((args['log-level'] || 'DECISION')) as CliArgs['logLevel'],
 		maxTurns: Number(args['max-turns']) || 200,
 		debugAI: args['debug-ai'] === 'true',
+		allowIllegalTeams: args['allow-illegal-teams'] === 'true',
 	};
 }
 
@@ -181,26 +194,27 @@ function loadScript(filePath?: string): ScriptEntry[] {
  */
 function createNPC(
 	side: 'p2' | 'p4',
-	stream: AnyObject,
-	difficulty: 'basic' | 'normal',
-	options: { formatId: string; logLevel: LogLevel; battleIdPrefix: string; isMulti: boolean }
-): BasicAI | NormalAI {
-	let ai: BasicAI | NormalAI;
+	stream: ObjectReadWriteStream<string>,
+	difficulty: 'basic' | 'normal' | 'hard',
+	options: { formatId: string; logLevel: LogLevel; battleIdPrefix: string; isMulti: boolean; seed?: PRNGSeed }
+): BasicAI | NormalAI | HardAI {
+	let ai: BasicAI | NormalAI | HardAI;
 	if (difficulty === 'basic') {
-		ai = new BasicAI(stream);
+		ai = new BasicAI(stream, { seed: options.seed });
 	} else {
 		const opts: NormalAIOptions = {
 			battleId: `${options.battleIdPrefix}-${side}`,
+			seed: options.seed,
 			logging: { console: options.logLevel },
 		};
-		ai = new NormalAI(stream, opts);
+		ai = difficulty === 'hard' ? new HardAI(stream, opts) : new NormalAI(stream, opts);
 	}
 	// NPC 自己的 side 是 side 本身；multi 下 tracker 把 'p2'+'p4' / 'p1'+'p3' 视作同队
 	// 这里 side 可能是 p2 或 p4：ourSide 应是 p2（team2 的根）
 	// 替换 tracker：使之认识 multi 两边
 	(ai as AnyObject).tracker = createBattleTracker('p2', options.isMulti);
 	ai.getTracker().attachToStream(stream);
-	if (ai instanceof NormalAI) {
+	if ((ai instanceof NormalAI || ai instanceof HardAI)) {
 		ai.setBattle({ stream, format: options.formatId } as AnyObject);
 	}
 	return ai;
@@ -208,6 +222,11 @@ function createNPC(
 
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv.slice(2));
+	const format = Dex.formats.get(args.format);
+	if (!format.exists || format.effectType !== 'Format') throw new Error(`Unknown battle format: ${args.format}`);
+	if (format.gameType !== args.gameType) {
+		throw new Error(`Format ${args.format} uses ${format.gameType}, not --game-type ${args.gameType}`);
+	}
 	const isMulti = args.gameType === 'multi';
 	const maxTeamSize = isMulti ? 3 : 6;
 
@@ -232,10 +251,18 @@ async function main(): Promise<void> {
 		}
 	}
 
-	const playerTeam = Teams.pack(limitTeamSize(rawPlayerTeam, maxTeamSize));
-	const npcTeam = Teams.pack(limitTeamSize(p2Team, maxTeamSize));
-	const player2Team = rawPlayer2Team ? Teams.pack(limitTeamSize(rawPlayer2Team, maxTeamSize)) : null;
-	const npc2Team = p4Team ? Teams.pack(limitTeamSize(p4Team, maxTeamSize)) : null;
+	const packTeam = (team: PokemonSet[], side: string) => {
+		const selected = limitTeamSize(team, maxTeamSize).map(set => ({ ...set, moves: [...set.moves] }));
+		if (!args.allowIllegalTeams) {
+			const problems = new TeamValidator(args.format).validateTeam(selected);
+			if (problems) throw new Error(`${side} team validation failed:\n${problems.join('\n')}`);
+		}
+		return Teams.pack(selected);
+	};
+	const playerTeam = packTeam(rawPlayerTeam, 'p1');
+	const npcTeam = packTeam(p2Team, 'p2');
+	const player2Team = rawPlayer2Team ? packTeam(rawPlayer2Team, 'p3') : null;
+	const npc2Team = p4Team ? packTeam(p4Team, 'p4') : null;
 
 	if (isMulti && (!player2Team || !npc2Team)) {
 		throw new Error('--game-type multi 需要 --player2 (p3 的队伍)');
@@ -256,7 +283,7 @@ async function main(): Promise<void> {
 		script: args.p1Strategy === 'scripted' ? loadScript(args.scriptP1) : undefined,
 		isMulti,
 		formatId: args.format,
-		mirrorDifficulty: args.npcDifficulty, // mirror 的 AI 等级跟随 npc 的难度
+		mirrorDifficulty: args.p1Difficulty,
 		mirrorOptions: args.p1Strategy === 'mirror-npc' ? {
 			battleId: `${battleIdPrefix}-p1`,
 			logging: { console: logLevel },
@@ -281,30 +308,55 @@ async function main(): Promise<void> {
 	}
 
 	// ---------- NPC AI ----------
-	const p2 = createNPC('p2', streams.p2, args.npcDifficulty, {
-		formatId: args.format, logLevel, battleIdPrefix, isMulti,
-	});
-	if (args.debugAI) {
-		const orig = (p2 as AnyObject).choose.bind(p2);
-		(p2 as AnyObject).choose = (c: string) => { console.error(`[p2 npc] → ${c}`); return orig(c); };
-	}
-
-	let p4: BasicAI | NormalAI | null = null;
-	if (isMulti) {
-		p4 = createNPC('p4', streams.p4, args.npc2Difficulty, {
-			formatId: args.format, logLevel, battleIdPrefix, isMulti,
+	let coordinator: NPCMultiManager | undefined;
+	const coordinated = isMulti && [args.npcDifficulty, args.npc2Difficulty].includes('hard');
+	const failPlayer = (label: string, error: unknown) => { console.error(`[${label} crashed]`, error); process.exit(1); };
+	if (coordinated) {
+		if ([args.npcDifficulty, args.npc2Difficulty].includes('basic')) {
+			throw new Error('Coordinated Hard Multi requires normal or hard for both NPCs');
+		}
+		// Exercise the production coordinator; individual p4 requests are not standalone doubles states.
+		const room = {
+			format: args.format, turn: 0, ended: false,
+			p2: { request: null as AnyObject | null }, p4: { request: null as AnyObject | null },
+			stream: { push(_chunk: string) {}, write: (line: string) => streams.omniscient.write(line) },
+		};
+		coordinator = new NPCMultiManager(room, {
+			difficulty: args.npcDifficulty, partnerDifficulty: args.npc2Difficulty,
+			seed: args.seed, battleId: battleIdPrefix, logging: { console: logLevel },
 		});
-		if (args.debugAI) {
-			const orig = (p4 as AnyObject).choose.bind(p4);
-			(p4 as AnyObject).choose = (c: string) => { console.error(`[p4 npc] → ${c}`); return orig(c); };
+		let rqid = 0;
+		const consume = async (side: 'p2' | 'p4') => {
+			for await (const chunk of streams[side]) {
+				// Public updates are duplicated between players. Parse them once to avoid double-counting boosts.
+				if (side === 'p2') room.stream.push(chunk);
+				for (const line of chunk.split('\n')) {
+					if (line.startsWith('|turn|')) room.turn = Number(line.slice(6));
+					if (line.startsWith('|error|')) throw new Error(line);
+					if (!line.startsWith('|request|')) continue;
+					const request = line.slice(9);
+					const data = JSON.parse(request);
+					room[side].request = { request, rqid: ++rqid, isWait: data.wait ? 'cantUndo' : false, choice: '' };
+				}
+			}
+		};
+		coordinator.start();
+		void consume('p2').catch(e => failPlayer('p2', e));
+		void consume('p4').catch(e => failPlayer('p4', e));
+	} else {
+		for (const side of (isMulti ? ['p2', 'p4'] : ['p2']) as ('p2' | 'p4')[]) {
+			const ai = createNPC(side, streams[side], side === 'p2' ? args.npcDifficulty : args.npc2Difficulty, {
+				formatId: args.format, logLevel, battleIdPrefix, isMulti, seed: args.seed,
+			});
+			if (args.debugAI) {
+				const choose = ai.choose.bind(ai);
+				ai.choose = choice => { console.error(`[${side} npc] → ${choice}`); choose(choice); };
+			}
+			void ai.start().catch(e => failPlayer(side, e));
 		}
 	}
-
-	// 启动所有玩家
-	void p1.start().catch(e => console.error('[p1 crashed]', e));
-	void p2.start().catch(e => console.error('[p2 crashed]', e));
-	if (p3) void p3.start().catch(e => console.error('[p3 crashed]', e));
-	if (p4) void p4.start().catch(e => console.error('[p4 crashed]', e));
+	void p1.start().catch(e => failPlayer('p1', e));
+	if (p3) void p3.start().catch(e => failPlayer('p3', e));
 
 	// ---------- 协议日志 ----------
 	let turn = 0;
@@ -327,6 +379,7 @@ async function main(): Promise<void> {
 	};
 
 	void dumpProtocol().then(() => {
+		coordinator?.stop();
 		if ((p1 as AnyObject).close) (p1 as AnyObject).close();
 		if (p3 && (p3 as AnyObject).close) (p3 as AnyObject).close();
 		process.exit(0);

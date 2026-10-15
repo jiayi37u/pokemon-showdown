@@ -96,60 +96,6 @@ function printSummary() {
 }
 
 /**
- * 创建模拟评分上下文的辅助函数
- * Helper to create a mock scoring context
- */
-function createMockContext(attackerBoosts = {}, hpPercent = 100, targetBoosts = {}, moveId = 'swordsdance') {
-	const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
-	return {
-		state: {
-			isDoubles: false,
-			field: { weather: '', terrain: '' },
-			opponent: { conditions: {} },
-		},
-		attacker: {
-			boosts: {
-				atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0,
-				...attackerBoosts,
-			},
-			hpPercent: hpPercent,
-			moves: ['swordsdance', 'earthquake', 'stoneedge', 'closecombat'],
-			ability: 'guts',
-			item: '',
-		},
-		target: {
-			types: ['Normal'],
-			ability: '',
-			boosts: {
-				atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0,
-				...targetBoosts,
-			},
-			hpPercent: 100,
-		},
-		move: {
-			id: moveId,
-			category: 'Status',
-			type: 'Normal',
-			flags: {},
-		},
-		config: DEFAULT_AI_CONFIG,
-		cache: createAICache(1),
-		score: 100,
-		adjustments: [],
-		damageResult: null,
-		flags: {
-			canKO: false,
-			can2HKO: false,
-			goesFirst: true,
-			isStrongestMove: false,
-			isImmune: false,
-			isSuperEffective: false,
-			hasNoEffect: false,
-		},
-	};
-}
-
-/**
  * 创建双打评分上下文
  * Create a doubles scoring context
  */
@@ -238,7 +184,6 @@ module.exports = {
 	getResults,
 	resetResults,
 	printSummary,
-	createMockContext,
 	createDoublesContext,
 	createMockPokemon,
 };

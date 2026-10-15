@@ -1295,27 +1295,8 @@ export const rewardEncore: PositiveScoringFunction = (ctx) => {
 
 	// CFRU line 961-964: Check if last move is Status OR doesn't affect us
 	// Calculate if move is immune against us
-	let isImmune = false;
-	if (lastMoveData.basePower > 0) {
-		const effectiveness1 = Dex.getEffectiveness(lastMoveData.type, ctx.attacker.types[0]);
-		const effectiveness2 = ctx.attacker.types[1]
-			? Dex.getEffectiveness(lastMoveData.type, ctx.attacker.types[1])
-			: 0;
-		// Check for type immunity (e.g., Ground vs Flying)
-		if (effectiveness1 === -Infinity || effectiveness2 === -Infinity) {
-			isImmune = true;
-		}
-		// Also check common type immunities
-		const moveType = toID(lastMoveData.type);
-		const attackerTypes = ctx.attacker.types.map(t => toID(t));
-		if (moveType === 'ground' && attackerTypes.includes('flying')) isImmune = true;
-		if (moveType === 'electric' && attackerTypes.includes('ground')) isImmune = true;
-		if ((moveType === 'normal' || moveType === 'fighting') && attackerTypes.includes('ghost')) isImmune = true;
-		if (moveType === 'ghost' && attackerTypes.includes('normal')) isImmune = true;
-		if (moveType === 'psychic' && attackerTypes.includes('dark')) isImmune = true;
-		if (moveType === 'dragon' && attackerTypes.includes('fairy')) isImmune = true;
-		if (moveType === 'poison' && attackerTypes.includes('steel')) isImmune = true;
-	}
+	const isImmune = lastMoveData.category !== 'Status' &&
+		!Dex.getImmunity(lastMoveData.type, ctx.attacker.types);
 
 	// If we're faster, we can encore before they can change moves
 	if (ctx.flags.goesFirst) {

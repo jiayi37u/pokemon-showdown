@@ -2,7 +2,11 @@
 
 直接在进程内跑一局 PS 对战，一方由"策略玩家"（max-damage / random / mirror-npc / scripted / interactive）控制，另一方由本仓库的 NPC AI 控制。目标是让 AI 的真实运行时轨迹可观察、可复现，不用启服务器 + 浏览器 + 复制聊天日志。
 
-支持 **singles / doubles / multi** 三种 game type。
+默认使用正式 `TeamValidator` 校验队伍，并保留 Mega 等战斗形态的规范化结果。`--allow-illegal-teams` 仅用于明确需要非法配置的机制测试。
+
+支持 **singles / doubles / multi** 三种 game type。`--format` 必须存在且与 `--game-type` 一致，否则报错。`--seed` 同时传入战斗与 AI 的随机选择。
+
+选择 Hard 使用 `--npc-difficulty hard`。Multi 中包含 Hard 时通过生产 `NPCMultiManager` 协调 p2/p4，另一位 NPC 可选 `normal` 或 `hard`；不支持与 `basic` 混用。Multi 玩家侧建议使用 `max-damage`、`random` 或 `scripted`，`mirror-npc` 尚未复用四人协调器。
 
 ---
 
@@ -13,7 +17,7 @@ npm run build
 
 # 单打：max-damage p1 对 Normal NPC
 node dist/test/npc/sim-battle/runner.js \
-  --format        gen9nationaldex \
+  --format        gen7ou \
   --game-type     singles \
   --player        test/npc/sim-battle/sample-teams/sample_team_1_gen7ou.txt \
   --npc           test/npc/sim-battle/sample-teams/sample_team_2_gen7ou.txt \
@@ -25,8 +29,8 @@ node dist/test/npc/sim-battle/runner.js \
   > battle.log 2> ai.log
 ```
 
-- `battle.log` = PS 全视角协议
-- `ai.log` = NormalAI 决策日志 + 玩家决策日志
+- `battle.log` = PS 全视角协议与 NPC 控制台决策日志（`--log-level NONE` 可关闭后者）
+- `ai.log` = 玩家策略日志与运行错误
 
 ---
 
@@ -36,7 +40,7 @@ node dist/test/npc/sim-battle/runner.js \
 |---|---|
 | `max-damage` | 按 BP × STAB × 平均属性相克挑最强招（忽略 Status 招式）；对手类型从协议 switch/drag 实时聚合 |
 | `random` | PS 原生 `RandomPlayerAI`，冒烟/批量跑 |
-| `mirror-npc` | 对面也用 NPC AI（跟随 `--npc-difficulty`），basic vs basic / normal vs normal，用来观察对称情况 |
+| `mirror-npc` | 对面也用 NPC AI（默认跟随 `--npc-difficulty`，可用 `--p1-difficulty` 单独指定），basic vs basic / normal vs normal / hard vs hard，用来观察对称情况 |
 | `scripted` | JSON 定义的 choice 序列，回归测试、复现 Bug |
 | `interactive` | 从 stdin 读 choice，现场手动调试 |
 
@@ -63,7 +67,7 @@ p1 玩家 vs p2 NPC。
 
 ### doubles
 ```
---format gen9nationaldexdoublesou --game-type doubles
+--format gen9nationaldexdoubles --game-type doubles
 --player team_a.txt --npc team_b.txt
 --p1-strategy max-damage
 ```
@@ -119,7 +123,7 @@ Multi 文件可以带 `slot: "p2" | "p4"` 字段，被自动分割。
 | `--p3-strategy` | p3 策略（Multi） | `max-damage` |
 | `--script-p1` / `--script` | scripted 策略的脚本路径 | — |
 | `--script-p3` | p3 scripted 脚本 | — |
-| `--npc-difficulty` | `basic` \| `normal` | `normal` |
+| `--npc-difficulty` | `basic` \| `normal` \| `hard` | `normal` |
 | `--npc2-difficulty` | p4 的难度（Multi） | 同 `--npc-difficulty` |
 | `--seed` | PRNG 种子 `a,b,c,d` | 随机 |
 | `--log-level` | `NONE` \| `DECISION` \| `SCORING` \| `VERBOSE` | `DECISION` |
@@ -150,5 +154,16 @@ Multi 文件可以带 `slot: "p2" | "p4"` 字段，被自动分割。
 
 - max-damage 策略只认 Dex basePower；对 BP=0 的变基招（Low Kick、Grass Knot、Hidden Power 之类）会落到 fallback，不是最佳对手选择
 - scripted 还不支持"看到协议子串 X 后才下一个 choice"的断言型等待
-- Multi 下如果给出 6 只 pokemon 的文件又没有 slot 字段，会被 team-validator 以 Max Team Size=3 拒掉
+- Multi 长队伍截取前 3 只；普通队伍文件必须分别提供 `--npc` 和 `--npc2`。默认执行所选赛制的队伍合法性验证
 - BasicAI 没有决策级日志，只能靠 `--debug-ai` 看 choose 原文
+
+## Hard / Normal 配对对照
+
+```bash
+node build
+node test/npc/sim-battle/compare.js 10 /tmp/npc-hard-comparison
+```
+
+对照使用本目录两套 gen7ou 队伍。每个种子运行四场，交换队伍和 Hard 所在位置；记录自然胜负、平局和回合上限。所有协议、决策与错误日志保存在输出目录，汇总为 `summary.json`。该结果用于定位行为问题和比较固定对局，不代表所有 OU 队伍的总体胜率。
+
+单场复现可使用 `--p1-strategy mirror-npc --p1-difficulty normal --npc-difficulty hard --format gen7ou --seed 1,2,3,4`，并通过 `--player`、`--npc` 指定队伍文件。

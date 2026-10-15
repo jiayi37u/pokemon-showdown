@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert').strict;
-const { Battle, Teams, PRNG } = require('../../../dist/sim');
+const { Battle, Teams, PRNG, TeamValidator } = require('../../../dist/sim');
 const { NPC, NPC_RANDOM_MULTI_FORMATS } = require('../../../dist/server/npc/manager');
 const { createNPCMultiBattle, createNPCBattle } = require('../../../dist/server/npc/room');
 const { NPCMultiManager } = require('../../../dist/server/npc/ai/multi-manager');
@@ -65,7 +65,7 @@ function completeBattle(options) {
 }
 
 describe('NPC Random Multi invitations', () => {
-	let originalRooms, originalUsers, originalGetRandom, originalGenerate;
+	let originalCreateBattle, originalGetUser, originalGetRandom, originalGenerate;
 	let user, teammate, context, errors, boxes, created, generated, battleRoom;
 	const makeUser = id => ({
 		id, name: id, connected: true, battleSettings: {}, messages: [], joined: [],
@@ -76,13 +76,13 @@ describe('NPC Random Multi invitations', () => {
 	});
 	before(() => NPC.loadTemplates());
 	beforeEach(() => {
-		originalRooms = global.Rooms;
-		originalUsers = global.Users;
+		originalCreateBattle = Rooms.createBattle;
+		originalGetUser = Users.get;
 		originalGetRandom = NPC.getRandom;
 		originalGenerate = Teams.generate;
 		user = makeUser('randommultiinviter');
 		teammate = makeUser('randommultiacceptor');
-		global.Users = { get: id => [user, teammate].find(u => u.id === toID(id)) };
+		Users.get = id => [user, teammate].find(u => u.id === toID(id)) || originalGetUser.call(Users, id);
 		NPC.getRandom = () => NPC.get('norman');
 		generated = 0;
 		Teams.generate = (format, options) => originalGenerate.call(Teams, format, {
@@ -92,7 +92,7 @@ describe('NPC Random Multi invitations', () => {
 		boxes = [];
 		created = [];
 		battleRoom = { roomid: 'battle-npc-random-multi-test', settings: {} };
-		global.Rooms = { createBattle: options => { created.push(options); return battleRoom; } };
+		Rooms.createBattle = options => { created.push(options); return battleRoom; };
 		context = {
 			sendReply() {}, sendReplyBox: html => boxes.push(html), errorReply: error => errors.push(error),
 		};
@@ -100,8 +100,8 @@ describe('NPC Random Multi invitations', () => {
 	afterEach(() => {
 		const challenge = challenges.search(user.id, teammate.id);
 		if (challenge) challenges.remove(challenge);
-		global.Rooms = originalRooms;
-		global.Users = originalUsers;
+		Rooms.createBattle = originalCreateBattle;
+		Users.get = originalGetUser;
 		NPC.getRandom = originalGetRandom;
 		Teams.generate = originalGenerate;
 	});
@@ -162,7 +162,10 @@ describe('NPC Random Multi invitations', () => {
 		assert.deepEqual(errors, []);
 		assert.equal(generated, 0);
 		assert.equal(created[0].format, 'gen9nationaldexmulti');
-		assert.equal(created[0].players[0].team, user.battleSettings.team);
+		const validated = Teams.unpack(user.battleSettings.team);
+		assert.equal(new TeamValidator('gen9nationaldexmulti').validateTeam(validated), null);
+		assert.equal(created[0].players[0].team, Teams.pack(validated));
+		assert.equal(created[0].players[2].team, Teams.pack(validated));
 		const invalid = await createNPCMultiBattle({
 			user, teammate, npcId: 'maxie', format: 'gen9nationaldexmulti',
 			team: user.battleSettings.team,

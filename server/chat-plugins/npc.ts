@@ -52,11 +52,12 @@ function getFormatDisplayName(format: string): string {
 /** Difficulty display names and descriptions */
 const DIFFICULTY_INFO: { [key: string]: { name: string; description: string } } = {
 	'basic': { name: 'Basic', description: 'Simple AI - picks highest damage move' },
-	'smart': { name: 'Smart', description: 'Advanced AI - uses strategic scoring system' },
+	'smart': { name: 'Smart', description: 'Normal AI - uses strategic scoring system' },
+	'hard': { name: 'Hard', description: 'Predicts opposing moves and evaluates tactical switches' },
 };
 
 /** Available difficulties for user selection */
-const AVAILABLE_DIFFICULTIES = ['basic', 'smart'] as const;
+const AVAILABLE_DIFFICULTIES = ['basic', 'smart', 'hard'] as const;
 type Difficulty = typeof AVAILABLE_DIFFICULTIES[number];
 const RANDOM_FORMATS = [...NPC_RANDOM_FORMATS, ...NPC_RANDOM_MULTI_FORMATS];
 
@@ -178,7 +179,7 @@ function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: 
 	if (multiFormats.length > 0) {
 		html += `<h3>Multi Battle (2v2 Team)</h3>`;
 		html += `<p>Team up with a friend against ${name}!</p>`;
-		if (isRandom) html += `<p>Smart AI. Each player receives 3 random Pokemon; no team selection needed.</p>`;
+		if (isRandom) html += `<p>${difficulty === 'hard' ? 'Hard' : 'Smart'} AI. Each player receives 3 random Pokemon; no team selection needed.</p>`;
 		html += `<div class="ladder"><table>`;
 		html += `<tr><th>Format</th><th>Action</th></tr>`;
 
@@ -186,7 +187,7 @@ function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: 
 			const formatName = getFormatDisplayName(format);
 			html += `<tr>`;
 			html += `<td><strong>${formatName}</strong> <small>(${isRandom ? 'random teams' : 'requires 3 Pokemon team'})</small></td>`;
-			html += `<td><button class="button" name="send" value="/npc multisetup ${npcId}, ${isRandom ? 'smart' : difficulty}, ${format}">Multi</button></td>`;
+			html += `<td><button class="button" name="send" value="/npc multisetup ${npcId}, ${isRandom ? (difficulty === 'hard' ? 'hard' : 'smart') : difficulty}, ${format}">Multi</button></td>`;
 			html += `</tr>`;
 		}
 
@@ -395,8 +396,8 @@ export const commands: Chat.ChatCommands = {
 				!NPC.supportsFormat(npcId, multiFormat)) {
 				return this.errorReply(`Unsupported Multi format: ${multiFormat}`);
 			}
-			if (isRandom && difficulty && difficulty !== 'smart') {
-				return this.errorReply(`Random Multi battles use Smart AI.`);
+			if (isRandom && difficulty && !['smart', 'hard'].includes(difficulty)) {
+				return this.errorReply(`Random Multi battles support Smart or Hard AI.`);
 			}
 
 			const finalDifficulty = difficulty || npc?.difficulty || 'smart';
@@ -446,8 +447,8 @@ export const commands: Chat.ChatCommands = {
 			if (isRandom && !NPC_RANDOM_MULTI_FORMATS.includes(multiFormat)) {
 				return this.errorReply(`Unsupported random Multi format: ${multiFormat}`);
 			}
-			if (isRandom && difficulty && difficulty !== 'smart') {
-				return this.errorReply(`Random Multi battles use Smart AI.`);
+			if (isRandom && difficulty && !['smart', 'hard'].includes(difficulty)) {
+				return this.errorReply(`Random Multi battles support Smart or Hard AI.`);
 			}
 			const npc = isRandom ? NPC.getRandom() : NPC.get(npcId);
 			if (!npc) {
@@ -493,7 +494,7 @@ export const commands: Chat.ChatCommands = {
 			const challengeData = {
 				npcId: npc.id,
 				format: multiFormat,
-				difficulty: isRandom ? 'smart' : difficulty || npc.difficulty || 'smart',
+				difficulty: isRandom ? (difficulty === 'hard' ? 'hard' : 'smart') : difficulty || npc.difficulty || 'smart',
 				p1Team: team,
 			};
 
@@ -604,7 +605,7 @@ export const commands: Chat.ChatCommands = {
 		`/npc multi [npc or random], [teammate], [difficulty], [format] - Invite teammate for multi battle (2v2) against NPC`,
 		`/npc acceptmulti [challenger] - Accept a multi battle invitation`,
 		`/npc reload - Reload NPC templates (requires hotpatch permission)`,
-		`Available difficulties: basic (simple AI), smart (advanced AI)`,
+		`Available difficulties: basic (simple AI), smart (Normal AI), hard (CFRU tactical AI)`,
 	],
 };
 

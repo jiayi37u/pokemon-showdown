@@ -16,6 +16,10 @@ import { defaultBoosts } from '../types';
  * Tracked Pokemon information
  */
 export interface TrackedPokemon {
+	/** Public identity scoped to a player, not the active position. */
+	ident?: string;
+	/** Public temporary effects; cleared when this Pokemon leaves the field. */
+	volatiles?: Set<string>;
 	/** Species name */
 	species: string;
 
@@ -34,6 +38,9 @@ export interface TrackedPokemon {
 
 	/** Known item (may be empty if not revealed) */
 	item: string;
+	/** First public item, retained after consumption; acquired items do not identify the original set. */
+	originalItem?: string;
+	itemChanged?: boolean;
 
 	/**
 	 * Whether we know for sure the item was lost (consumed/knocked off)
@@ -96,8 +103,13 @@ export class BattleTracker {
 
 	/** Tracked opponent Pokemon (keyed by position like 'p1a', 'p1b') */
 	private opponentPokemon: Map<string, TrackedPokemon> = new Map();
+	private activeVolatiles = new Map<string, Set<string>>();
+	private turn = 0;
+	private acted = new Set<string>();
+	private wishes = new Map<string, number>();
+	private teamSizes = new Map<string, number>();
 
-	/** All known opponent Pokemon (keyed by species for team tracking) */
+	/** All known opponent Pokemon (keyed by player and public nickname for team tracking) */
 	private opponentTeam: Map<string, TrackedPokemon> = new Map();
 
 	/** Field conditions */
@@ -267,6 +279,12 @@ export class BattleTracker {
 		this.handleAbilityEvent(parts);
 
 		switch (command) {
+		case 'teamsize':
+			this.teamSizes.set(parts[1], Number(parts[2]));
+			break;
+		case 'turn':
+			this.turn = Number(parts[1]) || this.turn;
+			break;
 		case 'switch':
 		case 'drag':
 		case 'replace':
@@ -275,6 +293,21 @@ export class BattleTracker {
 		case 'faint':
 			this.handleFaint(parts);
 			break;
+		case 'detailschange':
+		case '-formechange': {
+			const tracked = this.opponentPokemon.get(parts[1]?.split(':')[0].trim());
+			if (tracked) {
+				const species = Dex.species.get(parts[2].split(',')[0]);
+				tracked.species = species.name;
+				tracked.types = species.types;
+				if (species.isMega || species.id === 'greninjaash') {
+					tracked.ability = species.abilities[0];
+					tracked.baseAbility = tracked.ability;
+					tracked.abilityChanged = false;
+				}
+			}
+			break;
+		}
 		case '-item':
 		case '-enditem':
 			this.handleItem(parts);
@@ -282,6 +315,10 @@ export class BattleTracker {
 		case '-damage':
 		case '-heal':
 			this.handleHPChange(parts);
+			const item = parts.find(p => p.startsWith('[from] item: '));
+			if (item && !parts.some(p => p.startsWith('[of]'))) {
+				this.handleItem(['-item', parts[1], item.slice('[from] item: '.length)]);
+			}
 			break;
 		case '-status':
 			this.handleStatus(parts);
@@ -290,7 +327,12 @@ export class BattleTracker {
 		case '-cureteam':
 			this.handleCureStatus(parts);
 			break;
+		case 'cant':
+			this.acted.add(parts[1].split(':')[0].trim());
+			break;
 		case 'move':
+			this.acted.add(parts[1].split(':')[0].trim());
+			if (toID(parts[2]) === 'wish') this.wishes.set(parts[1].slice(0, 2), this.turn + 2);
 			this.handleMove(parts);
 			break;
 		case '-weather':
@@ -338,6 +380,9 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim(); // "p1a"
 		const side = position.slice(0, 2); // "p1"
 		const slot = position.slice(2); // "a" or "b"
+
+		this.activeVolatiles.set(position, new Set());
+		this.acted.delete(position);
 
 		// CFRU AI Fix: Clear our team boosts, ability stat mods, and lastMove when we switch out
 		// Switching resets all stat boosts to 0 and removes volatile statuses
@@ -403,7 +448,10 @@ export class BattleTracker {
 		}
 
 		// Create or update tracked Pokemon
+		const ident = `${side}:${positionPart.split(':').slice(1).join(':').trim()}`;
 		const tracked: TrackedPokemon = {
+			ident,
+			volatiles: this.activeVolatiles.get(position),
 			species,
 			types,
 			level,
@@ -423,22 +471,24 @@ export class BattleTracker {
 
 		// Deactivate previous Pokemon in this exact position (not other positions on same side)
 		const existingInPosition = this.opponentPokemon.get(position);
-		if (existingInPosition && existingInPosition.species !== species) {
+		if (existingInPosition && existingInPosition.ident !== ident) {
 			existingInPosition.active = false;
 		}
 
 		// Update if we already know this Pokemon
-		const existing = this.opponentTeam.get(species);
+		const existing = this.opponentTeam.get(ident);
 		if (existing) {
 			tracked.ability = existing.baseAbility ?? existing.ability;
 			tracked.baseAbility = tracked.ability;
 			tracked.item = existing.item;
 			tracked.itemLost = existing.itemLost;  // Preserve itemLost status
+			tracked.originalItem = existing.originalItem;
+			tracked.itemChanged = existing.itemChanged;
 			tracked.knownMoves = existing.knownMoves;
 		}
 
 		this.opponentPokemon.set(position, tracked);
-		this.opponentTeam.set(species, tracked);
+		this.opponentTeam.set(ident, tracked);
 	}
 
 	/**
@@ -482,7 +532,7 @@ export class BattleTracker {
 			}
 			tracked.ability = ability;
 			// Also update team record
-			const teamMon = this.opponentTeam.get(tracked.species);
+			const teamMon = this.opponentTeam.get(tracked.ident || '');
 			if (teamMon) {
 				teamMon.ability = ability;
 				teamMon.baseAbility = tracked.baseAbility;
@@ -570,6 +620,11 @@ export class BattleTracker {
 
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
+		// Public loss during this entry can activate Unburden; being itemless on entry cannot.
+		let effects = this.activeVolatiles.get(position);
+		if (!effects) this.activeVolatiles.set(position, effects = new Set());
+		if (command === '-enditem') effects.add('itemlost');
+		else effects.delete('itemlost');
 
 		if (!this.isOpponentSide(side)) return;
 
@@ -578,6 +633,10 @@ export class BattleTracker {
 
 		const tracked = this.opponentPokemon.get(position);
 		if (tracked) {
+			tracked.volatiles = effects;
+			const acquired = command === '-item' && parts.some(p => p.startsWith('[from]'));
+			if (acquired) tracked.itemChanged = true;
+			if (!tracked.originalItem && !tracked.itemChanged) tracked.originalItem = item;
 			if (command === '-enditem') {
 				tracked.item = ''; // Item consumed/knocked off
 				tracked.itemLost = true;  // Mark as confirmed lost
@@ -586,10 +645,12 @@ export class BattleTracker {
 				tracked.itemLost = false;  // Item revealed, not lost
 			}
 			// Update team record
-			const teamMon = this.opponentTeam.get(tracked.species);
+			const teamMon = this.opponentTeam.get(tracked.ident || '');
 			if (teamMon) {
 				teamMon.item = tracked.item;
 				teamMon.itemLost = tracked.itemLost;
+				teamMon.originalItem = tracked.originalItem;
+				teamMon.itemChanged = tracked.itemChanged;
 			}
 		}
 	}
@@ -704,15 +765,15 @@ export class BattleTracker {
 				tracked.lastMove = move;
 
 				// Also add to known moves if not already known
-				if (!tracked.knownMoves.includes(move)) {
+				if (!Dex.moves.get(move).isZ && moveId !== 'struggle' && !parts.some(p => p.startsWith('[from]')) && !tracked.knownMoves.includes(move)) {
 					tracked.knownMoves.push(move);
 				}
 
 				// Update team record
-				const teamMon = this.opponentTeam.get(tracked.species);
+				const teamMon = this.opponentTeam.get(tracked.ident || '');
 				if (teamMon) {
 					teamMon.lastMove = move;
-					if (!teamMon.knownMoves.includes(move)) {
+					if (!Dex.moves.get(move).isZ && moveId !== 'struggle' && !parts.some(p => p.startsWith('[from]')) && !teamMon.knownMoves.includes(move)) {
 						teamMon.knownMoves.push(move);
 					}
 				}
@@ -835,6 +896,19 @@ export class BattleTracker {
 		const slot = position.slice(2);
 
 		const volatile = parts[2]?.toLowerCase() || '';
+		// Record protocol facts for both teams, without adding any inferred effects.
+		const effect = toID((parts[2] || '').replace(/^move: /, ''));
+		let effects = this.activeVolatiles.get(position);
+		if (!effects) this.activeVolatiles.set(position, effects = new Set());
+		if (/^perish[0-3]$/.test(effect)) {
+			for (const old of effects) if (/^perish[0-3]$/.test(old)) effects.delete(old);
+		}
+		if (effect && !effect.startsWith('ability')) {
+			if (command === '-start') effects.add(effect);
+			else effects.delete(effect);
+		}
+		const tracked = this.opponentPokemon.get(position);
+		if (tracked) tracked.volatiles = effects;
 
 		// Handle Quark Drive and Protosynthesis stat boosts
 		// Format: "quarkdriveatk", "quarkdrivespe", "protosynthesisdef", etc.
@@ -1087,6 +1161,12 @@ export class BattleTracker {
 	/**
 	 * Get all known opponent team members
 	 */
+	getRemainingOpponents(): number {
+		const known = this.getOpponentTeam();
+		const size = [...this.teamSizes].reduce((n, [side, count]) => n + (this.isOpponentSide(side) ? count : 0), 0);
+		return Math.max(0, (size || known.length) - known.filter(p => p.hpPercent <= 0).length);
+	}
+
 	getOpponentTeam(): TrackedPokemon[] {
 		return Array.from(this.opponentTeam.values());
 	}
@@ -1399,15 +1479,34 @@ export class BattleTracker {
 		return multiplier;
 	}
 
-	/**
-	 * Reset tracker state (for new battle)
-	 */
+	hasActed(position: string): boolean {
+		return this.acted.has(position.startsWith('p') ? position : `${this.ourSide}${position}`);
+	}
+
+	getWish(side = this.ourSide): number {
+		return Math.max(0, (this.wishes.get(side) || 0) - this.turn);
+	}
+
+	getTurn(): number {
+		return this.turn;
+	}
+
+	getVolatiles(position: string): Set<string> {
+		const key = position.startsWith('p') ? position : `${this.ourSide}${position}`;
+		return new Set(this.activeVolatiles.get(key));
+	}
+
+	/** Reset tracker state for a new battle. */
 	reset(): void {
+		this.turn = 0;
+		this.acted.clear();
+		this.wishes.clear();
+		this.teamSizes.clear();
+		this.activeVolatiles.clear();
 		this.opponentPokemon.clear();
 		this.opponentTeam.clear();
 		this.ourActiveBoosts.clear();
 		this.ourAbilityStatMods.clear();
-		this.ourProtectUses.clear();
 		this.ourLastMove.clear();
 		this.fieldConditions = { weather: '', terrain: '', trickRoom: false };
 		this.opponentSideConditions = {

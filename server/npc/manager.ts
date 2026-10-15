@@ -32,7 +32,7 @@ export interface NPCTemplate {
 	avatar: string;
 	title?: string;
 	description?: string;
-	difficulty: 'random' | 'basic' | 'smart' | 'expert';
+	difficulty: 'random' | 'basic' | 'smart' | 'hard' | 'expert';
 	/** 该 NPC 持有的所有自定义队伍文件 */
 	teams: string[];
 	customRules?: string[];

@@ -5,7 +5,7 @@ const { NPC, NPC_RANDOM_FORMATS, NPC_RANDOM_MULTI_FORMATS } = require('../../../
 const { commands, pages } = require('../../../dist/server/chat-plugins/npc');
 
 describe('NPC global random battle menu', () => {
-	let originalRooms;
+	let originalCreateBattle;
 	let originalDifficulty;
 	let originalGetRandom;
 	let requests;
@@ -20,7 +20,7 @@ describe('NPC global random battle menu', () => {
 
 	before(() => NPC.loadTemplates());
 	beforeEach(() => {
-		originalRooms = global.Rooms;
+		originalCreateBattle = Rooms.createBattle;
 		originalDifficulty = NPC.get('norman').difficulty;
 		NPC.get('norman').difficulty = 'basic';
 		battleRoom = { roomid: 'battle-npc-random-test', settings: {} };
@@ -41,13 +41,13 @@ describe('NPC global random battle menu', () => {
 			// Appearance selection must not change the globally selected difficulty.
 			return NPC.get('norman');
 		};
-		global.Rooms = { createBattle: options => {
+		Rooms.createBattle = options => {
 			requests.push(options);
 			return battleRoom;
-		} };
+		};
 	});
 	afterEach(() => {
-		global.Rooms = originalRooms;
+		Rooms.createBattle = originalCreateBattle;
 		NPC.get('norman').difficulty = originalDifficulty;
 		NPC.getRandom = originalGetRandom;
 	});
@@ -74,7 +74,7 @@ describe('NPC global random battle menu', () => {
 		}
 	});
 
-	for (const difficulty of ['basic', 'smart']) {
+	for (const difficulty of ['basic', 'smart', 'hard']) {
 		it(`should carry ${difficulty} from Challenge through format selection to Battle`, async () => {
 			commands.npc.challenge.call(context, 'random', null, user);
 			assert.equal(errors.length, 0);
@@ -84,11 +84,11 @@ describe('NPC global random battle menu', () => {
 			commands.npc.challenge.call(context, select.slice('/npc challenge '.length), null, user);
 			const html = boxes[1];
 			assert.equal(html, pages.npc.call({}, ['challenge', 'random', difficulty], user));
-			assert(html.includes(`${difficulty === 'basic' ? 'Basic' : 'Smart'} ✓`));
+			assert(html.includes(`${difficulty === 'basic' ? 'Basic' : difficulty === 'hard' ? 'Hard' : 'Smart'} ✓`));
 			assert(!html.includes('requires team'));
 			assert(html.includes('Multi Battle'));
 			for (const format of NPC_RANDOM_MULTI_FORMATS) {
-				assert(html.includes(`value="/npc multisetup random, smart, ${format}"`));
+				assert(html.includes(`value="/npc multisetup random, ${difficulty === 'hard' ? 'hard' : 'smart'}, ${format}"`));
 			}
 			assert.equal(selections, 0);
 			assert.equal(requests.length, 0);

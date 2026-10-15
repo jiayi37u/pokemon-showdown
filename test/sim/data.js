@@ -416,12 +416,20 @@ describe('Dex data', () => {
 		});
 	}
 
-	it('should never import', () => {
+	it('should only import approved data dependencies', () => {
+		// MMO combines Gen 5 with selected modern mechanics and its own catalogues.
+		// Permit these data dependencies, without allowing arbitrary imports from the mod.
+		const allowedImports = {
+			'data/mods/mmo/abilities.js': ['../../abilities'],
+			'data/mods/mmo/items.js': ['../../items'],
+			'data/mods/mmo/moves.js': ['./move-data', '../../moves'],
+			'data/mods/mmo/rulesets.js': ['./learnsets-data'],
+			'data/mods/mmo/typechart.js': ['../gen5/typechart'],
+		};
 		const modNames = fs.readdirSync(`${__dirname}/../../dist/data/mods/`)
 			.filter(mod => mod === toID(mod))
 			// fine, SSB is allowed to; it's not an official format
 			.filter(mod => mod !== 'gen9ssb');
-		// console.log(modNames);
 		const mods = ['data/', ...modNames.map(mod => `data/mods/${mod}/`)];
 		const files = ['abilities.js', 'aliases.js', 'conditions.js', 'formats-data.js', 'items.js', 'learnsets.js', 'moves.js', 'natures.js', 'pokedex.js', 'pokemongo.js', 'rulesets.js', 'tags.js', 'typechart.js'];
 		for (const mod of mods) {
@@ -429,14 +437,14 @@ describe('Dex data', () => {
 				let contents;
 				try {
 					contents = fs.readFileSync(`${__dirname}/../../dist/${mod}${file}`, 'utf8');
-					// console.log(`Checking ${mod}${file}`);
 				} catch {
 					// fine if the file doesn't exist
 				}
-				if (contents) {
-					assert.false(
-						/\brequire\(/.test(contents),
-						`File ${mod}${file} should not import anything but types`
+				for (const match of (contents || '').matchAll(/\brequire\(([^)]*)\)/g)) {
+					const dependency = /^["']([^"']+)["']$/.exec(match[1].trim())?.[1];
+					assert(
+						dependency && allowedImports[`${mod}${file}`]?.includes(dependency),
+						`Unexpected runtime import in ${mod}${file}: ${match[0]}`
 					);
 				}
 			}

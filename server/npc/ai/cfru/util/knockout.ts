@@ -274,7 +274,7 @@ export function getBestKOMove(
 			}
 
 			// Prefer no recoil
-			if (move.flags['recoil']) {
+			if (move.recoil) {
 				score -= 10;
 			}
 

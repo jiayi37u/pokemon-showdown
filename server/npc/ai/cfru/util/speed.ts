@@ -65,9 +65,9 @@ export function getEffectiveSpeed(
 		speed *= 2;
 	}
 
-	// Unburden (2x if item was consumed)
-	// Note: This requires tracking item consumption, simplified here
-	if (abilityId === 'unburden' && !pokemon.item) {
+	// Unknown or initially absent items do not activate Unburden. Switching clears the loss marker.
+	if (abilityId === 'unburden' && !pokemon.item &&
+		(pokemon.volatiles.has('itemlost') || pokemon.volatiles.has('unburden'))) {
 		speed *= 2;
 	}
 

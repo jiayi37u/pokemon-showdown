@@ -7,7 +7,7 @@
  * @license MIT
  */
 
-import { NPC, NPC_RANDOM_FORMATS } from '../npc/manager';
+import { NPC, NPC_RANDOM_FORMATS, NPC_RANDOM_MULTI_FORMATS } from '../npc/manager';
 import { createNPCBattle, createNPCMultiBattle, isFormatSupported } from '../npc/room';
 import { Teams } from '../../sim/teams';
 import { challenges, GameChallenge } from '../ladders-challenges';
@@ -39,6 +39,8 @@ function getFormatDisplayName(format: string): string {
 		'vgc2023': 'VGC 2023',
 		'randombattle': 'Random Battle',
 		'pokemmorandombattle': 'PokeMMO Random Battle',
+		'multirandombattle': 'Multi Random Battle',
+		'pokemmomultirandombattle': 'PokeMMO Multi Random Battle',
 		'randomdoublesbattle': 'Random Doubles',
 		'nationaldexmulti': 'National Dex Multi',
 	};
@@ -56,6 +58,7 @@ const DIFFICULTY_INFO: { [key: string]: { name: string; description: string } } 
 /** Available difficulties for user selection */
 const AVAILABLE_DIFFICULTIES = ['basic', 'smart'] as const;
 type Difficulty = typeof AVAILABLE_DIFFICULTIES[number];
+const RANDOM_FORMATS = [...NPC_RANDOM_FORMATS, ...NPC_RANDOM_MULTI_FORMATS];
 
 /**
  * Generate NPC list HTML
@@ -76,12 +79,12 @@ function getNPCListHTML(user: User): string {
 
 	html += `<tr>`;
 	html += `<td><strong>Random Battle</strong></td>`;
-	html += `<td>${NPC_RANDOM_FORMATS.map(f => getFormatDisplayName(f)).join(', ')}</td>`;
+	html += `<td>${RANDOM_FORMATS.map(f => getFormatDisplayName(f)).join(', ')}</td>`;
 	html += `<td><button class="button" name="send" value="/npc challenge random">Challenge</button></td>`;
 	html += `</tr>`;
 
 	for (const npc of npcs) {
-		const formats = NPC.getSupportedFormats(npc.id).filter(f => !NPC_RANDOM_FORMATS.includes(f));
+		const formats = NPC.getSupportedFormats(npc.id).filter(f => !RANDOM_FORMATS.includes(f));
 		const formatNames = formats.map(f => getFormatDisplayName(f)).join(', ');
 
 		html += `<tr>`;
@@ -108,8 +111,8 @@ function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: 
 		return `<div class="pad"><h2>Error</h2><p>NPC not found: ${npcId}</p></div>`;
 	}
 
-	const allFormats = isRandom ? NPC_RANDOM_FORMATS :
-		NPC.getSupportedFormats(npcId).filter(f => !NPC_RANDOM_FORMATS.includes(f));
+	const allFormats = isRandom ? RANDOM_FORMATS :
+		NPC.getSupportedFormats(npcId).filter(f => !RANDOM_FORMATS.includes(f));
 	// Filter out multi formats - they need special /npc multi command
 	const formats = allFormats.filter(f => !f.includes('multi'));
 	// Check if NPC has multi formats available
@@ -117,7 +120,7 @@ function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: 
 	const difficulty = selectedDifficulty || npc?.difficulty || 'smart';
 	const name = npc?.name || 'Random Battle';
 	const description = isRandom ?
-		'An NPC opponent and both teams are chosen when you start the battle.' : npc?.description;
+		'Battle with random teams, alone or with a friend. An NPC appearance is chosen for you.' : npc?.description;
 
 	let html = `<div class="pad">`;
 	html += `<h2>Challenge ${name}</h2>`;
@@ -175,14 +178,15 @@ function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: 
 	if (multiFormats.length > 0) {
 		html += `<h3>Multi Battle (2v2 Team)</h3>`;
 		html += `<p>Team up with a friend against ${name}!</p>`;
+		if (isRandom) html += `<p>Smart AI. Each player receives 3 random Pokemon; no team selection needed.</p>`;
 		html += `<div class="ladder"><table>`;
 		html += `<tr><th>Format</th><th>Action</th></tr>`;
 
 		for (const format of multiFormats) {
 			const formatName = getFormatDisplayName(format);
 			html += `<tr>`;
-			html += `<td><strong>${formatName}</strong> <small>(requires 3 Pokemon team)</small></td>`;
-			html += `<td><button class="button" name="send" value="/npc multisetup ${npcId}, ${difficulty}">Start Multi Battle</button></td>`;
+			html += `<td><strong>${formatName}</strong> <small>(${isRandom ? 'random teams' : 'requires 3 Pokemon team'})</small></td>`;
+			html += `<td><button class="button" name="send" value="/npc multisetup ${npcId}, ${isRandom ? 'smart' : difficulty}, ${format}">Multi</button></td>`;
 			html += `</tr>`;
 		}
 
@@ -378,33 +382,41 @@ export const commands: Chat.ChatCommands = {
 				return this.errorReply(`Usage: /npc multisetup [npc id], [difficulty (optional)]`);
 			}
 
-			const npc = NPC.get(npcId);
-			if (!npc) {
+			const isRandom = npcId === 'random';
+			const npc = isRandom ? null : NPC.get(npcId);
+			if (!isRandom && !npc) {
 				return this.errorReply(`NPC not found: ${npcId}`);
 			}
 
 			// Check if NPC supports multi format
-			const multiFormat = 'gen9nationaldexmulti';
-			if (!NPC.supportsFormat(npc.id, multiFormat)) {
-				return this.errorReply(`${npc.name} does not support multi battles.`);
+			const multiFormat = toID(parts[2]) || (isRandom ? 'gen9multirandombattle' : 'gen9nationaldexmulti');
+			if (isRandom ? !NPC_RANDOM_MULTI_FORMATS.includes(multiFormat) :
+				Dex.formats.get(multiFormat).gameType !== 'multi' || RANDOM_FORMATS.includes(multiFormat) ||
+				!NPC.supportsFormat(npcId, multiFormat)) {
+				return this.errorReply(`Unsupported Multi format: ${multiFormat}`);
+			}
+			if (isRandom && difficulty && difficulty !== 'smart') {
+				return this.errorReply(`Random Multi battles use Smart AI.`);
 			}
 
-			const finalDifficulty = difficulty || npc.difficulty || 'smart';
+			const finalDifficulty = difficulty || npc?.difficulty || 'smart';
 			const diffInfo = DIFFICULTY_INFO[finalDifficulty] || { name: finalDifficulty, description: '' };
 
 			// Show teammate input form
 			let html = `<div class="pad">`;
 			html += `<h2>Multi Battle Setup</h2>`;
-			html += `<p>Challenge <strong>${npc.name}</strong> with a teammate!</p>`;
+			html += `<p>Challenge <strong>${npc?.name || 'Random Battle'}</strong> with a teammate!</p>`;
 			html += `<p>Difficulty: <strong>${diffInfo.name}</strong></p>`;
+			html += `<p>Format: <strong>${getFormatDisplayName(multiFormat)}</strong></p>`;
+			if (isRandom) html += `<p>All four players receive 3 random Pokemon. No team selection needed.</p>`;
 			html += `<hr/>`;
 			html += `<p>Enter your teammate's username:</p>`;
-			html += `<form data-submitsend="/npc multi ${npc.id}, {teammate}, ${finalDifficulty}">`;
+			html += `<form data-submitsend="/npc multi ${npcId}, {teammate}, ${finalDifficulty}, ${multiFormat}">`;
 			html += `<input type="text" name="teammate" placeholder="Teammate username" autofocus />`;
 			html += ` <button class="button" type="submit">Send Invitation</button>`;
 			html += `</form>`;
 			html += `<hr/>`;
-			html += `<p><button class="button" name="send" value="/npc challenge ${npc.id}, ${finalDifficulty}">Back</button></p>`;
+			html += `<p><button class="button" name="send" value="/npc challenge ${npcId}, ${finalDifficulty}">Back</button></p>`;
 			html += `</div>`;
 
 			this.sendReplyBox(html);
@@ -429,20 +441,28 @@ export const commands: Chat.ChatCommands = {
 				return this.errorReply(`You must specify a teammate to invite. Usage: /npc multi ${npcId}, [teammate username]`);
 			}
 
-			const npc = NPC.get(npcId);
+			const isRandom = npcId === 'random';
+			const multiFormat = toID(parts[3]) || (isRandom ? 'gen9multirandombattle' : 'gen9nationaldexmulti');
+			if (isRandom && !NPC_RANDOM_MULTI_FORMATS.includes(multiFormat)) {
+				return this.errorReply(`Unsupported random Multi format: ${multiFormat}`);
+			}
+			if (isRandom && difficulty && difficulty !== 'smart') {
+				return this.errorReply(`Random Multi battles use Smart AI.`);
+			}
+			const npc = isRandom ? NPC.getRandom() : NPC.get(npcId);
 			if (!npc) {
-				return this.errorReply(`NPC not found: ${npcId}`);
+				return this.errorReply(isRandom ? `No NPCs available.` : `NPC not found: ${npcId}`);
 			}
 
 			// Check if NPC supports multi format
-			const multiFormat = 'gen9nationaldexmulti';
-			if (!NPC.supportsFormat(npc.id, multiFormat)) {
+			if (Dex.formats.get(multiFormat).gameType !== 'multi' ||
+				(!isRandom && RANDOM_FORMATS.includes(multiFormat)) || !NPC.supportsFormat(npc.id, multiFormat)) {
 				return this.errorReply(`${npc.name} does not support multi battles. NPC needs a multi team configured.`);
 			}
 
 			// Find teammate
 			const teammate = Users.get(teammateStr);
-			if (!teammate) {
+			if (!teammate?.connected) {
 				return this.errorReply(`User "${teammateStr}" not found or not online.`);
 			}
 			if (teammate.id === user.id) {
@@ -450,15 +470,15 @@ export const commands: Chat.ChatCommands = {
 			}
 
 			// Get user's team
-			const team = user.battleSettings?.team;
-			if (!team) {
+			const team = isRandom ? undefined : user.battleSettings?.team;
+			if (!isRandom && !team) {
 				return this.errorReply(
 					`You need to select a team first. Use the Teambuilder to create and select a team for multi battles.`
 				);
 			}
 
 			// Validate team size (max 3 for multi)
-			const unpackedTeam = Teams.unpack(team);
+			const unpackedTeam = team ? Teams.unpack(team) : null;
 			if (unpackedTeam && unpackedTeam.length > 3) {
 				return this.errorReply(`Multi battle teams can have at most 3 Pokemon. Your team has ${unpackedTeam.length}.`);
 			}
@@ -473,7 +493,7 @@ export const commands: Chat.ChatCommands = {
 			const challengeData = {
 				npcId: npc.id,
 				format: multiFormat,
-				difficulty: difficulty || npc.difficulty || 'smart',
+				difficulty: isRandom ? 'smart' : difficulty || npc.difficulty || 'smart',
 				p1Team: team,
 			};
 
@@ -484,8 +504,8 @@ export const commands: Chat.ChatCommands = {
 				multiFormat,
 				{
 					acceptCommand: `/npc acceptmulti ${user.id}`,
-					message: `${user.name} wants to team up with you to battle ${npc.name} in a Multi Battle!`,
-					acceptButton: 'Accept & Select Team',
+					message: `${user.name} wants to team up with you to battle ${npc.name} in ${getFormatDisplayName(multiFormat)}!`,
+					acceptButton: isRandom ? 'Accept & Battle' : 'Accept & Select Team',
 					rejectButton: 'Decline',
 				}
 			);
@@ -523,21 +543,22 @@ export const commands: Chat.ChatCommands = {
 
 			// Get challenger user
 			const challenger = Users.get(challengerId);
-			if (!challenger) {
+			if (!challenger?.connected) {
 				challenges.remove(challenge);
 				return this.errorReply(`User ${challengerId} is no longer online.`);
 			}
 
 			// Get teammate's (acceptor's) team
-			const teammateTeam = user.battleSettings?.team;
-			if (!teammateTeam) {
+			const isRandom = NPC_RANDOM_MULTI_FORMATS.includes(challengeData.format);
+			const teammateTeam = isRandom ? undefined : user.battleSettings?.team;
+			if (!isRandom && !teammateTeam) {
 				return this.errorReply(
 					`You need to select a team first. Use the Teambuilder to create and select a team (max 3 Pokemon).`
 				);
 			}
 
 			// Validate teammate's team size
-			const unpackedTeam = Teams.unpack(teammateTeam);
+			const unpackedTeam = teammateTeam ? Teams.unpack(teammateTeam) : null;
 			if (unpackedTeam && unpackedTeam.length > 3) {
 				return this.errorReply(`Multi battle teams can have at most 3 Pokemon. Your team has ${unpackedTeam.length}.`);
 			}
@@ -578,8 +599,9 @@ export const commands: Chat.ChatCommands = {
 		`/npc start [npc], [format], [difficulty] - Start a battle with the specified NPC, format, and difficulty`,
 		`/npc random [format], [difficulty] - Random NPC appearance and teams (defaults: gen9randombattle, smart)`,
 		`Random formats: ${NPC_RANDOM_FORMATS.join(', ')}`,
-		`/npc multisetup [npc], [difficulty] - Show multi battle setup form to enter teammate`,
-		`/npc multi [npc], [teammate], [difficulty] - Invite teammate for multi battle (2v2) against NPC`,
+		`Random Multi formats (Smart AI): ${NPC_RANDOM_MULTI_FORMATS.join(', ')}`,
+		`/npc multisetup [npc or random], [difficulty], [format] - Show multi battle setup form to enter teammate`,
+		`/npc multi [npc or random], [teammate], [difficulty], [format] - Invite teammate for multi battle (2v2) against NPC`,
 		`/npc acceptmulti [challenger] - Accept a multi battle invitation`,
 		`/npc reload - Reload NPC templates (requires hotpatch permission)`,
 		`Available difficulties: basic (simple AI), smart (advanced AI)`,

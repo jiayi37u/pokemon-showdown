@@ -7,7 +7,7 @@
  * @license MIT
  */
 
-import { NPC, NPCTemplate, MultiTeam } from './manager';
+import { NPC, NPC_RANDOM_MULTI_FORMATS, NPCTemplate, MultiTeam } from './manager';
 import { BasicAI } from './ai/basic';
 import { NormalAI, NormalAIOptions } from './ai/normal';
 import { NPCMultiManager, NPCMultiManagerOptions } from './ai/multi-manager';
@@ -46,6 +46,9 @@ export interface NPCBattleResult {
  */
 export async function createNPCBattle(options: NPCBattleCreateOptions): Promise<NPCBattleResult> {
 	const { user, npcId, format, difficulty } = options;
+	if (Dex.formats.get(format).gameType === 'multi') {
+		return { success: false, error: 'Multi battles require a teammate invitation' };
+	}
 
 	console.log(`[NPC] createNPCBattle: user=${user.id}, npcId=${npcId}, format=${format}, difficulty=${difficulty}`);
 
@@ -487,14 +490,15 @@ function createNPCUser(npc: NPCTemplate, team: string, suffix?: string): User {
  */
 export async function createNPCMultiBattle(options: NPCMultiBattleCreateOptions): Promise<NPCMultiBattleResult> {
 	const { user, npcId, format, difficulty, teammate, teammateTeam } = options;
+	const isRandom = NPC_RANDOM_MULTI_FORMATS.includes(format);
 
 	// Validate teammate is provided
-	if (!teammate || !teammateTeam) {
+	if (!teammate || (!isRandom && !teammateTeam)) {
 		return { success: false, error: 'Teammate and teammate team are required' };
 	}
 
 	// Validate format is a multi format
-	if (!format.includes('multi')) {
+	if (Dex.formats.get(format).gameType !== 'multi') {
 		return { success: false, error: `Format must be a multi battle format: ${format}` };
 	}
 
@@ -509,54 +513,66 @@ export async function createNPCMultiBattle(options: NPCMultiBattleCreateOptions)
 		return { success: false, error: `${npc.name} does not support format: ${format}` };
 	}
 
-	// Get NPC multi team
-	const npcMultiTeam: MultiTeam | null = NPC.getMultiTeam(npcId, format);
-	if (!npcMultiTeam) {
-		return { success: false, error: `Failed to load NPC multi team for ${npc.name}` };
+	if (isRandom && difficulty && difficulty !== 'smart') {
+		return { success: false, error: 'Random Multi battles use Smart AI' };
 	}
 
-	// Get user team (p1)
-	let userTeam: string;
-
-	if (options.team) {
-		if (typeof options.team === 'string') {
-			userTeam = options.team;
-		} else {
-			userTeam = Teams.pack(options.team);
-		}
-	} else {
-		return { success: false, error: 'No team provided for p1' };
-	}
-
-	// Validate user team
-	const validator = TeamValidator.get(format);
-	const p1Problems = validator.validateTeam(Teams.unpack(userTeam));
-	if (p1Problems) {
-		return { success: false, error: `P1 team validation failed: ${p1Problems.join(', ')}` };
-	}
-
-	// Validate teammate team (p3)
-	const p3Problems = validator.validateTeam(Teams.unpack(teammateTeam));
-	if (p3Problems) {
-		return { success: false, error: `P3 team validation failed: ${p3Problems.join(', ')}` };
-	}
-
-	// Pack NPC teams
-	const npcP2TeamPacked = Teams.pack(npcMultiTeam.p2);
-	const npcP4TeamPacked = Teams.pack(npcMultiTeam.p4);
-
-	// Create battle room with all 4 players
+	// Generate all four random teams only after the invitation has been accepted.
 	try {
+		const npcMultiTeam: MultiTeam | null = isRandom ? {
+			p2: Teams.generate(format), p4: Teams.generate(format),
+		} : NPC.getMultiTeam(npcId, format);
+		if (!npcMultiTeam) {
+			return { success: false, error: `Failed to load NPC multi team for ${npc.name}` };
+		}
+
+		// Get user team (p1)
+		let userTeam: string;
+
+		if (isRandom) {
+			userTeam = Teams.pack(Teams.generate(format));
+		} else if (options.team) {
+			if (typeof options.team === 'string') {
+				userTeam = options.team;
+			} else {
+				userTeam = Teams.pack(options.team);
+			}
+		} else {
+			return { success: false, error: 'No team provided for p1' };
+		}
+
+		const partnerTeam = isRandom ? Teams.pack(Teams.generate(format)) : teammateTeam!;
+
+		// Fixed teams still use the format's normal validation.
+		if (!isRandom) {
+			const validator = TeamValidator.get(format);
+			const p1Problems = validator.validateTeam(Teams.unpack(userTeam));
+			if (p1Problems) {
+				return { success: false, error: `P1 team validation failed: ${p1Problems.join(', ')}` };
+			}
+
+			// Validate teammate team (p3)
+			const p3Problems = validator.validateTeam(Teams.unpack(partnerTeam));
+			if (p3Problems) {
+				return { success: false, error: `P3 team validation failed: ${p3Problems.join(', ')}` };
+			}
+		}
+
+		// Pack NPC teams
+		const npcP2TeamPacked = Teams.pack(npcMultiTeam.p2);
+		const npcP4TeamPacked = Teams.pack(npcMultiTeam.p4);
+
+		// Create battle room with all 4 players
 		const room = createMultiBattleRoom(
 			user,
 			teammate,
 			npc,
 			format,
 			userTeam,
-			teammateTeam,
+			partnerTeam,
 			npcP2TeamPacked,
 			npcP4TeamPacked,
-			difficulty
+			isRandom ? 'smart' : difficulty
 		);
 		if (!room) {
 			return { success: false, error: 'Failed to create multi battle room' };

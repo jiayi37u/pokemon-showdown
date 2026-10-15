@@ -31,6 +31,10 @@ NPC 对战功能允许用户与电脑控制的对手进行对战，支持可配�
 
 随机对战默认为 Smart AI，难度由玩家选择，与抽到的 NPC 无关。`/npc challenge random` 可直接打开选择页；也可以使用命令 `/npc random gen5pokemmorandombattle, basic` 指定 Basic AI；省略格式的 `/npc random` 默认进入 Gen 9。随机格式在 `server/npc/manager.ts` 的 `NPC_RANDOM_FORMATS` 中统一配置，NPC 模板只配置形象和固定队伍，无需逐个维护随机格式。
 
+随机页的 **Multi Battle** 区提供 **Gen 9 Multi Random Battle** 和 **PokeMMO Multi Random Battle**。点击 **Multi**，填写队友用户名后点击 **Send Invitation**；队友点击 **Accept & Battle** 后进入对局。玩家占 p1／p3，NPC 占 p2／p4，每个位置独立生成 3 只精灵，无需选择队伍，也不会使用已选择的队伍。随机 Multi 使用 Smart AI，与单打难度选择无关。邀请沿用现有挑战系统，可拒绝或取消；接受前不会生成队伍或创建房间。
+
+随机 Multi 格式在 `NPC_RANDOM_MULTI_FORMATS` 中配置。直接邀请命令为 `/npc multi random, 队友名, smart, gen9multirandombattle` 或 `/npc multi random, 队友名, smart, gen5pokemmomultirandombattle`；省略格式时默认为 Gen 9。固定 NPC Multi 仍需双方提供合法队伍。
+
 PokeMMO 随机对战的精灵池、配队模板和等级沿用 Gen 5 Random Battle，包含神兽，按物种保留 69–100 级的平衡等级；战斗使用 MMO 机制。该模式不执行 OU／UU／NU 的精灵池、组合禁用或统一 50 级规则，也不限制 MMO 的获取方式。Gen 5 配置的等级没有针对 MMO 机制重新调优。
 
 规则与测试范围见 [MMO 模组说明](../../data/mods/mmo/README.md#random-battle)。

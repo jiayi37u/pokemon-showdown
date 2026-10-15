@@ -63,6 +63,19 @@ export const Formats: import('../sim/dex-formats').FormatList = [
 		},
 	},
 	{
+		name: "[Gen 5] PokeMMO Multi Random Battle",
+		mod: 'mmo',
+		team: 'random',
+		gameType: 'multi',
+		searchShow: false,
+		tournamentShow: false,
+		rated: false,
+		ruleset: ['[Gen 5] PokeMMO Random Battle', 'Max Team Size = 3'],
+		onBattleStart() {
+			this.gen = 8;
+		},
+	},
+	{
 		name: "[Gen 5] PokeMMO OU",
 		mod: 'mmo',
 		ruleset: ['PokeMMO Standard'],

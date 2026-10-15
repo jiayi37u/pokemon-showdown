@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('../../assert');
-const { NPC, NPC_RANDOM_FORMATS } = require('../../../dist/server/npc/manager');
+const { NPC, NPC_RANDOM_FORMATS, NPC_RANDOM_MULTI_FORMATS } = require('../../../dist/server/npc/manager');
 const { commands, pages } = require('../../../dist/server/chat-plugins/npc');
 
 describe('NPC global random battle menu', () => {
@@ -58,7 +58,7 @@ describe('NPC global random battle menu', () => {
 		const randomRows = rows.filter(row => row.includes('value="/npc challenge random"'));
 		assert.equal(randomRows.length, 1);
 		assert(randomRows[0].includes('<strong>Random Battle</strong>'));
-		for (const format of NPC_RANDOM_FORMATS) {
+		for (const format of [...NPC_RANDOM_FORMATS, ...NPC_RANDOM_MULTI_FORMATS]) {
 			assert(randomRows[0].includes(Dex.formats.get(format).name));
 		}
 		assert(!html.includes('value="/npc random '));
@@ -86,7 +86,10 @@ describe('NPC global random battle menu', () => {
 			assert.equal(html, pages.npc.call({}, ['challenge', 'random', difficulty], user));
 			assert(html.includes(`${difficulty === 'basic' ? 'Basic' : 'Smart'} ✓`));
 			assert(!html.includes('requires team'));
-			assert(!html.includes('Multi Battle'));
+			assert(html.includes('Multi Battle'));
+			for (const format of NPC_RANDOM_MULTI_FORMATS) {
+				assert(html.includes(`value="/npc multisetup random, smart, ${format}"`));
+			}
 			assert.equal(selections, 0);
 			assert.equal(requests.length, 0);
 			for (const format of NPC_RANDOM_FORMATS) {

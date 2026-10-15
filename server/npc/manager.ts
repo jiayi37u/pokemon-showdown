@@ -13,6 +13,7 @@ import { Dex } from '../../sim/dex';
 
 /** Random formats are shared by all NPC appearances, independently of fixed teams. */
 export const NPC_RANDOM_FORMATS: readonly string[] = ['gen9randombattle', 'gen5pokemmorandombattle'];
+export const NPC_RANDOM_MULTI_FORMATS: readonly string[] = ['gen9multirandombattle', 'gen5pokemmomultirandombattle'];
 
 /**
  * NPC 的队伍配置。
@@ -204,7 +205,7 @@ export class NPCManager {
 		if (!template) return false;
 
 		if (isRandomBattleFormat(format)) {
-			return NPC_RANDOM_FORMATS.includes(format);
+			return NPC_RANDOM_FORMATS.includes(format) || NPC_RANDOM_MULTI_FORMATS.includes(format);
 		}
 		return this.findTeamFilesForFormat(template, format).length > 0;
 	}
@@ -309,6 +310,7 @@ export class NPCManager {
 			for (const f of content.formats) seen.add(f);
 		}
 		for (const f of NPC_RANDOM_FORMATS) seen.add(f);
+		for (const f of NPC_RANDOM_MULTI_FORMATS) seen.add(f);
 		return [...seen];
 	}
 

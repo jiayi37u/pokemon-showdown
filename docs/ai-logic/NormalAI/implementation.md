@@ -10,6 +10,7 @@ Normal 和 Hard 共用信息层。单打、双打、Multi 均由 `buildBattleSta
 | `cfru/state-builder.ts` | 合并请求和 tracker，统一场地名称、场上位置和双方队伍信息，应用公开效果及对手配置估计。 |
 | `cfru/util/opponent-presets.ts`、`random-presets.ts`、`hard/opponent-model.ts` | 管理配置候选与推断；已观察事实优先于候选，未知槽位不等于不存在招式。 |
 | `cfru/util/damage-calc.ts`、`type-calc.ts`、`speed.ts` | 集中维护共享机制估算；缓存区分状态快照和计算条件，不能只按敌我可能重复的槽位编号区分精灵。 |
+| `cfru/util/mechanics.ts` | 统一特性是否生效、道具是否生效、接地和优先级；按真实或假设的场上阵容计算全场压制。 |
 | `cfru/util/items.ts`、`move-effects.ts` | 判断道具操作、状态附加、场地及位置效果是否可生效；评分器只负责把结果转换为分数。 |
 | `cfru/scoring/`、`hard/evaluation.ts` | 根据同一状态做策略评分；评分上下文的 `dex` 对应当前 format。 |
 
@@ -17,7 +18,13 @@ Normal 和 Hard 共用信息层。单打、双打、Multi 均由 `buildBattleSta
 
 道具的持有、效果失效、被移除和被消耗是不同状态。`items.ts` 通过只提供公开物种和招式的投影调用当前 format 的 `onTakeItem` 纯判断，回归测试约束其读取范围；不传入真实 Battle/Pokemon。投掷和自然之恩的威力读取当前 format 的道具数据。拍落的威力加成与移除收益分别判断。`recyclableItem` 的空字符串表示没有可回收道具，`undefined` 表示公开信息不足；例如对手使用自然之恩不暴露具体树果，己方则可用下一次授权请求确认消耗。
 
+特性身份与特性生效分开保存和计算：`ability` 保留当前持有或推测的特性，`observedAbility` 保存原生特性的公开证据，胃液记录为临时状态。评分和伤害等消费者使用 `effectiveAbility`，不能用空特性同时表示“未知”和“被压制”。规则读取当前 format 的特性标记，处理化学变化气体、特性护具与变身限制；假设换人、Mega 或配置候选时，重算场上阵容的压制效果。早起按每次睡眠判定发生时的生效特性扣减已知 Rest 计数。`weatherId` 保留公开天气身份，`weather` 表示当前生效的天气；天气被无关天气／气闸压制时保留身份，退场后恢复。始源之海、终结之地和德尔塔气流的特殊规则不丢失。
+
+`-singleturn` 效果在回合结束时清理，`-singlemove` 效果保留到持有者下一次行动（包括不能行动）。普通换人清理两者。连续同命的失败判断使用当前规则：MMO 和 Gen7 起限制连续使用，Gen6 不限制。消耗道具后的回血或发动消息只说明效果来源，不代表重新获得道具；只有明确的获得事件或授权请求才能恢复持有状态。
+
 Multi 中，`self.team` 包含己方两名玩家的精灵；每个控制器的 `self.reserve` 只包含自己可以换入的后备。场上 `slot` 表示位置，后备 `slot` 表示所属玩家的队伍序号，不能拿它充当全局精灵身份。
+
+招式能否选择目标以 PS 请求为准；锁定招式省略 `target` 时，不能从 Dex 补回目标类型。没有存活队友的 `adjacentAlly` 招式在共用有效性判断中扣分；如果所有可用动作都无效，提交的指令仍须包含合法的位置编号。
 
 `test/server/npc/battle-state-mechanics.js` 用真实 PS 战斗产生公开事件，再核对 AI 状态；`multi-decisions.js` 验证生产 Multi 控制器。涉及位置和信息生命周期的改动应覆盖单打、双打、Multi。模拟器内部状态仅用于测试断言，AI 输入来自授权请求和公开协议。
 

@@ -12,7 +12,7 @@ import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions, SideConditions } from '../types';
 import { getSTABMultiplier, getMoveInteraction, resolveItemMoveType, type MoveInteractionContext } from './type-calc';
 import { isFaster, getEffectiveSpeed } from './speed';
-import { getEffectiveStat, effectiveItem, grounded, rulesDex, defensiveAbility } from './mechanics';
+import { effectiveAbility, getEffectiveStat, effectiveItem, grounded, rulesDex, defensiveAbility } from './mechanics';
 import { flingFailure, itemAllowsRemoval } from './items';
 import { pokemonCacheId } from './cache';
 import { canHaveOpponentMoves } from './opponent-presets';
@@ -287,7 +287,7 @@ export function getAttackStat(
 	let stat = getEffectiveStat(baseStat, boost);
 
 	// Ability modifiers
-	const abilityId = toID(attacker.ability);
+	const abilityId = effectiveAbility(attacker, field);
 
 	// Huge Power / Pure Power
 	if ((abilityId === 'hugepower' || abilityId === 'purepower') && isPhysical) {
@@ -335,7 +335,9 @@ export function getAttackStat(
 	}
 
 	if (abilityId === 'slowstart' && isPhysical && attacker.volatiles.has('slowstart')) stat *= 0.5;
-	if (attacker.abilityStatMod?.stat === (isPhysical ? 'atk' : 'spa')) stat *= attacker.abilityStatMod.multiplier;
+	if (abilityId && attacker.abilityStatMod?.stat === (isPhysical ? 'atk' : 'spa')) {
+		stat *= attacker.abilityStatMod.multiplier;
+	}
 	return Math.floor(stat);
 }
 
@@ -350,7 +352,7 @@ export function getDefenseStat(
 	defender: AIPokemon,
 	move: AIMove,
 	field: FieldConditions,
-	ability: string = toID(defender.ability)
+	ability: string = effectiveAbility(defender, field)
 ): number {
 	// Special case: Psyshock, Psystrike, Secret Sword use physical defense
 	const moveId = toID(move.id);
@@ -403,7 +405,8 @@ export function getDefenseStat(
 	}
 
 	if (field.weather === 'snow' && usesPhysicalDef && defender.types.includes('Ice')) stat = Math.floor(stat * 1.5);
-	if (defender.abilityStatMod?.stat === (usesPhysicalDef ? 'def' : 'spd') && ability === toID(defender.ability)) {
+	if (ability && defender.abilityStatMod?.stat === (usesPhysicalDef ? 'def' : 'spd') &&
+		ability === effectiveAbility(defender, field)) {
 		stat *= defender.abilityStatMod.multiplier;
 	}
 	return Math.floor(stat);
@@ -429,7 +432,7 @@ export function getModifiedBasePower(
 	if (basePower === 0) return 0;
 
 	const moveId = toID(move.id);
-	const attackerAbility = toID(attacker.ability);
+	const attackerAbility = effectiveAbility(attacker, field);
 	const defenderAbility = defensiveAbility(attacker, defender, move, field);
 
 	// Ability-based power boosts
@@ -633,7 +636,7 @@ function getVariableBasePower(
 	// CFRU damage_calc.c lines 3542-3569
 	if (moveId === 'heavyslam' || moveId === 'heatcrash') {
 		return getWeightRatioPower(
-			attacker.species, attacker.ability, effectiveItem(attacker, field),
+			attacker.species, effectiveAbility(attacker, field), effectiveItem(attacker, field),
 			defender.species, defensiveAbility(attacker, defender, move, field), effectiveItem(defender, field)
 		);
 	}
@@ -944,14 +947,14 @@ export function calculateDamage(
 	let baseDamage = Math.floor(Math.floor(Math.floor(2 * level / 5 + 2) * basePower * attack / defense) / 50 + 2);
 
 	// STAB
-	const stabMultiplier = getSTABMultiplier(move.type, attacker.types, attacker.ability);
+	const stabMultiplier = getSTABMultiplier(move.type, attacker.types, effectiveAbility(attacker, field));
 	baseDamage = Math.floor(baseDamage * stabMultiplier);
 
 	// Type effectiveness
 	baseDamage = Math.floor(baseDamage * effectiveness);
 
 	// 以下这些乘数依赖 "是否超效 / 是否被抵抗" 的判断，必须在 effectiveness 相乘之后
-	const atkAbilityId = toID(attacker.ability);
+	const atkAbilityId = effectiveAbility(attacker, field);
 	const defAbilityId = defensiveAbility(attacker, defender, move, field);
 
 	// Tinted Lens (attacker)：抵抗招式伤害 ×2（CFRU damage_calc.c:3107）
@@ -1000,7 +1003,7 @@ export function calculateDamage(
 
 	// Burn penalty (physical moves, except Guts/Facade)
 	if (attacker.status === 'brn' && move.category === 'Physical' &&
-		toID(attacker.ability) !== 'guts' && toID(move.id) !== 'facade') {
+		effectiveAbility(attacker, field) !== 'guts' && toID(move.id) !== 'facade') {
 		baseDamage = Math.floor(baseDamage * 0.5);
 	}
 
@@ -1018,7 +1021,8 @@ export function calculateDamage(
 	const screen = conditions?.auroraveil || (move.category === 'Physical' ?
 		conditions?.reflect || defender.volatiles.has('reflect') :
 		conditions?.lightscreen || defender.volatiles.has('lightscreen'));
-	if (screen && toID(attacker.ability) !== 'infiltrator' && !['brickbreak', 'psychicfangs'].includes(move.id)) {
+	if (screen && effectiveAbility(attacker, field) !== 'infiltrator' &&
+		!['brickbreak', 'psychicfangs'].includes(move.id)) {
 		baseDamage = Math.floor(baseDamage * (spreadInfo?.isDoubles ? 2 / 3 : 0.5));
 	}
 
@@ -1034,7 +1038,8 @@ export function calculateDamage(
 	}
 
 	// Get multi-hit count
-	const hitCount = getExpectedHitCount(move, attacker.ability, effectiveItem(attacker, field), attacker.species);
+	const hitCount = getExpectedHitCount(move, effectiveAbility(attacker, field),
+		effectiveItem(attacker, field), attacker.species);
 
 	// Calculate single hit damage with rolls
 	const singleMinDamage = Math.floor(baseDamage * MIN_ROLL);
@@ -1193,8 +1198,8 @@ export function findStrongestMove(
  * @param forAI - If true, estimate next turn's toxic damage
  * @returns Damage amount
  */
-export function getPoisonDamage(pokemon: AIPokemon, forAI: boolean = true): number {
-	const abilityId = toID(pokemon.ability);
+export function getPoisonDamage(pokemon: AIPokemon, forAI = true, field?: FieldConditions): number {
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard and Poison Heal prevent poison damage
 	if (abilityId === 'magicguard' || abilityId === 'poisonheal') {
@@ -1226,8 +1231,8 @@ export function getPoisonDamage(pokemon: AIPokemon, forAI: boolean = true): numb
  * @param pokemon - Pokemon taking damage
  * @returns Damage amount
  */
-export function getBurnDamage(pokemon: AIPokemon): number {
-	const abilityId = toID(pokemon.ability);
+export function getBurnDamage(pokemon: AIPokemon, field?: FieldConditions): number {
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents burn damage
 	if (abilityId === 'magicguard') {
@@ -1256,12 +1261,12 @@ export function getBurnDamage(pokemon: AIPokemon): number {
  * @param weather - Current weather
  * @returns Damage amount
  */
-export function getSandstormDamage(pokemon: AIPokemon, weather: string): number {
+export function getSandstormDamage(pokemon: AIPokemon, weather: string, field?: FieldConditions): number {
 	if (weather !== 'sand' && weather !== 'sandstorm') {
 		return 0;
 	}
 
-	const abilityId = toID(pokemon.ability);
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents weather damage
 	if (abilityId === 'magicguard') {
@@ -1299,13 +1304,13 @@ export function getSandstormDamage(pokemon: AIPokemon, weather: string): number 
  * @param weather - Current weather
  * @returns Damage amount
  */
-export function getHailDamage(pokemon: AIPokemon, weather: string): number {
+export function getHailDamage(pokemon: AIPokemon, weather: string, field?: FieldConditions): number {
 	// Hail or Snow (snow doesn't do damage in Gen 9+, but older gens it does)
 	if (weather !== 'hail') {
 		return 0;
 	}
 
-	const abilityId = toID(pokemon.ability);
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents weather damage
 	if (abilityId === 'magicguard') {
@@ -1340,8 +1345,8 @@ export function getHailDamage(pokemon: AIPokemon, weather: string): number {
  * @param pokemon - Pokemon taking damage
  * @returns Damage amount
  */
-export function getLeechSeedDamage(pokemon: AIPokemon): number {
-	const abilityId = toID(pokemon.ability);
+export function getLeechSeedDamage(pokemon: AIPokemon, field?: FieldConditions): number {
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents leech seed damage
 	if (abilityId === 'magicguard') {
@@ -1364,8 +1369,8 @@ export function getLeechSeedDamage(pokemon: AIPokemon): number {
  * @param pokemon - Pokemon taking damage
  * @returns Damage amount
  */
-export function getTrapDamage(pokemon: AIPokemon): number {
-	const abilityId = toID(pokemon.ability);
+export function getTrapDamage(pokemon: AIPokemon, field?: FieldConditions): number {
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents trap damage
 	if (abilityId === 'magicguard') {
@@ -1389,8 +1394,8 @@ export function getTrapDamage(pokemon: AIPokemon): number {
  * @param pokemon - Pokemon taking damage
  * @returns Damage amount
  */
-export function getCurseDamage(pokemon: AIPokemon): number {
-	const abilityId = toID(pokemon.ability);
+export function getCurseDamage(pokemon: AIPokemon, field?: FieldConditions): number {
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents curse damage
 	if (abilityId === 'magicguard') {
@@ -1413,8 +1418,8 @@ export function getCurseDamage(pokemon: AIPokemon): number {
  * @param pokemon - Pokemon taking damage
  * @returns Damage amount
  */
-export function getNightmareDamage(pokemon: AIPokemon): number {
-	const abilityId = toID(pokemon.ability);
+export function getNightmareDamage(pokemon: AIPokemon, field?: FieldConditions): number {
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents nightmare damage
 	if (abilityId === 'magicguard') {
@@ -1443,8 +1448,8 @@ export function getNightmareDamage(pokemon: AIPokemon): number {
  * @param pokemon - Pokemon taking damage
  * @returns Damage amount
  */
-export function getSaltCureDamage(pokemon: AIPokemon): number {
-	const abilityId = toID(pokemon.ability);
+export function getSaltCureDamage(pokemon: AIPokemon, field?: FieldConditions): number {
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents Salt Cure damage
 	if (abilityId === 'magicguard') {
@@ -1471,13 +1476,13 @@ export function getSaltCureDamage(pokemon: AIPokemon): number {
  * @param opponentAbility - Opponent's ability
  * @returns Damage amount
  */
-export function getBadDreamsDamage(pokemon: AIPokemon, opponentAbility: string): number {
+export function getBadDreamsDamage(pokemon: AIPokemon, opponentAbility: string, field?: FieldConditions): number {
 	// Only triggers if opponent has Bad Dreams
 	if (toID(opponentAbility) !== 'baddreams') {
 		return 0;
 	}
 
-	const abilityId = toID(pokemon.ability);
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents Bad Dreams damage
 	if (abilityId === 'magicguard') {
@@ -1506,9 +1511,10 @@ export function getBadDreamsDamage(pokemon: AIPokemon, opponentAbility: string):
 export function getSecondaryEffectDamage(
 	pokemon: AIPokemon,
 	weather: string,
-	opponentAbility: string = ''
+	opponentAbility = '',
+	field?: FieldConditions
 ): number {
-	const abilityId = toID(pokemon.ability);
+	const abilityId = effectiveAbility(pokemon, field);
 
 	// Magic Guard prevents all secondary effect damage
 	if (abilityId === 'magicguard') {
@@ -1518,22 +1524,22 @@ export function getSecondaryEffectDamage(
 	let totalDamage = 0;
 
 	// Weather damage
-	totalDamage += getSandstormDamage(pokemon, weather);
-	totalDamage += getHailDamage(pokemon, weather);
+	totalDamage += getSandstormDamage(pokemon, weather, field);
+	totalDamage += getHailDamage(pokemon, weather, field);
 
 	// Status damage
-	totalDamage += getPoisonDamage(pokemon, true);
-	totalDamage += getBurnDamage(pokemon);
+	totalDamage += getPoisonDamage(pokemon, true, field);
+	totalDamage += getBurnDamage(pokemon, field);
 
 	// Volatile damage
-	totalDamage += getLeechSeedDamage(pokemon);
-	totalDamage += getTrapDamage(pokemon);
-	totalDamage += getCurseDamage(pokemon);
-	totalDamage += getNightmareDamage(pokemon);
-	totalDamage += getSaltCureDamage(pokemon);
+	totalDamage += getLeechSeedDamage(pokemon, field);
+	totalDamage += getTrapDamage(pokemon, field);
+	totalDamage += getCurseDamage(pokemon, field);
+	totalDamage += getNightmareDamage(pokemon, field);
+	totalDamage += getSaltCureDamage(pokemon, field);
 
 	// Ability damage
-	totalDamage += getBadDreamsDamage(pokemon, opponentAbility);
+	totalDamage += getBadDreamsDamage(pokemon, opponentAbility, field);
 
 	return totalDamage;
 }
@@ -1635,7 +1641,7 @@ export function canKnockOutWithSecondary(
 	cache?: AICache
 ): boolean {
 	const damage = calculateDamage(attacker, defender, move, field, cache);
-	const secondaryDamage = getSecondaryEffectDamage(defender, field.weather, attacker.ability);
+	const secondaryDamage = getSecondaryEffectDamage(defender, field.weather, effectiveAbility(attacker, field), field);
 	const currentHp = Math.floor((defender.maxHp || 100) * defender.hpPercent / 100);
 
 	return damage.average + secondaryDamage >= currentHp;

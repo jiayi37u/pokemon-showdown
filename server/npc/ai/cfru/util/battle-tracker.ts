@@ -10,7 +10,7 @@
  */
 
 import { Dex, toID } from '../../../../../sim/dex';
-import { abilityStatModifier } from './mechanics';
+import { abilityStatModifier, effectiveAbility, hasNeutralizingGas, normalizeWeather } from './mechanics';
 import { defaultBoosts, type AIPokemon } from '../types';
 
 /** Only facts available in our request; never store inferred models or scoring state here. */
@@ -25,15 +25,7 @@ export interface TrackedTransformation {
 	knownMoves: string[];
 }
 
-/** Protocol names and engine IDs share one vocabulary in AI calculations. */
-export function normalizeWeather(weather: string): string {
-	const id = toID(weather);
-	const names: Record<string, string> = {
-		sunnyday: 'sun', desolateland: 'sun', raindance: 'rain', primordialsea: 'rain',
-		sandstorm: 'sand', snowscape: 'snow', none: '',
-	};
-	return names[id] ?? id;
-}
+export { normalizeWeather } from './mechanics';
 
 /**
  * Tracked Pokemon information
@@ -131,6 +123,8 @@ export class BattleTracker {
 	/** Tracked opponent Pokemon (keyed by position like 'p1a', 'p1b') */
 	private opponentPokemon: Map<string, TrackedPokemon> = new Map();
 	private activeVolatiles = new Map<string, Set<string>>();
+	/** Protocol-declared effects expire either at the end of this turn or the holder's next action. */
+	private transientEffects = new Map<string, Map<string, 'turn' | 'move'>>();
 	private turn = 0;
 	private acted = new Set<string>();
 	private slotEffects = new Map<string, { wish?: number, futuremove?: number }>();
@@ -146,6 +140,7 @@ export class BattleTracker {
 	private lastMoveSource = '';
 	private transformations = new Map<string, TrackedTransformation>();
 	private ourPokemon = new Map<string, { ident: string, pokemon: RequestPokemonFacts }>();
+	private activeAbilities = new Map<string, string>();
 	private consumedItems = new Map<string, string>();
 	private knockedOffItems = new Set<string>();
 	/** Natural Gift has no enditem event; only our next request can confirm the consumed berry. */
@@ -160,12 +155,13 @@ export class BattleTracker {
 	/** Field conditions */
 	private fieldConditions: {
 		weather: string,
+		weatherId: string,
 		terrain: string,
 		trickRoom: boolean,
 		gravity: boolean,
 		magicRoom: boolean,
 		wonderRoom: boolean,
-	} = { weather: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false };
+	} = { weather: '', weatherId: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false };
 
 	/** Opponent side conditions */
 	private opponentSideConditions: {
@@ -323,6 +319,7 @@ export class BattleTracker {
 			this.teamSizes.set(parts[1], Number(parts[2]));
 			break;
 		case 'turn':
+			this.clearTransientEffects('turn');
 			this.lastMoveSource = '';
 			this.turn = Number(parts[1]) || this.turn;
 			break;
@@ -348,6 +345,7 @@ export class BattleTracker {
 				tracked.types = species.types;
 				if (species.isMega || species.id === 'greninjaash') {
 					tracked.ability = species.abilities[0];
+					this.activeAbilities.set(position, tracked.ability);
 					tracked.baseAbility = tracked.ability;
 					tracked.abilityChanged = false;
 				}
@@ -363,8 +361,12 @@ export class BattleTracker {
 			this.handleHPChange(parts);
 			const item = parts.find(p => p.startsWith('[from] item: '));
 			if (item && !parts.some(p => p.startsWith('[of]'))) {
-				this.handleItem(['-item', parts[1], item.slice('[from] item: '.length)]);
+				this.handleItem(['-item', parts[1], item.slice('[from] item: '.length)], true);
 			}
+			break;
+		case '-block':
+		case '-activate':
+			if (parts[2]?.startsWith('item: ')) this.handleItem(['-item', parts[1], parts[2].slice(6)], true);
 			break;
 		case '-status':
 			this.handleStatus(parts);
@@ -374,13 +376,18 @@ export class BattleTracker {
 			this.handleCureStatus(parts);
 			break;
 		case 'cant':
+			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
 			if (parts[2] === 'slp') {
 				const ident = this.sleepIdentity(parts[1]);
-				if (this.restSleep.has(ident)) this.restSleep.set(ident, this.restSleep.get(ident)! + 1);
+				if (this.restSleep.has(ident)) {
+					const decrement = this.getEffectiveAbility(parts[1].split(':')[0]) === 'earlybird' ? 2 : 1;
+					this.restSleep.set(ident, this.restSleep.get(ident)! + decrement);
+				}
 			}
 			break;
 		case 'move':
+			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
 			this.pendingWishPosition = '';
 			this.pendingFutureMove = ['futuresight', 'doomdesire'].includes(toID(parts[2])) ? {
@@ -429,6 +436,19 @@ export class BattleTracker {
 		case '-end':
 			this.handleVolatileStatus(parts);
 			break;
+		case '-singleturn':
+		case '-singlemove': {
+			const position = parts[1].split(':')[0].trim();
+			const effect = toID(parts[2].replace(/^(?:move|ability): /, ''));
+			const effects = this.transientEffects.get(position) || new Map();
+			effects.set(effect, command === '-singleturn' ? 'turn' : 'move');
+			this.transientEffects.set(position, effects);
+			this.handleVolatileStatus(['-start', parts[1], effect]);
+			break;
+		}
+		case 'upkeep':
+			this.clearTransientEffects('turn');
+			break;
 		}
 	}
 
@@ -470,10 +490,12 @@ export class BattleTracker {
 		}
 
 		this.activeVolatiles.set(position, new Set());
+		this.transientEffects.delete(position);
 		this.activeTypes.delete(position);
 		this.acted.delete(position);
 		this.transformations.delete(position);
 		this.ourPokemon.delete(position);
+		this.activeAbilities.delete(position);
 		const outgoing = this.opponentPokemon.get(position);
 		if (outgoing) {
 			outgoing.types = [...(this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(outgoing.species).types];
@@ -613,6 +635,9 @@ export class BattleTracker {
 				baseStats: { ...own.pokemon.baseStats }, moves: [...own.pokemon.moves] };
 		}
 		this.transformations.set(position, transformation);
+		if ((this.formatId ? Dex.forFormat(this.formatId) : Dex).gen > 2) {
+			this.activeAbilities.set(position, target?.ability || own?.pokemon.ability || '');
+		}
 		this.activeTypes.delete(position);
 		const boosts = target ? { ...target.boosts } : this.getOurActiveBoosts(targetPosition);
 		if (this.isOurTeamSide(position.slice(0, 2))) {
@@ -648,6 +673,7 @@ export class BattleTracker {
 		const facts = { species: pokemon.species, types: [...pokemon.types], baseStats: { ...pokemon.baseStats },
 			ability: pokemon.ability, moves: [...pokemon.moves], item: pokemon.item };
 		this.ourPokemon.set(key, { ident: this.sleepIdentity(ident), pokemon: facts });
+		this.activeAbilities.set(key, pokemon.ability);
 		// An opening Imposter can precede the first request containing our own stats.
 		for (const transformation of this.transformations.values()) {
 			if (!transformation.target && !transformation.pokemon &&
@@ -667,6 +693,8 @@ export class BattleTracker {
 
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
+		this.activeAbilities.delete(position);
+		this.ourPokemon.delete(position);
 
 		if (!this.isOpponentSide(side)) return;
 
@@ -685,6 +713,7 @@ export class BattleTracker {
 
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
+		this.activeAbilities.set(position, ability);
 
 		if (this.isOurTeamSide(side)) {
 			const own = this.ourPokemon.get(position);
@@ -735,13 +764,16 @@ export class BattleTracker {
 			return;
 		}
 		if (command === '-endability') {
-			this.recordAbility(pokemon, '', true);
+			// Gastro Acid emits no -start event. It suppresses, rather than replaces, the ability.
+			this.handleVolatileStatus(['-start', pokemon, 'gastroacid']);
 			return;
 		}
 		if (command === '-activate' && (effect === 'move: Skill Swap' || effect === 'Skill Swap')) {
 			// The public fields contain the new ability of each participant; allied swaps hide them.
-			const ours = this.opponentPokemon.get(pokemon?.split(':')[0].trim())?.ability || '';
-			const theirs = this.opponentPokemon.get(of?.split(':')[0].trim() || '')?.ability || '';
+			const oursPosition = pokemon?.split(':')[0].trim();
+			const ours = this.activeAbilities.get(oursPosition) ?? this.opponentPokemon.get(oursPosition)?.ability ?? '';
+			const theirsPosition = of?.split(':')[0].trim() || '';
+			const theirs = this.activeAbilities.get(theirsPosition) ?? this.opponentPokemon.get(theirsPosition)?.ability ?? '';
 			this.recordAbility(pokemon, parts[3] || theirs, true, parts[4] || ours);
 			this.recordAbility(of, parts[4] || ours, true, parts[3] || theirs);
 			return;
@@ -784,7 +816,7 @@ export class BattleTracker {
 	 * Format: |-item|p1a: Nickname|Air Balloon
 	 *         |-enditem|p1a: Nickname|Air Balloon
 	 */
-	private handleItem(parts: string[]): void {
+	private handleItem(parts: string[], revealOnly = false): void {
 		const command = parts[0];
 		const positionPart = parts[1];
 		if (!positionPart) return;
@@ -796,6 +828,8 @@ export class BattleTracker {
 		const identity = this.sleepIdentity(positionPart);
 		const from = parts.find(p => p.startsWith('[from]')) || '';
 		const own = this.ourPokemon.get(position);
+		// A consumed item's subsequent effect reveals its source, not a newly held item.
+		if (revealOnly && (this.opponentPokemon.get(position)?.itemLost || (own && !own.pokemon.item))) return;
 		if (own) own.pokemon.item = command === '-enditem' ? '' : item;
 		// An explicit loss is not the silent consumption inferred from Natural Gift.
 		this.naturalGiftItems.delete(identity);
@@ -1013,7 +1047,9 @@ export class BattleTracker {
 	 * Format: |-weather|Sandstorm
 	 */
 	private handleWeather(parts: string[]): void {
-		if (parts[1]) this.fieldConditions.weather = normalizeWeather(parts[1]);
+		if (!parts[1]) return;
+		this.fieldConditions.weather = normalizeWeather(parts[1]);
+		this.fieldConditions.weatherId = parts[1] === 'none' ? '' : toID(parts[1]);
 	}
 
 	/**
@@ -1126,6 +1162,7 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim();
 		// Record protocol facts for both teams, without adding any inferred effects.
 		const effect = toID((parts[2] || '').replace(/^(?:move|ability): /, ''));
+		if (command === '-end') this.transientEffects.get(position)?.delete(effect);
 		if (effect === 'futuresight' || effect === 'doomdesire') {
 			// Start names the user, while end names the occupant of the target position.
 			if (command === '-end') this.setSlotEffect(position, 'futuremove', 0);
@@ -1174,6 +1211,18 @@ export class BattleTracker {
 		const tracked = this.opponentPokemon.get(position);
 		if (tracked) tracked.volatiles = effects;
 
+	}
+
+	private clearTransientEffects(duration: 'turn' | 'move', position?: string): void {
+		for (const [key, effects] of this.transientEffects) {
+			if (position && position !== key) continue;
+			for (const [effect, lifetime] of effects) {
+				if (lifetime !== duration) continue;
+				this.activeVolatiles.get(key)?.delete(effect);
+				effects.delete(effect);
+			}
+			if (!effects.size) this.transientEffects.delete(key);
+		}
 	}
 
 	/**
@@ -1552,7 +1601,7 @@ export class BattleTracker {
 		const opponent = this.getActiveOpponent();
 		if (!opponent || !opponent.ability) return false;
 
-		const abilityId = toID(opponent.ability);
+		const abilityId = this.getEffectiveAbility(opponent.position);
 		const typeId = toID(moveType);
 
 		// Electric immunities
@@ -1766,13 +1815,28 @@ export class BattleTracker {
 		const slept = ident ? this.restSleep.get(ident) : undefined;
 		if (slept === undefined) return 0;
 		const decrement = toID(ability) === 'earlybird' ? 2 : 1;
-		const remaining = 3 - slept * decrement;
+		const remaining = 3 - slept;
 		return remaining <= decrement ? 1 : remaining;
 	}
 
 	getVolatiles(position: string): Set<string> {
 		const key = position.startsWith('p') ? position : `${this.ourSide}${position}`;
 		return new Set(this.activeVolatiles.get(key));
+	}
+
+	/** Effective public ability at an event's instant, before later requests or switches. */
+	getEffectiveAbility(position: string): string {
+		const facts = (key: string) => {
+			const mon = this.opponentPokemon.get(key) || this.ourPokemon.get(key)?.pokemon;
+			const volatiles = this.getVolatiles(key);
+			if (this.transformations.has(key)) volatiles.add('transform');
+			return { ability: this.activeAbilities.get(key) ?? mon?.ability ?? '',
+				item: mon?.item || '', itemLost: false, volatiles };
+		};
+		const positions = [...this.activeIdentities.keys()].filter(key =>
+			this.activeAbilities.has(key) || this.ourPokemon.has(key) || this.opponentPokemon.get(key)?.active);
+		return effectiveAbility(facts(position), { formatId: this.formatId, magicroom: this.fieldConditions.magicRoom,
+			neutralizingGas: hasNeutralizingGas(positions.map(facts)) });
 	}
 
 	/** Consumption is separate from removal and temporary effects; Gen 3–4 switches transfer it. */
@@ -1808,17 +1872,19 @@ export class BattleTracker {
 		this.lastMoveSource = '';
 		this.transformations.clear();
 		this.ourPokemon.clear();
+		this.activeAbilities.clear();
 		this.consumedItems.clear();
 		this.knockedOffItems.clear();
 		this.naturalGiftItems.clear();
 		this.activeVolatiles.clear();
+		this.transientEffects.clear();
 		this.activeTypes.clear();
 		this.opponentPokemon.clear();
 		this.opponentTeam.clear();
 		this.ourActiveBoosts.clear();
 		this.ourLastMove.clear();
 		this.fieldConditions = {
-			weather: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false,
+			weather: '', weatherId: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false,
 		};
 		this.opponentSideConditions = {
 			stealthrock: false,

@@ -7,6 +7,7 @@ import { FS } from '../../../../lib';
 import { Dex, toID } from '../../../../sim/dex';
 import type { AIPokemon, AIMove, BattleState, MoveScore, OpponentModel as OpponentHypothesis } from '../cfru/types';
 export type { OpponentModel as OpponentHypothesis } from '../cfru/types';
+import { replaceActivePokemon } from '../cfru/util/mechanics';
 import { inferRandomBattle } from '../cfru/util/random-presets';
 import { buildAIMove } from '../cfru/state-builder';
 import {
@@ -212,11 +213,8 @@ export function predictOpponent(
 			const known = user.moveKnowledge?.revealedMoves || user.moves.map(toID);
 			const conditional = { ...user, moves: [...new Set([...known, candidate.id])].filter(id =>
 				!(id === 'hiddenpower' && candidate.id !== 'hiddenpower' && candidate.id.startsWith('hiddenpower'))) };
-			const side = { ...state.opponent,
-				active: state.opponent.active.map(p => p === opponent ? conditional : p),
-				team: state.opponent.team.map(p => p === opponent ? conditional : p),
-			};
-			return score({ ...state, self: side, opponent: state.self }, conditional,
+			const projected = replaceActivePokemon(state, opponent, conditional);
+			return score({ ...projected, self: projected.opponent, opponent: projected.self }, conditional,
 				[hardMove(candidate.id, 1, formatId)], target)[0];
 		});
 		const best = Math.max(...scores.map(m => m.score));

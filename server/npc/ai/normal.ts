@@ -13,6 +13,8 @@
  * @license MIT
  */
 
+import { effectiveAbility, replaceActivePokemon } from './cfru/util/mechanics';
+
 import type { ObjectReadWriteStream } from '../../../lib/streams';
 import type { ChoiceRequest } from '../../../sim/side';
 import type { PRNGSeed } from '../../../sim/prng';
@@ -527,7 +529,8 @@ export class NormalAI extends NPCBattleAI {
 		if (move.flags.charge && !attacker.volatiles.has(move.id) && !attacker.volatiles.has('twoturnmove') &&
 			toID(attacker.item) !== 'powerherb' &&
 			!(['solarbeam', 'solarblade'].includes(move.id) && state.field.weather === 'sun')) return false;
-		if (target.volatiles.has('substitute') && !move.flags.sound && toID(attacker.ability) !== 'infiltrator') return false;
+		if (target.volatiles.has('substitute') && !move.flags.sound &&
+			effectiveAbility(attacker, state.field) !== 'infiltrator') return false;
 		const numAliveTargets = this.battleState!.opponent.active.filter(p => !p.fainted).length +
 			(move.target === 'allAdjacent' ? state.self.active.filter(p => !p.fainted && p !== attacker).length : 0);
 		return calculateDamage(attacker, target, move, state.field, undefined,
@@ -565,7 +568,9 @@ export class NormalAI extends NPCBattleAI {
 		if (candidates.length < 2) return;
 		const accuracy = (move: AIMove) => {
 			const weather = this.battleState!.field.weather;
-			if (move.accuracy === true || toID(attacker.ability) === 'noguard' || toID(target.ability) === 'noguard') return 100;
+			const field = this.battleState!.field;
+			if (move.accuracy === true || effectiveAbility(attacker, field) === 'noguard' ||
+				effectiveAbility(target, field) === 'noguard') return 100;
 			if ((['thunder', 'hurricane'].includes(move.id) && weather === 'rain') ||
 				(move.id === 'blizzard' && ['hail', 'snow'].includes(weather))) return 100;
 			return ['thunder', 'hurricane'].includes(move.id) && weather === 'sun' ? 50 : move.accuracy;
@@ -589,7 +594,8 @@ export class NormalAI extends NPCBattleAI {
 	/** Maximum average damage from revealed/preset attacks, relative to the defender's current HP. */
 	private getIncomingThreat(defender: AIPokemon, opponents: AIPokemon[], replacing = defender): number {
 		if (defender.hp <= 0) return Infinity;
-		const state = this.battleState!;
+		const state = replacing === defender ? this.battleState! :
+			replaceActivePokemon(this.battleState!, replacing, defender);
 		let threat = 0;
 		for (const opponent of opponents) {
 			const knowledge = opponent.moveKnowledge;
@@ -606,7 +612,7 @@ export class NormalAI extends NPCBattleAI {
 				// Reversed sides and bench slots can collide with the outgoing damage cache.
 				const damage = calculateDamage(model.pokemon, defender, move, state.field, undefined, {
 					isDoubles: state.isDoubles, numAliveTargets,
-					defenderAllies: state.self.active.filter(p => p !== replacing),
+					defenderAllies: state.self.active.filter(p => p !== defender),
 					attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
 				});
 				threat = Math.max(threat, damage.average / defender.hp);
@@ -934,16 +940,12 @@ export class NormalAI extends NPCBattleAI {
 	 * - 0 = no specific target (auto-select)
 	 */
 	private getTargetPosition(move: MoveChoice, activeIndex: number): string {
-		// For moves that need a target, default to first opponent (position 1)
-		if (move.target === 'normal' || move.target === 'any') {
-			return '1'; // First opponent (positive = foe)
-		}
 		// For ally-targeting moves
 		if (move.target === 'adjacentAlly' || move.target === 'adjacentAllyOrSelf') {
 			const partner = this.battleState?.self.active.find(p => p.slot !== activeIndex + 1 && !p.fainted);
-			return partner ? String(-partner.slot) : move.target === 'adjacentAllyOrSelf' ? String(-activeIndex - 1) : '';
+			if (partner) return String(-partner.slot);
 		}
-		return '';
+		return this.getDefaultTargetPosition(move, activeIndex);
 	}
 
 	/**

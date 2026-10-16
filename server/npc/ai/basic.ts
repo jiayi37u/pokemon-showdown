@@ -213,7 +213,7 @@ export class BasicAI extends NPCBattleAI {
 				const opponentInfo = {
 					species: target.species,
 					types: target.types,
-					ability: target.ability,
+					ability: this.tracker.getEffectiveAbility(target.position),
 					item: target.item,
 				};
 				totalDamage += this.estimateDamage(move, active, opponentInfo);
@@ -241,7 +241,7 @@ export class BasicAI extends NPCBattleAI {
 			const opponentInfo = {
 				species: target.species,
 				types: target.types,
-				ability: target.ability,
+				ability: this.tracker.getEffectiveAbility(target.position),
 				item: target.item,
 			};
 
@@ -449,7 +449,7 @@ export class BasicAI extends NPCBattleAI {
 			return {
 				species: opponent.species,
 				types: opponent.types,
-				ability: opponent.ability,
+				ability: this.tracker.getEffectiveAbility(opponent.position),
 				item: opponent.item,
 			};
 		}

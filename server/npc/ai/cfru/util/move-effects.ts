@@ -1,17 +1,26 @@
 /** Effect eligibility over public snapshots, shared by failure scoring and effect rewards. */
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, BattleState } from '../types';
-import { defensiveAbility, effectiveItem, grounded, rulesDex } from './mechanics';
+import { effectiveAbility, defensiveAbility, effectiveItem, grounded, normalizeWeather, rulesDex } from './mechanics';
 import { getMoveInteraction } from './type-calc';
 
 /** Existing field/side effects that make a status move fail, independent of tactical value. */
 export function fieldEffectFailure(state: BattleState, attacker: AIPokemon, move: AIMove): string | undefined {
 	if (move.category !== 'Status') return;
+	if (move.target === 'adjacentAlly' &&
+		!state.self.active.some(p => p.slot !== attacker.slot && !p.fainted)) {
+		return 'No ally available for this move';
+	}
 	const data = rulesDex(state.field).moves.get(move.id);
 	const weather: Record<string, string> = {
 		sunnyday: 'sun', raindance: 'rain', sandstorm: 'sand', hail: 'hail', snow: 'snow',
 	};
-	if (data.weather && weather[toID(data.weather)] === state.field.weather) return 'Weather already active';
+	if (data.weather && ['primordialsea', 'desolateland', 'deltastream'].includes(state.field.weatherId || '')) {
+		return 'Extreme weather prevents ordinary weather changes';
+	}
+	if (data.weather && weather[toID(data.weather)] === normalizeWeather(state.field.weatherId ?? state.field.weather)) {
+		return 'Weather already active';
+	}
 	if (data.terrain && toID(data.terrain).replace(/terrain$/, '') === state.field.terrain) return 'Terrain already active';
 	const conditions = move.target === 'foeSide' ? state.opponent.conditions : state.self.conditions;
 	const effect = toID(data.sideCondition);
@@ -38,6 +47,8 @@ export function volatileEffectFailure(
 	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove
 ): string | undefined {
 	const dex = rulesDex(state.field);
+	if (move.id === 'destinybond' && (dex.gen >= 7 || dex.currentMod === 'mmo') &&
+		attacker.volatiles.has('destinybond')) return 'Consecutive Destiny Bond fails';
 	if (move.id === 'substitute') {
 		if (attacker.volatiles.has('substitute')) return 'Already has Substitute';
 		const tooWeak = dex.gen === 1 ? attacker.hp < Math.floor(attacker.maxHp / 4) :
@@ -46,7 +57,8 @@ export function volatileEffectFailure(
 	}
 	if (move.id === 'leechseed') {
 		if (target.volatiles.has('leechseed')) return 'Target already seeded';
-		if (target.volatiles.has('substitute') && !(dex.gen >= 6 && toID(attacker.ability) === 'infiltrator')) {
+		if (target.volatiles.has('substitute') &&
+			!(dex.gen >= 6 && effectiveAbility(attacker, state.field) === 'infiltrator')) {
 			return 'Substitute blocks Leech Seed';
 		}
 	}
@@ -85,8 +97,12 @@ export function statusFailure(
 		!target.volatiles.has('transform')) return 'Shields Down blocks status in Meteor form';
 	if (move.id === 'yawn' && target.volatiles.has('yawn')) return 'Yawn fails: target is already drowsy';
 	if (target.volatiles.has('substitute') && attacker !== target &&
-		!(dex.gen >= 6 && (move.flags.sound || toID(attacker.ability) === 'infiltrator'))) return 'Substitute blocks status';
-	if (side.conditions.safeguard && !allied && toID(attacker.ability) !== 'infiltrator') return 'Safeguard blocks status';
+		!(dex.gen >= 6 && (move.flags.sound || effectiveAbility(attacker, field) === 'infiltrator'))) {
+		return 'Substitute blocks status';
+	}
+	if (side.conditions.safeguard && !allied && effectiveAbility(attacker, field) !== 'infiltrator') {
+		return 'Safeguard blocks status';
+	}
 	if (grounded(target, field)) {
 		if (field.terrain === 'electric' && status === 'slp') return 'Electric Terrain blocks sleep';
 		if (field.terrain === 'misty' && (status !== 'confusion' || dex.gen >= 7)) return 'Misty Terrain blocks status';
@@ -94,7 +110,7 @@ export function statusFailure(
 	if (status !== 'confusion' && ability === 'leafguard' && field.weather === 'sun') {
 		return 'Leaf Guard blocks status in sun';
 	}
-	const corrosion = ['psn', 'tox'].includes(status) && toID(attacker.ability) === 'corrosion';
+	const corrosion = ['psn', 'tox'].includes(status) && effectiveAbility(attacker, state.field) === 'corrosion';
 	if (status !== 'confusion' && !corrosion && !dex.getImmunity(status, target.types)) return 'Type immune to status';
 	const blockers: Record<string, string[]> = {
 		slp: ['insomnia', 'vitalspirit', 'sweetveil'], par: ['limber'],
@@ -136,9 +152,9 @@ export function secondaryEffectFailure(
 	if (!data.secondary && !data.secondaries?.length && !(fling && (fling.status || fling.volatileStatus))) return;
 	const ability = defensiveAbility(attacker, target, move, state.field);
 	if (effectiveItem(target, state.field) === 'covertcloak' || ability === 'shielddust' ||
-		(toID(attacker.ability) === 'sheerforce' && !fling)) return 'Secondary effect is suppressed';
+		(effectiveAbility(attacker, state.field) === 'sheerforce' && !fling)) return 'Secondary effect is suppressed';
 	if (target.volatiles.has('substitute') &&
-		!(dex.gen >= 6 && (move.flags.sound || toID(attacker.ability) === 'infiltrator'))) {
+		!(dex.gen >= 6 && (move.flags.sound || effectiveAbility(attacker, state.field) === 'infiltrator'))) {
 		return 'Substitute blocks secondary effect';
 	}
 }

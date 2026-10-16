@@ -14,7 +14,7 @@ function runNegativesScoringTests() {
 		checkPoisonMove,
 		checkCovertCloak,
 		checkPainSplit,
-		checkDestinyBond,
+		checkVolatileEffect,
 		checkFutureSight,
 		checkItemMove,
 		checkSemiInvulnerable,
@@ -52,6 +52,7 @@ function runNegativesScoringTests() {
 				slot: 1,
 				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
 				hpPercent: 100,
+				volatiles: new Set(),
 				ability: '',
 				item: '',
 				types: ['Normal'],
@@ -112,6 +113,7 @@ function runNegativesScoringTests() {
 				slot: 0,
 				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
 				hpPercent: 100,
+				volatiles: new Set(),
 				ability: '',
 				item: '',
 				types: ['Fighting'],
@@ -122,6 +124,7 @@ function runNegativesScoringTests() {
 				slot: 1,
 				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
 				hpPercent: 100,
+				volatiles: new Set(),
 				ability: '',
 				item: '',
 				types: ['Normal'],
@@ -333,8 +336,8 @@ function runNegativesScoringTests() {
 			moveId: 'destinybond',
 			attackerVolatiles: new Set(['destinybond']),
 		});
-		const penalty = checkDestinyBond(ctx);
-		assertEqual(penalty, -10, 'Destiny Bond已激活时应扣10分');
+		const penalty = checkVolatileEffect(ctx);
+		assertEqual(penalty, -100, '连续使用 Destiny Bond 失败时扣100分');
 	});
 
 	test('Destiny Bond: 未激活时不扣分 / Destiny Bond OK when not active', () => {
@@ -342,7 +345,7 @@ function runNegativesScoringTests() {
 			moveId: 'destinybond',
 			attackerVolatiles: new Set(),
 		});
-		const penalty = checkDestinyBond(ctx);
+		const penalty = checkVolatileEffect(ctx);
 		assertEqual(penalty, 0, 'Destiny Bond未激活时不扣分');
 	});
 
@@ -838,6 +841,7 @@ function runNegativesScoringTests() {
 				slot: 0,
 				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
 				hpPercent: 100,
+				volatiles: new Set(),
 				ability: '',
 				item: '',
 				itemLost: false,
@@ -849,6 +853,7 @@ function runNegativesScoringTests() {
 				slot: 1,
 				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
 				hpPercent: 100,
+				volatiles: new Set(),
 				ability: overrides.targetAbility || '',
 				item: overrides.targetItem || '',
 				itemLost: overrides.targetItemLost || false,  // Added itemLost field
@@ -923,6 +928,7 @@ function runNegativesScoringTests() {
 			attacker: { species: 'Amoonguss', ability: 'Effect Spore', moves: overrides.attackerMoves || [] },
 			target: { species: overrides.targetSpecies || 'Landorus', hpPercent: overrides.targetHP || 100,
 				status: overrides.targetStatus || '', types: overrides.targetTypes || ['Ground', 'Flying'],
+				volatiles: new Set(),
 				ability: overrides.targetAbility || 'Intimidate', item: overrides.targetItem || '', moves: overrides.targetMoves || [] },
 			move: { ...buildAIMove({ id: overrides.moveId || 'spore' }, 1, 'gen5pokemmorandombattle'),
 				...(overrides.moveFlags ? { flags: overrides.moveFlags } : {}) },
@@ -1082,12 +1088,14 @@ function runNegativesScoringTests() {
 			attacker: {
 				status: overrides.attackerStatus || '',
 				sleepTurns: overrides.sleepTurns || 0,
+				volatiles: new Set(),
 				ability: overrides.attackerAbility || 'Hustle',
 				hpPercent: 100,
 				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
 			},
 			target: {
 				status: '',
+				volatiles: new Set(),
 				ability: 'Intimidate',
 				hpPercent: 100,
 				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },

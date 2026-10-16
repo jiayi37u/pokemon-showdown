@@ -12,6 +12,7 @@ const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
 const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { getAttackStat } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { getEffectiveSpeed, isFaster } = require('../../../dist/server/npc/ai/cfru/util/speed');
+const { effectiveAbility, grounded, replaceActivePokemon, normalizeWeather } = require('../../../dist/server/npc/ai/cfru/util/mechanics');
 const { analyzeKnockout } = require('../../../dist/server/npc/ai/cfru/util/knockout');
 
 function decision({ hp = 18, ability = 'Synchronize', weather = '', moves = ['psychic', 'focusblast'] } = {}) {
@@ -274,6 +275,279 @@ describe('Shared public state pipeline across game types', () => {
 	}
 
 	for (const gameType of ['singles', 'doubles', 'multi']) {
+		for (const [ability, attack] of [['Primordial Sea', 'flamethrower'], ['Desolate Land', 'watergun'], ['Delta Stream', 'icebeam']]) {
+			for (const suppress of [false, true]) {
+				it(`${gameType}: ${ability} ${suppress ? 'under Air Lock' : 'active'} keeps its public identity and correct move effects`, () => {
+					const holder = { species: 'Rayquaza', ability, moves: ['splash'] };
+					const user = { species: 'Mew', ability: suppress ? 'Air Lock' : 'Synchronize', moves: [attack, 'sunnyday', 'splash'] };
+					const reserve = { species: 'Slowking', ability: 'Own Tempo', moves: ['splash'] };
+					const game = fixture(gameType, holder, user, undefined, undefined, reserve);
+					try {
+						let state = game.build();
+						assert.equal(state.field.weatherId, toID(ability));
+						assert.equal(state.field.weather, normalizeWeather(game.battle.field.effectiveWeather()));
+						const move = buildAIMove({ id: attack }, 1);
+						const estimate = calculateDamage(state.self.active[0], state.opponent.active[0], move, state.field);
+						const blocked = !suppress && ability !== 'Delta Stream';
+						assert.equal(estimate.average === 0, blocked);
+						if (ability === 'Delta Stream') assert.equal(estimate.effectiveness, suppress ? 4 : 2);
+						const weatherMove = buildAIMove({ id: 'sunnyday' }, 2);
+						assert.equal(new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
+							.scoreMove(state, state.self.active[0], weatherMove, state.opponent.active[0]).score, 0);
+						game.play('move 1', 'move 1 1');
+						assert.equal(game.battle.p1.active[0].hp === game.battle.p1.active[0].maxhp, blocked);
+						game.build();
+						game.play('move 1', gameType === 'doubles' ? 'switch 3' : 'switch 2');
+						state = game.build();
+						assert.equal(state.field.weather, normalizeWeather(game.battle.field.effectiveWeather()));
+						assert(state.field.weather, 'Weather effects resume after Air Lock leaves');
+					} finally { game.battle.destroy(); }
+				});
+			}
+		}
+
+		for (const formatId of ['gen6customgame', 'gen7customgame', 'gen5pokemmorandombattle', 'gen9customgame']) {
+			it(`${gameType}, ${formatId}: single-move effects persist across turns and repeated Destiny Bond follows the format`, () => {
+				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+				const user = { species: 'Gengar', ability: 'Cursed Body', moves: ['destinybond', 'splash'] };
+				const game = fixture(gameType, passive, user, undefined, undefined, undefined, formatId);
+				try {
+					game.build();
+					game.play('move 1', 'move 1');
+					let state = game.build();
+					assert(state.self.active[0].volatiles.has('destinybond'));
+					assert(game.battle.p2.active[0].volatiles.destinybond);
+					const move = buildAIMove({ id: 'destinybond' }, 1, formatId);
+					const score = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId }, createAICache(state.turn))
+						.scoreMove(state, state.self.active[0], move, state.opponent.active[0]);
+					const restricted = formatId !== 'gen6customgame';
+					assert.equal(score.flags.hasNoEffect, restricted);
+					if (restricted) assert.equal(score.score, 0);
+					game.play('move 1', 'move 1');
+					state = game.build();
+					assert.equal(state.self.active[0].volatiles.has('destinybond'), !restricted);
+					assert.equal(!!game.battle.p2.active[0].volatiles.destinybond, !restricted);
+					game.play('move 1', 'move 2');
+					assert(!game.build().self.active[0].volatiles.has('destinybond'));
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		for (const effect of ['destinybond', 'grudge', 'glaiverush']) {
+			it(`${gameType}: ${effect} expires on the holder's sleep action, even without a move event`, () => {
+				const passive = { species: 'Blissey', ability: 'Natural Cure', moves: ['splash'] };
+				const user = { species: 'Smeargle', ability: 'Own Tempo', moves: [effect, 'splash'] };
+				const game = fixture(gameType, passive, user);
+				try {
+					game.build();
+					game.play('move 1', effect === 'glaiverush' ? 'move 1 1' : 'move 1');
+					assert(game.build().self.active[0].volatiles.has(effect));
+					game.battle.p2.active[0].setStatus('slp', game.battle.p1.active[0], game.battle.dex.moves.get('spore'));
+					game.play('move 1', 'move 2');
+					assert(!game.battle.p2.active[0].volatiles[effect]);
+					assert(!game.build().self.active[0].volatiles.has(effect));
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		it(`${gameType}: single-turn effects expire without clearing persistent effects`, () => {
+			const passive = { species: 'Blissey', ability: 'Natural Cure', moves: ['splash'] };
+			const user = { species: 'Mew', ability: 'Synchronize', moves: ['protect', 'splash'] };
+			const game = fixture(gameType, passive, user);
+			try {
+				game.build();
+				game.play('move 1', 'move 1');
+				assert(game.battle.log.some(line => line.startsWith('|-singleturn|')));
+				assert(!game.build().self.active[0].volatiles.has('protect'));
+				game.tracker.parseMessage('|-singleturn|p2a: Mew|move: Protect\n|-start|p2a: Mew|Substitute');
+				assert(game.build().self.active[0].volatiles.has('protect'));
+				game.tracker.parseMessage('|upkeep');
+				const state = game.build();
+				assert(!state.self.active[0].volatiles.has('protect'));
+				assert(state.self.active[0].volatiles.has('substitute'));
+			} finally { game.battle.destroy(); }
+		});
+
+		for (const own of [false, true]) {
+			it(`${gameType}: Gastro Acid retains ability identity through requests and preset inference (${own ? 'self' : 'foe'})`, () => {
+				const victim = { species: 'Raichu', ability: 'Lightning Rod', moves: ['splash'] };
+				const user = { species: 'Mew', ability: 'Synchronize', moves: ['thunderbolt', 'gastroacid', 'splash'] };
+				const reserve = { species: 'Snorlax', ability: 'Immunity', moves: ['splash'] };
+				const game = fixture(gameType, own ? user : victim, own ? victim : user, undefined, undefined, reserve);
+				try {
+					game.build();
+					game.play(own ? 'move 1 1' : 'move 1', own ? 'move 1' : 'move 1 1'); // Reveal before suppression.
+					let state = game.build();
+					let target = (own ? state.self : state.opponent).active[0];
+					assert.equal(effectiveAbility(target, state.field), 'lightningrod');
+					game.play(own ? 'move 2 1' : 'move 1', own ? 'move 1' : 'move 2 1');
+					state = game.build();
+					target = (own ? state.self : state.opponent).active[0];
+					const simulated = game.battle[own ? 'p2' : 'p1'].active[0];
+					assert(simulated.ignoringAbility());
+					assert.equal(toID(target.ability), simulated.ability);
+					assert(target.volatiles.has('gastroacid'));
+					assert.equal(effectiveAbility(target, state.field), '');
+					assert.equal(effectiveAbility((own ? game.build().self : game.build().opponent).active[0], state.field), '');
+					const attack = buildAIMove({ id: 'thunderbolt' }, 1);
+					const actor = (own ? state.opponent : state.self).active[0];
+					assert(calculateDamage(actor, target, attack, state.field).average > 0);
+					if (!own) for (const model of inferOpponent(target, 'gen7customgame')) {
+						assert.equal(effectiveAbility(model.pokemon, state.field), '', model.name);
+					}
+					const switchChoice = gameType === 'doubles' ? 'switch 3' : 'switch 2';
+					game.play(own ? 'move 3' : switchChoice, own ? switchChoice : 'move 3');
+					game.build();
+					game.play(own ? 'move 3' : switchChoice, own ? switchChoice : 'move 3');
+					state = game.build();
+					target = (own ? state.self : state.opponent).active[0];
+					assert.equal(effectiveAbility(target, state.field), 'lightningrod');
+					assert(!target.volatiles.has('gastroacid'));
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		for (const move of ['skillswap', 'roleplay', 'worryseed']) {
+			it(`${gameType}: ${move} changes ability identity while Gastro Acid keeps suppressing it`, () => {
+				const target = { species: 'Bronzong', ability: 'Levitate', moves: ['splash'] };
+				const user = { species: 'Mew', ability: 'Synchronize', moves: ['earthquake', 'gastroacid', move] };
+				const game = fixture(gameType, target, user);
+				try {
+					game.build();
+					game.play('move 1', 'move 1');
+					game.build();
+					game.play('move 1', 'move 2 1');
+					game.build();
+					game.play('move 1', 'move 3 1');
+					const state = game.build();
+					for (const [ai, actual] of [[state.self.active[0], game.battle.p2.active[0]],
+						[state.opponent.active[0], game.battle.p1.active[0]]]) {
+						assert.equal(toID(ai.ability), actual.ability);
+						assert.equal(effectiveAbility(ai, state.field), actual.ignoringAbility() ? '' : actual.ability);
+					}
+					assert.equal(toID(state.opponent.active[0].observedAbility), 'levitate');
+					assert.equal(effectiveAbility(state.opponent.active[0], state.field), '');
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		for (const item of ['', 'Ability Shield']) {
+			it(`${gameType}: Neutralizing Gas, ${item || 'no shield'}, Magic Room and switching match PS`, () => {
+				const gas = { species: 'Weezing', ability: 'Neutralizing Gas', moves: ['splash'] };
+				const victim = { species: 'Bronzong', ability: 'Levitate', item, moves: ['magicroom', 'splash'] };
+				const reserve = { species: 'Snorlax', ability: 'Immunity', moves: ['splash'] };
+				const game = fixture(gameType, gas, victim, undefined, undefined, reserve);
+				try {
+					const verify = () => {
+						const state = game.build();
+						const target = state.self.active[0];
+						const simulated = game.battle.p2.active[0];
+						assert.equal(toID(target.ability), simulated.ability);
+						assert.equal(effectiveAbility(target, state.field), simulated.ignoringAbility() ? '' : simulated.ability);
+						assert.equal(grounded(target, state.field), !!simulated.isGrounded());
+						const move = buildAIMove({ id: 'earthquake' }, 1);
+						assert.equal(calculateDamage(state.opponent.active[0], target, move, state.field).average === 0,
+							!simulated.runImmunity('Ground'));
+						return state;
+					};
+					assert(verify().field.neutralizingGas);
+					game.play('move 1', 'move 1');
+					assert(verify().field.magicroom);
+					game.play(gameType === 'doubles' ? 'switch 3' : 'switch 2', 'move 2');
+					assert.equal(verify().field.neutralizingGas, false);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		it(`${gameType}: Early Bird counts each sleep action with the ability effective at that time`, () => {
+			const user = { species: 'Mew', ability: 'Synchronize', moves: ['splash', 'worryseed'] };
+			const sleeper = { species: 'Snorlax', ability: 'Early Bird', moves: ['rest', 'splash'] };
+			const game = fixture(gameType, user, sleeper);
+			try {
+				game.battle.p2.active[0].hp = Math.floor(game.battle.p2.active[0].maxhp / 2);
+				game.build();
+				game.play('move 1', 'move 1');
+				game.build();
+				game.play('move 1', 'move 2');
+				let state = game.build();
+				assert.equal(game.battle.p2.active[0].statusState.time, 1);
+				assert.equal(state.self.active[0].sleepTurns, 1);
+				// Suppress Early Bird between sleep checks; the already-counted decrement stays 2.
+				game.battle.p2.active[0].addVolatile('gastroacid', game.battle.p1.active[0]);
+				state = game.build();
+				assert.equal(effectiveAbility(state.self.active[0], state.field), '');
+				assert.equal(state.self.active[0].sleepTurns, 1);
+				game.play('move 1', 'move 2');
+				assert.equal(game.build().self.active[0].status, '');
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: Gas removal by Gastro Acid restores other abilities without forgetting the source`, () => {
+			const gas = { species: 'Weezing', ability: 'Neutralizing Gas', moves: ['splash'] };
+			const user = { species: 'Bronzong', ability: 'Levitate', moves: ['gastroacid'] };
+			const game = fixture(gameType, gas, user);
+			try {
+				assert(game.build().field.neutralizingGas);
+				game.play('move 1', 'move 1 1');
+				const state = game.build();
+				assert(game.battle.p1.active[0].ignoringAbility());
+				assert(!state.field.neutralizingGas);
+				assert.equal(toID(state.opponent.active[0].ability), 'neutralizinggas');
+				assert.equal(effectiveAbility(state.self.active[0], state.field), 'levitate');
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: removing our Gas source in a projected switch restores the incoming ability`, () => {
+			const gas = { species: 'Weezing', ability: 'Neutralizing Gas', moves: ['splash'] };
+			const victim = { species: 'Bronzong', ability: 'Levitate', moves: ['splash'] };
+			const game = fixture(gameType, victim, gas, undefined, undefined, victim);
+			try {
+				const state = game.build();
+				const outgoing = state.self.active[0];
+				const incoming = state.self.reserve[0];
+				const projected = replaceActivePokemon(state, outgoing, incoming);
+				assert(state.field.neutralizingGas, 'Projection must not mutate the current state');
+				assert(!projected.field.neutralizingGas);
+				assert.equal(effectiveAbility(incoming, projected.field), 'levitate');
+				game.play('move 1', gameType === 'doubles' ? 'switch 3' : 'switch 2');
+				const actual = game.build();
+				assert.equal(effectiveAbility(actual.self.active[0], actual.field), 'levitate');
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: berry healing cannot restore a consumed item, and Poltergeist respects public itemlessness`, () => {
+			const victim = { species: 'Mew', ability: 'Synchronize', item: 'Sitrus Berry', moves: ['splash', 'recycle'] };
+			const attacker = { species: 'Mew', ability: 'Synchronize', moves: ['seismictoss', 'poltergeist', 'splash'] };
+			const game = fixture(gameType, victim, attacker);
+			try {
+				game.build();
+				game.battle.p1.active[0].hp = Math.floor(game.battle.p1.active[0].maxhp / 2) + 20;
+				game.play('move 1', 'move 1 1');
+				let state = game.build();
+				let target = state.opponent.active[0];
+				assert(game.battle.log.some(l => l.includes('|-heal|') && l.includes('item: Sitrus Berry')));
+				assert.equal(game.battle.p1.active[0].item, '');
+				assert.equal(target.item, '');
+				assert(target.itemLost);
+				assert.equal(target.recyclableItem, 'sitrusberry');
+				assert(target.volatiles.has('itemlost'), 'Healing must not erase the Unburden activation fact');
+				const move = buildAIMove({ id: 'poltergeist' }, 1);
+				assert.equal(calculateDamage(state.self.active[0], target, move, state.field).average, 0);
+				assert.equal(new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
+					.scoreMove(state, state.self.active[0], move, target).score, 0);
+				game.play('move 1', 'move 2 1');
+				assert(game.battle.log.slice(-10).some(l => l.startsWith('|-fail|')));
+				game.build();
+				game.play('move 2', 'move 3');
+				state = game.build();
+				target = state.opponent.active[0];
+				assert.equal(game.battle.p1.active[0].item, 'sitrusberry');
+				assert.equal(toID(target.item), 'sitrusberry', 'Explicit Recycle really does restore the held item');
+				assert(!target.itemLost);
+				assert(calculateDamage(state.self.active[0], target, move, state.field).average > 0);
+			} finally { game.battle.destroy(); }
+		});
+
 		for (const moveId of ['fakeout', 'firstimpression']) {
 			it(`${gameType}: ${moveId} availability resets only after switching`, () => {
 				const player = { species: 'Blissey', ability: 'Natural Cure', moves: [moveId, 'splash'] };

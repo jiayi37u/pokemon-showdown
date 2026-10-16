@@ -8,7 +8,7 @@
  */
 
 import { Dex, toID } from '../../../../sim/dex';
-import { abilityStatModifier } from './util/mechanics';
+import { abilityStatModifier, effectiveAbility, fieldWithActivePokemon } from './util/mechanics';
 import {
 	DEFAULT_AI_CONFIG,
 	type BattleState,
@@ -171,7 +171,6 @@ export function buildBattleStateFromRequests(
 			transformed.types = tracker.getTypes(position, transformed.types);
 			// Newer requests expose the current ability, including changes after Transform.
 			if (mon.ability !== undefined) transformed.ability = mon.ability;
-			transformed.sleepTurns = transformed.status === 'slp' ? tracker.getSleepTurns(position, transformed.ability) : 0;
 			selfActive.push(transformed);
 		}
 	}
@@ -183,13 +182,24 @@ export function buildBattleStateFromRequests(
 		return result;
 	});
 	const opponentReserve = buildOpponentReserveFromTracker(tracker, opponentActive, formatId);
+	const field = fieldWithActivePokemon({ ...buildFieldConditionsFromTracker(tracker), formatId },
+		[...selfActive, ...opponentActive]);
+	for (const { position, active } of entries) {
+		if (!active) continue;
+		const pokemon = selfActive.find(p => p.slot === tracker.getFieldSlot(position));
+		if (pokemon?.status === 'slp') pokemon.sleepTurns = tracker.getSleepTurns(position, effectiveAbility(pokemon, field));
+	}
+	for (const { position } of tracker.getActiveOpponents()) {
+		const pokemon = opponentActive.find(p => p.slot === tracker.getFieldSlot(position));
+		if (pokemon?.status === 'slp') pokemon.sleepTurns = tracker.getSleepTurns(position, effectiveAbility(pokemon, field));
+	}
 	return {
 		turn, isDoubles,
 		self: { active: selfActive, reserve: selfReserve, team: [...selfActive, ...selfReserve],
 			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(), futureMoves: tracker.getFutureMoves() } },
 		opponent: { remaining: tracker.getRemainingOpponents(), active: opponentActive, reserve: opponentReserve,
 			team: [...opponentActive, ...opponentReserve], conditions: buildOpponentConditionsFromTracker(tracker) },
-		field: { ...buildFieldConditionsFromTracker(tracker), formatId },
+		field,
 	};
 }
 
@@ -344,6 +354,7 @@ function buildFieldConditionsFromTracker(tracker: BattleTracker): FieldCondition
 
 	return {
 		weather: normalizeWeather(trackerField.weather || ''),
+		weatherId: trackerField.weatherId,
 		weatherTurns: -1, // Not tracked
 		terrain: trackerField.terrain || '',
 		terrainTurns: 0, // Not tracked

@@ -2,6 +2,8 @@
 
 const assert = require('assert').strict;
 const { Battle } = require('../../../dist/sim');
+const { HardAI } = require('../../../dist/server/npc/ai/hard');
+const { BasicAI } = require('../../../dist/server/npc/ai/basic');
 const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 
 const porygon = { species: 'Porygon-Z', ability: 'Adaptability', item: 'Choice Scarf', moves: ['thunderbolt', 'icebeam'] };
@@ -121,4 +123,69 @@ describe('NormalAI doubles switching', () => {
 			assert.deepEqual(actions, ['pass', 'move 1 2']);
 		});
 	});
+});
+
+describe('NPC request targeting authority', () => {
+	for (const [difficulty, Controller] of [['normal', NormalAI], ['hard', HardAI]]) {
+		for (const actorIndex of [0, 1]) for (const onlySupport of [false, true]) {
+			it(`${difficulty}: handles a fainted ally from slot ${actorIndex + 1}, onlySupport=${onlySupport}`, () => {
+				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['psychic', 'splash'] };
+				const support = { species: 'Furret', ability: 'Keen Eye',
+					moves: onlySupport ? ['helpinghand'] : ['helpinghand', 'tackle'] };
+				const fragile = { species: 'Magikarp', level: 1, ability: 'Swift Swim', moves: ['splash'] };
+				const format = 'gen9doublescustomgame';
+				const battle = new Battle({ formatid: format, seed: [1, 2, 3, 4],
+					p1: { name: 'Player', team: [passive, passive] },
+					p2: { name: 'NPC', team: actorIndex ? [fragile, support] : [support, fragile] },
+				});
+				const stream = { push() {}, write() {} };
+				const ai = new Controller(stream, { seed: [1, 2, 3, 4] });
+				ai.setBattle({ stream, format });
+				try {
+					battle.makeChoices();
+					battle.makeChoices(`move 1 ${2 - actorIndex}, move 2`,
+						actorIndex ? 'move 1, move 1 -1' : 'move 1 -2, move 1');
+					assert(battle.p2.active[1 - actorIndex].fainted);
+					stream.push(battle.log.join('\n'));
+					let choice;
+					ai.choose = value => { choice = value; };
+					ai.receiveRequest(JSON.parse(JSON.stringify(battle.p2.activeRequest)));
+					const action = choice.split(',')[actorIndex].trim();
+					assert.equal(action, onlySupport ? `move 1 ${actorIndex ? -1 : -2}` : 'move 2 1');
+					assert(battle.choose('p2', choice), battle.p2.choice.error);
+					assert(battle.choose('p1', 'move 2, move 2'), battle.p1.choice.error);
+					assert.equal(battle.turn, 3);
+				} finally { battle.destroy(); }
+			});
+		}
+	}
+
+	for (const [difficulty, Controller] of [['basic', BasicAI], ['normal', NormalAI], ['hard', HardAI]]) {
+		for (const format of ['gen9customgame', 'gen9doublescustomgame']) {
+			it(`${difficulty}, ${format}: a locked attack does not acquire a target from Dex`, () => {
+				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+				const charging = { species: 'Giratina', ability: 'Pressure', moves: ['shadowforce'] };
+				const doubles = format.includes('doubles');
+				const battle = new Battle({ formatid: format, seed: [1, 2, 3, 4],
+					p1: { name: 'Player', team: doubles ? [passive, passive] : [passive] },
+					p2: { name: 'NPC', team: doubles ? [charging, passive] : [charging] },
+				});
+				const stream = { push() {}, write() {} };
+				const ai = new Controller(stream, { seed: [1, 2, 3, 4] });
+				ai.setBattle({ stream, format });
+				try {
+					battle.makeChoices();
+					battle.makeChoices(doubles ? 'move 1, move 1' : 'move 1', doubles ? 'move 1 1, move 1' : 'move 1');
+					stream.push(battle.log.join('\n'));
+					let choice;
+					ai.choose = value => { choice = value; };
+					ai.receiveRequest(JSON.parse(JSON.stringify(battle.p2.activeRequest)));
+					assert.equal(choice.split(',')[0].trim(), 'move 1');
+					assert(battle.choose('p2', choice), battle.p2.choice.error);
+					assert(battle.choose('p1', doubles ? 'move 1, move 1' : 'move 1'), battle.p1.choice.error);
+					assert.equal(battle.turn, 3);
+				} finally { battle.destroy(); }
+			});
+		}
+	}
 });

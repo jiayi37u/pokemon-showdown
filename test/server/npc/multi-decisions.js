@@ -82,6 +82,39 @@ afterEach(() => { game?.destroy(); game = undefined; });
 
 describe('Production NPCMultiManager decisions', () => {
 	for (const difficulty of ['normal', 'hard']) {
+		for (const onlySupport of [false, true]) {
+			it(`${difficulty}: handles p4's ally fainting, onlySupport=${onlySupport}`, () => {
+				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['psychic', 'splash'] };
+				const fragile = { species: 'Magikarp', level: 1, ability: 'Swift Swim', moves: ['splash'] };
+				const support = { species: 'Furret', ability: 'Keen Eye',
+					moves: onlySupport ? ['helpinghand'] : ['helpinghand', 'tackle'] };
+				game = createMulti([[passive], [fragile], [passive], [support]], false, difficulty);
+				game.play(['move 1 1', 'move 1', 'move 2', 'move 1 -1']);
+				assert(game.battle.p2.active[0].fainted);
+				game.decide();
+				const choice = game.choices.find(c => c.side === 'p4').choice;
+				if (onlySupport) assert.equal(choice, 'move 1 -1');
+				else assert(/^move 2 [12]$/.test(choice), choice);
+				game.play(['move 2', null, 'move 2', null]);
+				assert.equal(game.battle.turn, 3);
+			});
+		}
+
+		for (const move of ['shadowforce', 'fly']) {
+			it(`${difficulty}: submits a locked charging move without choosing a new target for p4`, () => {
+				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+				const charging = { species: 'Giratina', ability: 'Pressure', moves: [move] };
+				game = createMulti([[passive], [passive], [passive], [charging]], false, difficulty);
+				game.play(['move 1', 'move 1', 'move 1', 'move 1 1']);
+				assert.equal(game.battle.p4.activeRequest.active[0].moves[0].target, undefined);
+				game.decide();
+				assert.equal(game.choices.find(c => c.side === 'p4').choice, 'move 1');
+				game.play(['move 1', null, 'move 1', null]);
+				assert.equal(game.battle.turn, 3);
+				assert(!game.battle.p4.active[0].volatiles.twoturnmove);
+			});
+		}
+
 		it(`${difficulty}: applies shared Transform state to p4 and to an opponent copying p4`, () => {
 			const ditto = { species: 'Ditto', ability: 'Limber', moves: ['transform'] };
 			const jolteon = { species: 'Jolteon', ability: 'Volt Absorb', moves: ['calmmind'] };

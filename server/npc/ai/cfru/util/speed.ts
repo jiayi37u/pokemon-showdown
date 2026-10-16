@@ -11,7 +11,7 @@
 import { toID } from '../../../../../sim/dex';
 import { pokemonCacheId } from './cache';
 import type { AIPokemon, AIMove, AICache, FieldConditions, SideConditions } from '../types';
-import { effectiveItem, effectivePriority, getEffectiveStat, rulesDex } from './mechanics';
+import { effectiveAbility, effectiveItem, effectivePriority, getEffectiveStat, rulesDex } from './mechanics';
 
 /**
  * Speed context for considering side conditions
@@ -37,7 +37,7 @@ export function getEffectiveSpeed(
 	const baseSpeed = pokemon.baseStats.spe;
 	let speed = getEffectiveStat(baseSpeed, pokemon.boosts.spe);
 
-	const abilityId = toID(pokemon.ability);
+	const abilityId = effectiveAbility(pokemon, field);
 	const itemId = effectiveItem(pokemon, field);
 
 	// Ability modifiers
@@ -100,7 +100,7 @@ export function getEffectiveSpeed(
 		speed = Math.floor(speed * 2);
 	}
 
-	if (pokemon.abilityStatMod?.stat === 'spe') speed *= pokemon.abilityStatMod.multiplier;
+	if (abilityId && pokemon.abilityStatMod?.stat === 'spe') speed *= pokemon.abilityStatMod.multiplier;
 	if (pokemon.status === 'par' && abilityId !== 'quickfeet') {
 		const dex = rulesDex(field);
 		speed = Math.floor(speed * (dex.gen <= 6 && dex.currentMod !== 'mmo' ? 0.25 : 0.5));

@@ -11,6 +11,9 @@ const { getEffectiveSpeed } = require('../../../dist/server/npc/ai/cfru/util/spe
 const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
 const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
 const { itemMoveFailure, itemAllowsRemoval, itemRemovalFailure } = require('../../../dist/server/npc/ai/cfru/util/items');
+const { effectiveAbility, effectiveItem, effectivePriority, fieldWithActivePokemon } = require('../../../dist/server/npc/ai/cfru/util/mechanics');
+const { getMoveInteraction } = require('../../../dist/server/npc/ai/cfru/util/type-calc');
+const { getSecondaryEffectDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { statusFailure } = require('../../../dist/server/npc/ai/cfru/util/move-effects');
 
 // Exact oracle inputs isolate mechanical calculations. Public information ingestion is tested separately.
@@ -432,4 +435,69 @@ describe('Shared item rules against PS', () => {
 			} finally { battle.destroy(); }
 		});
 	}
+});
+
+describe('Shared effective abilities against PS', () => {
+	for (const ability of ['Levitate', 'Klutz', 'Magic Guard', 'Comatose', 'Multitype', 'Disguise', 'Neutralizing Gas', 'Protosynthesis']) {
+		it(`${ability}: suppression precedence, Shield and Transform agree with PS`, () => {
+			for (const spec of [
+				{}, { gas: true }, { gas: true, item: 'Ability Shield' },
+				{ gas: true, item: 'Ability Shield', magicroom: true },
+				{ gas: true, item: 'Ability Shield', embargo: true },
+				{ gastroacid: true }, { gas: true, gastroacid: true, item: 'Ability Shield' },
+				{ transform: true }, { gas: true, transform: true },
+			]) {
+				const battle = new Battle({ formatid: 'gen9customgame', seed: [1, 2, 3, 4],
+					p1: { name: 'Gas', team: [{ species: 'Weezing', ability: spec.gas ? 'Neutralizing Gas' : 'Stench', moves: ['splash'] }] },
+					p2: { name: 'Test', team: [{ species: 'Blissey', ability, item: spec.item || 'Choice Scarf', moves: ['splash'] }] },
+				});
+				try {
+					battle.makeChoices();
+					const actor = battle.p2.active[0];
+					if (spec.magicroom) battle.field.addPseudoWeather('magicroom', actor);
+					// Direct oracle setup covers suppression combinations that moves cannot ordinarily create.
+					if (spec.gastroacid) actor.volatiles.gastroacid = { id: 'gastroacid' };
+					if (spec.embargo) actor.volatiles.embargo = { id: 'embargo' };
+					actor.transformed = !!spec.transform;
+					const pokemon = snapshot(actor);
+					if (spec.transform) pokemon.volatiles.add('transform');
+					const field = fieldWithActivePokemon({ formatId: 'gen9customgame', magicroom: !!spec.magicroom },
+						[snapshot(battle.p1.active[0]), pokemon]);
+					assert.equal(effectiveAbility(pokemon, field), actor.ignoringAbility() ? '' : actor.ability, JSON.stringify(spec));
+					assert.equal(effectiveItem(pokemon, field), actor.ignoringItem() ? '' : actor.item, JSON.stringify(spec));
+				} finally { battle.destroy(); }
+			}
+		});
+	}
+
+	it('routes damage, speed, priority, immunity, status and residual checks through suppression', () => {
+		const battle = new Battle({ formatid: 'gen9customgame', seed: [1, 2, 3, 4],
+			p1: { name: 'Gas', team: [{ species: 'Weezing', ability: 'Neutralizing Gas', moves: ['splash'] }] },
+			p2: { name: 'Test', team: [{ species: 'Blissey', ability: 'Huge Power', moves: ['tackle'] }] },
+		});
+		try {
+			battle.makeChoices();
+			const target = snapshot(battle.p1.active[0]);
+			const actor = snapshot(battle.p2.active[0]);
+			const field = { formatId: 'gen9customgame', weather: 'sun', neutralizingGas: true };
+			const move = buildAIMove({ id: 'tackle' }, 1);
+			assert.equal(getAttackStat(actor, move, field), actor.baseStats.atk);
+			assert.equal(getAttackStat(actor, move, { ...field, neutralizingGas: false }), actor.baseStats.atk * 2);
+			actor.ability = 'Chlorophyll';
+			assert.equal(getEffectiveSpeed(actor, field), actor.baseStats.spe);
+			assert.equal(getEffectiveSpeed(actor, { ...field, neutralizingGas: false }), actor.baseStats.spe * 2);
+			actor.ability = 'Prankster';
+			target.types = ['Dark'];
+			const toxic = buildAIMove({ id: 'toxic' }, 1);
+			assert.equal(effectivePriority(actor, toxic, field), 0);
+			assert(!getMoveInteraction(actor, target, toxic, field).blockedBy);
+			assert(getMoveInteraction(actor, target, toxic, { ...field, neutralizingGas: false }).blockedBy);
+			target.ability = 'Immunity';
+			assert(!statusFailure(stateFor(actor, target, field), actor, target, toxic));
+			target.ability = 'Magic Guard';
+			target.status = 'psn';
+			assert(getSecondaryEffectDamage(target, '', '', field) > 0);
+			assert.equal(getSecondaryEffectDamage(target, '', '', { ...field, neutralizingGas: false }), 0);
+		} finally { battle.destroy(); }
+	});
 });

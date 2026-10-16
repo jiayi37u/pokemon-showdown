@@ -3,7 +3,7 @@ import { toID } from '../../../../../sim/dex';
 import type { Item, ItemData } from '../../../../../sim/dex-items';
 import type { Species } from '../../../../../sim/dex-species';
 import type { AIPokemon, AIMove, FieldConditions } from '../types';
-import { defensiveAbility, effectiveItem, rulesDex } from './mechanics';
+import { effectiveAbility, defensiveAbility, effectiveItem, rulesDex } from './mechanics';
 
 export function knownItemless(pokemon: AIPokemon): boolean {
 	return !!pokemon.itemLost || (!pokemon.item && !!(pokemon.itemKnown || pokemon.itemAssumed));
@@ -44,13 +44,14 @@ export function flingFailure(pokemon: AIPokemon, move: AIMove, field: FieldCondi
 	const item = dex.items.get(pokemon.item);
 	if (!item.id || pokemon.itemLost) return 'No item to fling';
 	if (!item.isPrimalOrb && (field.magicroom || pokemon.volatiles.has('embargo') ||
-		(dex.gen >= 5 && toID(pokemon.ability) === 'klutz'))) return 'Item is suppressed: Fling fails';
+		(dex.gen >= 5 && effectiveAbility(pokemon, field) === 'klutz'))) return 'Item is suppressed: Fling fails';
 	if (!item.fling || !itemAllowsRemoval(pokemon, pokemon, move, field)) return 'Cannot fling this item';
 }
 
 export function itemMoveFailure(
 	attacker: AIPokemon, target: AIPokemon, move: AIMove, field: FieldConditions
 ): string | undefined {
+	if (move.id === 'poltergeist' && knownItemless(target)) return 'Poltergeist requires the target to hold an item';
 	if (move.id === 'fling') return flingFailure(attacker, move, field);
 	if (move.id === 'naturalgift' && !rulesDex(field).items.get(effectiveItem(attacker, field)).naturalGift) {
 		return 'Natural Gift requires an active berry';
@@ -61,13 +62,13 @@ export function itemMoveFailure(
 	}
 	if (move.id !== 'trick' && move.id !== 'switcheroo') return;
 	// PS checks Trick's immunity before Mold Breaker suppresses defending events.
-	if (toID(target.ability) === 'stickyhold') return 'Sticky Hold prevents item swap';
+	if (effectiveAbility(target, field) === 'stickyhold') return 'Sticky Hold prevents item swap';
 	if (knownItemless(attacker) && knownItemless(target)) return 'Neither Pokemon has an item to swap';
 	const dex = rulesDex(field);
 	if (dex.gen <= 4 && [attacker, target].some(p => p.itemKnockedOff)) {
 		return 'Knock Off prevents item exchange in Gen 3–4';
 	}
-	if (dex.gen <= 4 && [attacker, target].some(p => toID(p.ability) === 'multitype')) {
+	if (dex.gen <= 4 && [attacker, target].some(p => effectiveAbility(p, field) === 'multitype')) {
 		return 'Multitype prevents item swap';
 	}
 	// Trick checks both removal and receipt, including an item becoming bound to its new holder.

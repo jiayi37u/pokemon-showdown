@@ -11,7 +11,7 @@
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, NegativeScoringFunction } from './index';
 import { getTypeEffectiveness, getMoveInteraction } from '../util/type-calc';
-import { defensiveAbility, effectiveItem, rulesDex } from '../util/mechanics';
+import { effectiveAbility, defensiveAbility, effectiveItem, rulesDex } from '../util/mechanics';
 import {
 	delayedMoveFailure, fieldEffectFailure, inflictedStatus, statusFailure, volatileEffectFailure,
 } from '../util/move-effects';
@@ -165,7 +165,7 @@ export const checkCovertCloak: NegativeScoringFunction = (ctx) => {
 export const checkStatBoostOnHit: NegativeScoringFunction = (ctx) => {
 	if (ctx.move.category === 'Status') return 0;
 
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = effectiveAbility(ctx.target, ctx.state.field);
 	const moveType = ctx.move.type;
 	let penalty = 0;
 
@@ -355,7 +355,7 @@ export const checkBigPecks: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 444-454
  */
 export const checkDefiant: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = effectiveAbility(ctx.target, ctx.state.field);
 
 	if (abilityId !== 'defiant') return 0;
 
@@ -382,7 +382,7 @@ export const checkDefiant: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 457-467
  */
 export const checkCompetitive: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = effectiveAbility(ctx.target, ctx.state.field);
 
 	if (abilityId !== 'competitive') return 0;
 
@@ -434,7 +434,7 @@ export const checkFlowerVeil: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 383-391
  */
 export const checkContraryStatLower: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = effectiveAbility(ctx.target, ctx.state.field);
 
 	if (abilityId !== 'contrary') return 0;
 
@@ -526,7 +526,7 @@ function scoreStatus(ctx: ScoringContext, expected: string): number {
 		ctx.adjustments.push({ reason: failure, amount: -100, category: 'negative' });
 		return -100;
 	}
-	if (['brn', 'psn', 'tox'].includes(status) && toID(ctx.target.ability) === 'magicguard' &&
+	if (['brn', 'psn', 'tox'].includes(status) && effectiveAbility(ctx.target, ctx.state.field) === 'magicguard' &&
 		!(status !== 'brn' && ctx.attacker.moves.some(m => toID(m) === 'venoshock'))) {
 		ctx.adjustments.push({
 			reason: `Magic Guard prevents ${status === 'brn' ? 'burn' : 'poison'} damage`, amount: -10, category: 'negative',
@@ -702,7 +702,7 @@ export const checkStatBoostWasted: NegativeScoringFunction = (ctx) => {
 	}
 
 	// Contrary reverses boosts
-	if (toID(ctx.attacker.ability) === 'contrary') {
+	if (effectiveAbility(ctx.attacker, ctx.state.field) === 'contrary') {
 		ctx.adjustments.push({
 			reason: 'Contrary will reverse boosts',
 			amount: -100,
@@ -767,7 +767,7 @@ export const checkMagicBounce: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 784-785
  */
 export const checkLiquidOoze: NegativeScoringFunction = (ctx) => {
-	const targetAbility = toID(ctx.target.ability);
+	const targetAbility = effectiveAbility(ctx.target, ctx.state.field);
 
 	if (targetAbility !== 'liquidooze') return 0;
 
@@ -870,7 +870,7 @@ export const checkSaltCure: NegativeScoringFunction = (ctx) => {
 	}
 
 	// Magic Guard prevents all residual damage
-	const targetAbility = toID(ctx.target.ability);
+	const targetAbility = effectiveAbility(ctx.target, ctx.state.field);
 	if (targetAbility === 'magicguard') {
 		ctx.adjustments.push({
 			reason: 'Magic Guard blocks Salt Cure damage',
@@ -968,7 +968,7 @@ export const checkExplosion: NegativeScoringFunction = (ctx) => {
 
 	// Damp prevents explosion
 	// Would need to check all Pokemon on field for Damp
-	const defAbility = toID(ctx.target.ability);
+	const defAbility = effectiveAbility(ctx.target, ctx.state.field);
 	if (defAbility === 'damp') {
 		ctx.adjustments.push({
 			reason: 'Damp prevents Explosion',
@@ -1097,7 +1097,7 @@ export const checkBellyDrum: NegativeScoringFunction = (ctx) => {
 	if (moveId !== 'bellydrum') return 0;
 
 	// Contrary makes Belly Drum lower Attack instead of raising
-	if (toID(ctx.attacker.ability) === 'contrary') {
+	if (effectiveAbility(ctx.attacker, ctx.state.field) === 'contrary') {
 		ctx.adjustments.push({
 			reason: 'Contrary will lower Attack instead of raising',
 			amount: -100,
@@ -1231,7 +1231,7 @@ export const checkSleepTalkSnore: NegativeScoringFunction = (ctx) => {
 
 	if (moveId !== 'sleeptalk' && moveId !== 'snore') return 0;
 
-	const attackerAbility = toID(ctx.attacker.ability);
+	const attackerAbility = effectiveAbility(ctx.attacker, ctx.state.field);
 
 	// Comatose always counts as asleep - move will work
 	if (attackerAbility === 'comatose') return 0;
@@ -1279,7 +1279,7 @@ export const checkTargetingPartnerDamage: NegativeScoringFunction = (ctx) => {
 	// Status moves targeting partner might be good (handled elsewhere)
 	if (ctx.move.category === 'Status') return 0;
 
-	const targetAbility = toID(ctx.target.ability);
+	const targetAbility = effectiveAbility(ctx.target, ctx.state.field);
 	const moveType = ctx.move.type;
 
 	// Check if partner has an absorbing ability that benefits from this move type
@@ -1501,8 +1501,8 @@ export const checkContactRisk: NegativeScoringFunction = (ctx) => {
 	// Status moves typically don't make contact, but double check
 	if (ctx.move.category === 'Status') return 0;
 
-	const attackerAbility = toID(ctx.attacker.ability);
-	const targetAbility = toID(ctx.target.ability);
+	const attackerAbility = effectiveAbility(ctx.attacker, ctx.state.field);
+	const targetAbility = effectiveAbility(ctx.target, ctx.state.field);
 	const targetItem = toID(ctx.target.item);
 
 	// Magic Guard user doesn't care about recoil damage
@@ -1749,33 +1749,6 @@ export const checkPainSplit: NegativeScoringFunction = (ctx) => {
 	return 0;
 };
 
-/**
- * Check if Destiny Bond is a bad idea
- * CFRU: ai_negatives.c lines 1829-1834
- *
- * Destiny Bond should not be used if:
- * 1. Already active (STATUS2_DESTINY_BOND)
- * 2. Counter hasn't expired (DestinyBondCounters[bankAtk] != 0)
- */
-export const checkDestinyBond: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'destinybond') return 0;
-
-	// Check if Destiny Bond is already active
-	if (ctx.attacker.volatiles.has('destinybond')) {
-		ctx.adjustments.push({
-			reason: 'Destiny Bond already active',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	return 0;
-};
-
 export const checkFutureSight: NegativeScoringFunction = ctx => {
 	const failure = delayedMoveFailure(ctx.state, ctx.target, ctx.move);
 	if (!failure) return 0;
@@ -2002,7 +1975,6 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 
 	// New M2 checks (CFRU: ai_negatives.c various lines)
 	checkPainSplit,
-	checkDestinyBond,
 	checkFutureSight,
 	checkItemMove,
 	checkSemiInvulnerable,

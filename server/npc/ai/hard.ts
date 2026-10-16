@@ -8,6 +8,7 @@ import { DEFAULT_AI_CONFIG, type AIPokemon, type BattleState, type CFRUAIConfig,
 import { buildBattleStateWithTracker, buildPokemonFromRequest } from './cfru/state-builder';
 import { createBattleTracker } from './cfru/util/battle-tracker';
 import { createBattleLogger, type LogLevel } from './cfru/logger';
+import { effectiveAbility, fieldWithActivePokemon, replaceActivePokemon } from './cfru/util/mechanics';
 import { HardEvaluation } from './hard/evaluation';
 import { fightingStyle, hardMove } from './hard/opponent-model';
 
@@ -80,12 +81,14 @@ export class HardAI extends NPCBattleAI {
 		const variants = [{ actor, evaluator, predictions, transform: undefined as 'mega' | undefined }];
 		const mega = flags.canMegaEvo ? this.megaForm(actor) : null;
 		if (mega) {
-			const megaState = { ...state, self: { ...state.self,
-				active: state.self.active.map(p => p === actor ? mega : p),
-				team: state.self.team.map(p => p === actor ? mega : p),
-			}, field: { ...state.field } };
-			if (toID(mega.ability) === 'drought') megaState.field.weather = 'sun';
-			if (toID(mega.ability) === 'drizzle') megaState.field.weather = 'rain';
+			const megaState = replaceActivePokemon(state, actor, mega);
+			if (!['primordialsea', 'desolateland', 'deltastream'].includes(megaState.field.weatherId || '')) {
+				const ability = effectiveAbility(mega, megaState.field);
+				if (ability === 'drought') megaState.field.weatherId = 'sunnyday';
+				if (ability === 'drizzle') megaState.field.weatherId = 'raindance';
+				megaState.field = fieldWithActivePokemon(megaState.field,
+					[...megaState.self.active, ...megaState.opponent.active]);
+			}
 			const evaluation = new HardEvaluation(megaState, formatId);
 			variants.push({ actor: mega, evaluator: evaluation, predictions: evaluation.predictions(mega), transform: 'mega' });
 		}
@@ -131,7 +134,14 @@ export class HardAI extends NPCBattleAI {
 				candidates.push({ choice, result, targetPos, targetName: target.species, variant });
 			}
 		}
-		if (!candidates.length) return super.makeDecision(active, moves, switches, flags, activeIndex);
+		if (!candidates.length) {
+			const fallback = super.makeDecision(active, moves, switches, flags, activeIndex);
+			const move = moves.find(m => m.slot === fallback.slot);
+			if (fallback.type === 'move' && move && state.isDoubles) {
+				fallback.targetPos = this.getDefaultTargetPosition(move, actor.slot - 1);
+			}
+			return fallback;
+		}
 		const maxScore = Math.max(...candidates.map(c => c.result.score));
 		let top = candidates.filter(c => c.result.score === maxScore);
 		// If every action is predicted to fail, keep a damaging attempt instead of futile healing.

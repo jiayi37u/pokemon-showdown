@@ -9,7 +9,8 @@
 
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, AICache, FieldConditions } from '../types';
-import { defensiveAbility, effectiveItem, effectivePriority, grounded, rulesDex } from './mechanics';
+import { effectiveAbility, defensiveAbility, effectiveItem, effectivePriority, grounded, rulesDex } from './mechanics';
+import { itemMoveFailure } from './items';
 
 /** Resolve item-dependent move types from the AI's current item knowledge. */
 export function resolveItemMoveType(attacker: AIPokemon, move: AIMove, field: FieldConditions): AIMove {
@@ -271,7 +272,7 @@ export function getImmunities(types: string[]): string[] {
  * @param attacker - The attacking Pokemon
  * @returns true if defender resists all known moves
  */
-export function resistsAllMoves(defender: AIPokemon, attacker: AIPokemon): boolean {
+export function resistsAllMoves(defender: AIPokemon, attacker: AIPokemon, field?: FieldConditions): boolean {
 	if (attacker.moves.length === 0) {
 		// No known moves, can't determine
 		return false;
@@ -286,7 +287,7 @@ export function resistsAllMoves(defender: AIPokemon, attacker: AIPokemon): boole
 		const effectiveness = getTypeEffectiveness(move.type, defender.types);
 
 		// Check ability immunity
-		const abilityImmunity = getAbilityTypeImmunity(move.type, defender.ability);
+		const abilityImmunity = getAbilityTypeImmunity(move.type, effectiveAbility(defender, field));
 		if (abilityImmunity.immune) {
 			continue;
 		}
@@ -306,7 +307,7 @@ export function resistsAllMoves(defender: AIPokemon, attacker: AIPokemon): boole
  * @param defender - The defending Pokemon
  * @returns true if attacker has a super effective move
  */
-export function hasSuperEffectiveMove(attacker: AIPokemon, defender: AIPokemon): boolean {
+export function hasSuperEffectiveMove(attacker: AIPokemon, defender: AIPokemon, field?: FieldConditions): boolean {
 	for (const moveId of attacker.moves) {
 		const move = Dex.moves.get(moveId);
 		if (!move.exists || move.category === 'Status') {
@@ -314,7 +315,7 @@ export function hasSuperEffectiveMove(attacker: AIPokemon, defender: AIPokemon):
 		}
 
 		// Check ability immunity first
-		const abilityImmunity = getAbilityTypeImmunity(move.type, defender.ability);
+		const abilityImmunity = getAbilityTypeImmunity(move.type, effectiveAbility(defender, field));
 		if (abilityImmunity.immune) {
 			continue;
 		}
@@ -343,6 +344,15 @@ export function getMoveInteraction(
 	const data = dex.moves.get(move.id);
 	const ability = defensiveAbility(attacker, defender, move, field);
 	const block = (blockedBy: string, failed = false) => ({ effectiveness: 0, blockedBy, ...(failed ? { failed } : {}) });
+	if (field.weather && move.category !== 'Status' &&
+		((field.weatherId === 'primordialsea' && move.type === 'Fire') ||
+			(field.weatherId === 'desolateland' && move.type === 'Water'))) {
+		return block('Extreme weather prevents this attack', true);
+	}
+	if (move.id === 'poltergeist') {
+		const failure = itemMoveFailure(attacker, defender, move, field);
+		if (failure) return block(failure, true);
+	}
 	if (['fakeout', 'firstimpression'].includes(move.id) && (attacker.activeMoveActions || attacker.lastMove)) {
 		return block(`${move.name} only works on the first action after entry`, true);
 	}
@@ -357,7 +367,7 @@ export function getMoveInteraction(
 		.includes(move.target) &&
 		!(move.id === 'curse' && !attacker.types.includes('Ghost'));
 	const foeTarget = direct && attacker !== defender && !context.isAllyTarget;
-	if (foeTarget && move.category === 'Status' && toID(attacker.ability) === 'prankster' &&
+	if (foeTarget && move.category === 'Status' && effectiveAbility(attacker, field) === 'prankster' &&
 		!dex.getImmunity('prankster', defender.types)) {
 		return block('Dark target immune to Prankster status move');
 	}
@@ -412,9 +422,11 @@ export function getMoveInteraction(
 			(typeof data.ignoreImmunity === 'object' && data.ignoreImmunity[move.type]) || item === 'ringtarget' ||
 			(move.type === 'Ground' && (arrows || isGrounded)) ||
 			(type === 'Ghost' && ['Normal', 'Fighting'].includes(move.type) &&
-				['scrappy', 'mindseye'].includes(toID(attacker.ability)));
+				['scrappy', 'mindseye'].includes(effectiveAbility(attacker, field)));
 		if (!ignoreImmunity && !dex.getImmunity(move.type, type)) return block(`Type immunity (${move.type} vs ${type})`);
-		exponent += move.id === 'freezedry' && type === 'Water' ? 1 : dex.getEffectiveness(move.type, type);
+		let typeMod = move.id === 'freezedry' && type === 'Water' ? 1 : dex.getEffectiveness(move.type, type);
+		if (field.weather && field.weatherId === 'deltastream' && type === 'Flying' && typeMod > 0) typeMod = 0;
+		exponent += typeMod;
 		if (move.id === 'flyingpress') exponent += dex.getEffectiveness('Flying', type);
 	}
 	// Iron Ball alone makes Ground neutral against Flying dual types, unlike Gravity/Smack Down.

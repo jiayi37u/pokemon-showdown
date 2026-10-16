@@ -8,6 +8,8 @@
  * @license MIT
  */
 
+import { effectiveAbility } from '../util/mechanics';
+
 import { itemRemovalFailure } from '../util/items';
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, PositiveScoringFunction } from './index';
@@ -322,7 +324,7 @@ export const rewardBurnMove: PositiveScoringFunction = (ctx) => {
 	}
 
 	// Extra if they don't have Guts
-	if (toID(ctx.target.ability) === 'guts') {
+	if (effectiveAbility(ctx.target, ctx.state.field) === 'guts') {
 		bonus -= 8;
 		ctx.adjustments.push({
 			reason: 'Target has Guts',
@@ -393,7 +395,7 @@ export const rewardSleepTalkSnore: PositiveScoringFunction = (ctx) => {
 
 	if (moveId !== 'sleeptalk' && moveId !== 'snore') return 0;
 
-	const attackerAbility = toID(ctx.attacker.ability);
+	const attackerAbility = effectiveAbility(ctx.attacker, ctx.state.field);
 
 	// Comatose always counts as asleep - always reward
 	if (attackerAbility === 'comatose') {
@@ -688,7 +690,7 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 	// ==========================================================================
 	// Check bad idea conditions (CFRU: BadIdeaToRaiseStatAgainst)
 	// ==========================================================================
-	const targetAbility = toID(ctx.target.ability);
+	const targetAbility = effectiveAbility(ctx.target, ctx.state.field);
 
 	// Unaware ignores stat boosts - don't setup against it
 	if (targetAbility === 'unaware') {
@@ -898,7 +900,7 @@ export const rewardHazards: PositiveScoringFunction = (ctx) => {
 			const poisonableCount = ctx.state.opponent.team.filter(mon => {
 				if (mon.fainted) return false;
 				if (mon.types.includes('Poison') || mon.types.includes('Steel')) return false;
-				if (mon.types.includes('Flying') || toID(mon.ability) === 'levitate') return false;
+				if (mon.types.includes('Flying') || effectiveAbility(mon, ctx.state.field) === 'levitate') return false;
 				return true;
 			}).length;
 
@@ -918,7 +920,7 @@ export const rewardHazards: PositiveScoringFunction = (ctx) => {
 		// Check if opponent has fast grounded Pokemon
 		const fastGroundedCount = ctx.state.opponent.team.filter(mon => {
 			if (mon.fainted) return false;
-			if (mon.types.includes('Flying') || toID(mon.ability) === 'levitate') return false;
+			if (mon.types.includes('Flying') || effectiveAbility(mon, ctx.state.field) === 'levitate') return false;
 			return mon.baseStats.spe >= 90;
 		}).length;
 
@@ -1417,7 +1419,7 @@ export const rewardPartnerAbsorption: PositiveScoringFunction = (ctx) => {
 	if (!ctx.isTargetingPartner) return 0;
 	if (ctx.move.category === 'Status') return 0;
 
-	const partnerAbility = toID(ctx.target.ability);
+	const partnerAbility = effectiveAbility(ctx.target, ctx.state.field);
 	const moveType = ctx.move.type;
 	let bonus = 0;
 
@@ -1782,7 +1784,7 @@ export const rewardWeatherMove: PositiveScoringFunction = (ctx) => {
 
 	if (!weatherMoves[moveId]) return 0;
 
-	const abilityId = toID(ctx.attacker.ability);
+	const abilityId = effectiveAbility(ctx.attacker, ctx.state.field);
 	let bonus = 0;
 
 	// Rain Dance benefits
@@ -2023,7 +2025,7 @@ export const rewardSaltCure: PositiveScoringFunction = (ctx) => {
 	if (secondaryEffectFailure(ctx.state, ctx.attacker, ctx.target, ctx.move)) return 0;
 
 	let bonus = 0;
-	const targetAbility = toID(ctx.target.ability);
+	const targetAbility = effectiveAbility(ctx.target, ctx.state.field);
 
 	// Check immunities - CFRU pattern: early return for blocked cases
 	// Magic Guard prevents Salt Cure damage

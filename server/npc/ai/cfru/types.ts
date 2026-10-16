@@ -92,7 +92,7 @@ export interface AIPokemon {
 	/** Types */
 	types: string[];
 
-	/** Ability (empty string if unknown) */
+	/** Current ability identity (empty if unknown); use effectiveAbility for rule evaluation. */
 	ability: string;
 
 	/** Item (empty string if unknown) */
@@ -224,6 +224,8 @@ export interface FieldConditions {
 	formatId?: string;
 	/** Current weather: 'sun' | 'rain' | 'sand' | 'hail' | 'snow' | '' */
 	weather: string;
+	/** Public weather identity, retained even while Cloud Nine / Air Lock suppress its effects. */
+	weatherId?: string;
 
 	/** Weather remaining turns (0 = permanent, -1 = none) */
 	weatherTurns: number;
@@ -248,6 +250,8 @@ export interface FieldConditions {
 
 	/** Wonder Room active */
 	wonderroom: boolean;
+	/** Derived from the active lineup; suppression does not erase a Pokemon's ability identity. */
+	neutralizingGas?: boolean;
 }
 
 /** Complete battle state for AI evaluation */

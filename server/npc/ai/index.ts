@@ -273,7 +273,9 @@ export abstract class NPCBattleAI extends BattlePlayer {
 			moves.push({
 				slot: j + 1,
 				move: move.move,
-				target: move.target || dexMove.target,
+				// Locked actions omit target: PS retains the previous target and rejects a new one.
+				// Dex metadata describes the move, not what this request permits choosing.
+				target: move.target || '',
 				zMove: false,
 				disabled: move.disabled,
 				basePower: move.basePower || dexMove.basePower || 0,
@@ -283,6 +285,15 @@ export abstract class NPCBattleAI extends BattlePlayer {
 		}
 
 		return moves;
+	}
+
+	/** Default legal slot for singles/doubles/Multi callers that need explicit targeting. */
+	protected getDefaultTargetPosition(move: MoveChoice, activeIndex: number): string {
+		if (['normal', 'any', 'adjacentFoe'].includes(move.target)) return '1';
+		if (move.target === 'adjacentAllyOrSelf') return String(-activeIndex - 1);
+		// PS requires the slot even if the ally fainted and every available move will fail.
+		if (move.target === 'adjacentAlly') return activeIndex === 0 ? '-2' : '-1';
+		return '';
 	}
 
 	/**

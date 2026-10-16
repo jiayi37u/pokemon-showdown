@@ -13,7 +13,9 @@ import {
 import { createCache } from '../cfru/util/cache';
 import { calculateDamage, getSecondaryEffectDamage } from '../cfru/util/damage-calc';
 import { getEffectiveSpeed } from '../cfru/util/speed';
-import { effectivePriority } from '../cfru/util/mechanics';
+import {
+	effectiveAbility, effectivePriority, effectiveItem, grounded, replaceActivePokemon,
+} from '../cfru/util/mechanics';
 import {
 	fightingStyle, hardMove, inferOpponent, predictOpponent, type OpponentHypothesis, type PredictedAction,
 } from './opponent-model';
@@ -188,7 +190,7 @@ export class HardEvaluation {
 			const outgoing = this.damage(actor, target, move);
 			const fakeOut = move.id === 'fakeout';
 			const canFlinch = !actor.activeMoveActions && !actor.lastMove &&
-				!['innerfocus', 'shielddust'].includes(toID(target.ability)) &&
+				!['innerfocus', 'shielddust'].includes(effectiveAbility(target, this.state.field)) &&
 				!target.volatiles.has('substitute');
 			let prevented = 0;
 			let beforeDamage = 0;
@@ -239,13 +241,16 @@ export class HardEvaluation {
 				}
 				if (beforeDamage >= actor.hp) add(-70, 'Cannot Taunt before fainting');
 			} else if (protectionMoves.has(move.id)) {
-				const residual = getSecondaryEffectDamage(target, this.state.field.weather, actor.ability);
+				const residual = getSecondaryEffectDamage(target, this.state.field.weather,
+					effectiveAbility(actor, this.state.field), this.state.field);
 				const passiveHeal = actor.hp < actor.maxHp && (toID(actor.item) === 'leftovers' ||
 					(toID(actor.item) === 'blacksludge' && actor.types.includes('Poison')));
 				const pendingWish = this.state.self.conditions.wishes?.[actor.slot] === 1 && actor.hp < actor.maxHp;
-				const usefulOrb = !actor.status && ((toID(actor.item) === 'toxicorb' && toID(actor.ability) === 'poisonheal') ||
-					(toID(actor.item) === 'flameorb' && toID(actor.ability) === 'guts'));
-				const ownResidual = getSecondaryEffectDamage(actor, this.state.field.weather, target.ability);
+				const usefulOrb = !actor.status &&
+					((toID(actor.item) === 'toxicorb' && effectiveAbility(actor, this.state.field) === 'poisonheal') ||
+						(toID(actor.item) === 'flameorb' && effectiveAbility(actor, this.state.field) === 'guts'));
+				const ownResidual = getSecondaryEffectDamage(actor, this.state.field.weather,
+					effectiveAbility(target, this.state.field), this.state.field);
 				add(ownResidual >= actor.hp ? -90 : pendingWish ? 40 :
 					residual > 0 || passiveHeal || usefulOrb || target.volatiles.has('yawn') ? 16 : -12,
 				'CFRU ShouldProtect: wait only when the turn produces a benefit');
@@ -263,8 +268,8 @@ export class HardEvaluation {
 					canReceive || safeRecipient ? 28 : -65, 'CFRU Wish: heal a surviving recipient after the delay');
 			} else if (['healbell', 'aromatherapy'].includes(move.id)) {
 				const patients = this.state.self.team.filter(p => !p.fainted && p.status &&
-					!(move.id === 'healbell' && toID(p.ability) === 'soundproof') &&
-					!['guts', 'poisonheal', 'quickfeet'].includes(toID(p.ability)));
+					!(move.id === 'healbell' && effectiveAbility(p, this.state.field) === 'soundproof') &&
+					!['guts', 'poisonheal', 'quickfeet'].includes(effectiveAbility(p, this.state.field)));
 				add(patients.length ? 20 + 8 * patients.length : -90, 'CFRU cleric: cure useful team status');
 			} else if (['reflect', 'lightscreen', 'auroraveil'].includes(move.id)) {
 				let reduced = 0;
@@ -288,7 +293,7 @@ export class HardEvaluation {
 					const blocked = response.move.category === 'Status' && response.move.target !== 'self';
 					const survives = response.move.category !== 'Status' &&
 						this.damage(response.user || target, actor, response.move).max < cost;
-					if (!response.move.flags.bypasssub && toID((response.user || target).ability) !== 'infiltrator' &&
+					if (!response.move.flags.bypasssub && effectiveAbility(response.user || target, this.state.field) !== 'infiltrator' &&
 						(blocked || survives)) useful += response.weight * first;
 				}
 				add(actor.hp <= cost + beforeDamage ? -90 : 35 * useful - 15,
@@ -342,13 +347,12 @@ export class HardEvaluation {
 	}
 
 	entryDamage(pokemon: AIPokemon): number {
-		if (['magicguard'].includes(toID(pokemon.ability)) || toID(pokemon.item) === 'heavydutyboots') return 0;
+		if (effectiveAbility(pokemon, this.state.field) === 'magicguard' ||
+			effectiveItem(pokemon, this.state.field) === 'heavydutyboots') return 0;
 		const conditions = this.state.self.conditions;
 		let damage = conditions.stealthrock ? Math.max(1, Math.floor(pokemon.maxHp / 8 *
 			2 ** this.dex.getEffectiveness('Rock', pokemon.types))) : 0;
-		const grounded = this.state.field.gravity || toID(pokemon.item) === 'ironball' ||
-			(!pokemon.types.includes('Flying') && toID(pokemon.ability) !== 'levitate' && toID(pokemon.item) !== 'airballoon');
-		if (grounded && conditions.spikes) {
+		if (grounded(pokemon, this.state.field) && conditions.spikes) {
 			damage += Math.max(1, Math.floor(pokemon.maxHp * [0, 1 / 8, 1 / 6, 1 / 4][conditions.spikes]));
 		}
 		return damage;
@@ -357,10 +361,14 @@ export class HardEvaluation {
 	/** CFRU replacement weights: KO +31, outspeed +14, resist all +17, 2HKO +2, faint -39. */
 	scoreSwitch(pokemon: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>, forced: boolean,
 		actor?: AIPokemon): SwitchEvaluation {
+		if (actor && this.state.self.active.includes(actor)) {
+			const state = replaceActivePokemon(this.state, actor, pokemon);
+			return new HardEvaluation(state, this.formatId).scoreSwitch(pokemon, predictions, forced, actor);
+		}
 		const hazards = this.entryDamage(pokemon);
 		const entered = { ...pokemon, hp: Math.max(0, pokemon.hp - hazards) };
 		entered.hpPercent = 100 * entered.hp / entered.maxHp;
-		const allies = this.state.self.active.filter(p => p !== actor);
+		const allies = this.state.self.active.filter(p => p !== actor && p !== pokemon);
 		const incoming = forced ? 0 : this.incomingRisk(entered, predictions, allies);
 		const remaining = entered.hp - incoming;
 		const reasons = [`Entry hazards ${hazards} HP; predicted switch-in damage ${incoming.toFixed(1)} HP`];
@@ -434,21 +442,23 @@ export class HardEvaluation {
 			incoming >= actor.hp / 3 && replacement.score >= 14) {
 			return 'CFRU sleep: avoid giving away another damaging turn';
 		}
-		if (getSecondaryEffectDamage(actor, this.state.field.weather, foes[0]?.ability || '') >= actor.maxHp / 4 &&
+		const foeAbility = foes[0] ? effectiveAbility(foes[0], this.state.field) : '';
+		if (getSecondaryEffectDamage(actor, this.state.field.weather, foeAbility, this.state.field) >= actor.maxHp / 4 &&
 			replacement.score >= 14 && (actor.status === 'tox' || actor.volatiles.has('leechseed'))) {
 			return 'CFRU residual damage: reset escalating attrition';
 		}
 		if (actor.volatiles.has('yawn') && !actor.status && actor.hpPercent > 25 &&
-			!['naturalcure', 'earlybird', 'shedskin', 'insomnia', 'vitalspirit'].includes(toID(actor.ability)) &&
+			!['naturalcure', 'earlybird', 'shedskin', 'insomnia', 'vitalspirit']
+				.includes(effectiveAbility(actor, this.state.field)) &&
 			!['lumberry', 'chestoberry'].includes(toID(actor.item)) &&
 			!actor.moves.some(id => ['sleeptalk', 'snore'].includes(toID(id))) && replacement.score >= 0) {
 			return 'CFRU Yawn: avoid sleep';
 		}
-		if (toID(actor.ability) === 'naturalcure' && actor.status &&
+		if (effectiveAbility(actor, this.state.field) === 'naturalcure' && actor.status &&
 			this.entryDamage(actor) < actor.maxHp / 4 && replacement.score >= 0) {
 			return 'CFRU Natural Cure: clear status safely';
 		}
-		if (toID(actor.ability) === 'regenerator' && actor.hpPercent <= 50 && incoming >= actor.hp / 2 &&
+		if (effectiveAbility(actor, this.state.field) === 'regenerator' && actor.hpPercent <= 50 && incoming >= actor.hp / 2 &&
 			this.entryDamage(actor) < actor.maxHp / 3 && replacement.score >= 0) {
 			return 'CFRU Regenerator: preserve a threatened attacker';
 		}

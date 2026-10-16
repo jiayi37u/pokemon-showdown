@@ -110,8 +110,9 @@ describe('NPC ability reveals', () => {
 				assert.equal(tracker.getActiveOpponent().ability, 'Levitate');
 				battle.makeChoices('move 1', 'move 2');
 				feed();
-				const expected = move === 'skillswap' ? 'Natural Cure' : move === 'worryseed' ? 'Insomnia' : '';
+				const expected = move === 'skillswap' ? 'Natural Cure' : move === 'worryseed' ? 'Insomnia' : 'Levitate';
 				assert.equal(tracker.getActiveOpponent().ability, expected);
+				assert.equal(tracker.getActiveOpponent().volatiles.has('gastroacid'), move === 'gastroacid');
 				battle.makeChoices('switch 2', 'move 3');
 				battle.makeChoices('switch 2', 'move 3');
 				feed();

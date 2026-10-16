@@ -291,6 +291,211 @@ describe('Shared public state pipeline across game types', () => {
 	}
 
 	for (const gameType of ['singles', 'doubles', 'multi']) {
+		it(`${gameType}: a recipient that cannot be suppressed drops Gastro Acid before passing again`, () => {
+			const source = { species: 'Smeargle', ability: 'Own Tempo', moves: ['batonpass'] };
+			const recipient = { species: 'Komala', ability: 'Comatose', moves: ['batonpass'] };
+			const game = fixture(gameType, source, source, undefined, undefined, recipient);
+			try {
+				game.build();
+				for (const side of [game.battle.p1, game.battle.p2]) side.active[0].addVolatile('gastroacid', side.active[0]);
+				game.build();
+				for (const species of ['Komala', 'Smeargle']) {
+					game.play('move 1', 'move 1');
+					while (game.battle.requestState === 'switch') {
+						const side = game.battle.sides.find(s => s.activeRequest?.forceSwitch?.some(Boolean) && !s.isChoiceDone());
+						assert(side);
+						assert(game.battle.choose(side.id, `switch ${gameType === 'doubles' ? 3 : 2}`), side.choice.error);
+					}
+					const state = game.build();
+					for (const team of [state.self, state.opponent]) {
+						assert.equal(team.active[0].species, species);
+						assert(!team.active[0].volatiles.has('gastroacid'));
+					}
+					assert(!game.battle.p1.active[0].volatiles.gastroacid);
+					assert(!game.battle.p2.active[0].volatiles.gastroacid);
+				}
+			} finally { game.battle.destroy(); }
+		});
+
+		for (const spec of [
+			{ move: 'batonpass', reserve: false }, { move: 'shedtail', reserve: false },
+			{ move: 'shedtail', reserve: true, weak: true },
+			{ move: 'shedtail', reserve: true, substitute: true },
+		]) it(`${gameType}: impossible transfer scores zero and fails in PS: ${JSON.stringify(spec)}`, () => {
+			const actor = { species: 'Smeargle', ability: 'Own Tempo', moves: [spec.move] };
+			const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+			const game = fixture(gameType, passive, actor, undefined, undefined, spec.reserve ? passive : undefined);
+			try {
+				const actual = game.battle.p2.active[0];
+				if (spec.weak) {
+					actual.hp = Math.ceil(actual.maxhp / 2);
+					game.battle.makeRequest('move');
+				}
+				if (spec.substitute) actual.addVolatile('substitute', actual);
+				const state = game.build();
+				const move = buildAIMove({ id: spec.move }, 1);
+				const score = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
+					.scoreMove(state, state.self.active[0], move, state.opponent.active[0]);
+				assert.equal(score.score, 0);
+				game.play('move 1', 'move 1');
+				assert(game.battle.log.some(line => line.startsWith('|-fail|p2a: Smeargle')));
+				assert.equal(game.battle.requestState, 'move');
+			} finally { game.battle.destroy(); }
+		});
+
+		if (gameType === 'doubles') it('doubles: Wish and Future Sight keep their slots while Ally Switch moves their occupants', () => {
+			const user = { species: 'Mew', ability: 'Synchronize', moves: ['wish', 'allyswitch', 'splash'] };
+			const foe = { species: 'Smeargle', ability: 'Own Tempo', moves: ['futuresight', 'splash'] };
+			const ally = { species: 'Blissey', ability: 'Natural Cure', moves: ['splash'] };
+			const game = fixture(gameType, foe, user, undefined, ally, undefined, 'gen9doublescustomgame');
+			try {
+				game.build();
+				game.battle.p2.active[1].hp -= 200;
+				game.play('move 1 1', 'move 1');
+				game.build();
+				game.play('move 2', 'move 2');
+				const log = game.battle.log;
+				const swap = log.findIndex(line => line.startsWith('|swap|p2a: Mew'));
+				assert(swap > 0);
+				const observer = createBattleTracker('p2');
+				observer.setFormat('gen9doublescustomgame');
+				observer.parseMessage(log.slice(0, swap + 1).join('\n'));
+				assert.equal(observer.getWish('p2a'), 1);
+				assert.equal(observer.getWish('p2b'), 0);
+				assert(observer.getFutureMoves()[1] > 0);
+				assert.equal(observer.getFutureMoves()[2] || 0, 0);
+				assert(log.slice(swap).some(line => line.startsWith('|-heal|p2a: Blissey') && line.includes('[from] move: Wish')));
+				const state = game.build();
+				assert.equal(state.self.active[0].species, 'Blissey');
+				assert(state.self.conditions.futureMoves[1] > 0);
+				game.play('move 2', 'move 1', 'move 1', 'move 3');
+				assert(game.battle.log.some(line => line.startsWith('|-end|p2a: Blissey|move: Future Sight')));
+				assert.equal(game.build().self.conditions.futureMoves[1] || 0, 0);
+			} finally { game.battle.destroy(); }
+		});
+
+		if (gameType === 'doubles') it(`doubles: Ally Switch moves each occupant's boosts, effects, action and identity memory`, () => {
+			const source = { species: 'Mew', ability: 'Synchronize', item: 'Sitrus Berry',
+				moves: ['calmmind', 'substitute', 'allyswitch'] };
+			const partner = { species: 'Smeargle', ability: 'Own Tempo', moves: ['agility', 'rest', 'splash'] };
+			const game = fixture(gameType, source, source, partner, partner, undefined, 'gen9doublescustomgame');
+			try {
+				game.build();
+				game.play('move 1', 'move 1', 'move 1', 'move 1');
+				game.build();
+				for (const side of [game.battle.p1, game.battle.p2]) {
+					side.active[0].hp = Math.floor(side.active[0].maxhp / 2) + 20;
+					side.active[1].hp -= 100;
+				}
+				game.play('move 2', 'move 2', 'move 2', 'move 2');
+				game.build();
+				game.play('move 3', 'move 3', 'move 3', 'move 3');
+				const state = game.build();
+				for (const [actualSide, snapshot] of [[game.battle.p1, state.opponent], [game.battle.p2, state.self]]) {
+					for (const [index, actual] of actualSide.active.entries()) {
+						const target = snapshot.active.find(p => p.slot === index + 1);
+						assert.equal(target.species, actual.species.name);
+						assert.deepEqual(target.boosts, actual.boosts);
+						assert.equal(target.volatiles.has('substitute'), !!actual.volatiles.substitute);
+						assert.equal(target.activeMoveActions, 1);
+						assert.equal(target.sleepTurns, index === 0 ? 2 : 0);
+						assert.equal(target.recyclableItem, index === 1 ? 'sitrusberry' : '');
+						assert.equal(toID(target.lastMove), index === 0 ? 'rest' : 'allyswitch');
+					}
+				}
+				const originalUser = state.opponent.active.find(p => p.species === 'Mew');
+				assert.equal(game.tracker.getOpponentTeam().find(p => p.species === 'Mew').position, 'p1b');
+				assert.equal(originalUser.slot, 2);
+			} finally { game.battle.destroy(); }
+		});
+
+		if (gameType !== 'doubles') it(`${gameType}: Ally Switch fails under PS rules and scores zero`, () => {
+			const actor = { species: 'Smeargle', ability: 'Own Tempo', moves: ['allyswitch'] };
+			const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+			const formatId = gameType === 'multi' ? 'gen9nationaldexmulti' : 'gen9customgame';
+			const game = fixture(gameType, passive, actor, undefined, undefined, undefined, formatId);
+			try {
+				const state = game.build();
+				const move = buildAIMove({ id: 'allyswitch' }, 1, formatId);
+				const score = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId }, createAICache(state.turn))
+					.scoreMove(state, state.self.active[0], move, state.opponent.active[0]);
+				assert.equal(score.score, 0);
+				game.play('move 1', 'move 1');
+				assert(game.battle.log.some(line => line.startsWith('|-fail|p2a: Smeargle')));
+				assert(!game.battle.log.some(line => line.startsWith('|swap|')));
+			} finally { game.battle.destroy(); }
+		});
+
+		for (const [formatId, move] of [
+			['gen5pokemmorandombattle', 'batonpass'], ['gen7customgame', 'batonpass'],
+			['gen9customgame', 'batonpass'], ['gen9customgame', 'shedtail'],
+		]) {
+			it(`${gameType}/${formatId}: ${move} transfers only eligible public effects for both teams`, () => {
+				const source = { species: 'Smeargle', ability: 'Own Tempo',
+					moves: ['calmmind', move === 'batonpass' ? 'substitute' : 'aquaring', move, 'splash'] };
+				const recipient = { species: 'Bronzong', ability: 'Levitate', moves: ['splash'] };
+				const game = fixture(gameType, source, source, undefined, undefined, recipient, formatId);
+				try {
+					game.build();
+					game.play('move 1', 'move 1');
+					game.build();
+					game.play('move 2', 'move 2');
+					for (const side of [game.battle.p1, game.battle.p2]) {
+						const actor = side.active[0];
+						actor.addVolatile('magnetrise', actor);
+						actor.addVolatile('gastroacid', actor);
+						actor.addVolatile('yawn', actor);
+					}
+					game.build();
+					game.play('move 3', 'move 3');
+					const choice = `switch ${gameType === 'doubles' ? 3 : 2}`;
+					while (game.battle.requestState === 'switch') {
+						const side = game.battle.sides.find(s => s.activeRequest?.forceSwitch?.some(Boolean) && !s.isChoiceDone());
+						assert(side, 'A switching request must identify its owner');
+						assert(game.battle.choose(side.id, choice), side.choice.error);
+					}
+					const state = game.build();
+					for (const [side, stateSide] of [[game.battle.p1, state.opponent], [game.battle.p2, state.self]]) {
+						const actual = side.active[0];
+						const target = stateSide.active[0];
+						assert.equal(target.species, 'Bronzong');
+						assert.deepEqual(target.boosts, actual.boosts);
+						for (const effect of ['substitute', 'magnetrise', 'gastroacid', 'aquaring', 'yawn']) {
+							assert.equal(target.volatiles.has(effect), !!actual.volatiles[effect], effect);
+						}
+						assert.equal(target.activeMoveActions, 0);
+						assert.equal(target.lastMove, '');
+						if (stateSide === state.self) {
+							assert.equal(effectiveAbility(target, state.field), actual.ignoringAbility() ? '' : actual.ability);
+						}
+						assert(!stateSide.reserve.find(p => p.species === 'Smeargle').volatiles.has('substitute'));
+					}
+					game.play('move 1', 'move 1');
+					assert.equal(game.battle.p1.active[0].status, '', 'Yawn cannot follow the passer');
+					assert.equal(game.build().opponent.active[0].status, '');
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		it(`${gameType}: a failed Baton Pass cannot turn a later ordinary switch into a transfer`, () => {
+			const source = { species: 'Smeargle', ability: 'Own Tempo', moves: ['calmmind', 'batonpass'] };
+			const foe = { species: 'Mew', ability: 'Synchronize', moves: ['splash', 'taunt'] };
+			const recipient = { species: 'Bronzong', ability: 'Levitate', moves: ['splash'] };
+			const game = fixture(gameType, foe, source, undefined, undefined, recipient);
+			try {
+				game.build();
+				game.play('move 1', 'move 1');
+				game.build();
+				game.play('move 2 1', 'move 2');
+				game.build();
+				game.play('move 1', `switch ${gameType === 'doubles' ? 3 : 2}`);
+				const state = game.build();
+				assert.deepEqual(state.self.active[0].boosts, game.battle.p2.active[0].boosts);
+				assert.equal(state.self.active[0].boosts.spa, 0);
+				assert(!state.self.active[0].volatiles.has('taunt'));
+			} finally { game.battle.destroy(); }
+		});
+
 		it(`${gameType}: Illusion reassigns entry observations while preserving live effects and teammate history`, () => {
 			const hidden = { name: 'Hidden', species: 'Zoroark', ability: 'Illusion', item: 'Sitrus Berry',
 				moves: ['nastyplot', 'substitute', 'agility', 'splash'] };

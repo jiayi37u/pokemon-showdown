@@ -82,6 +82,39 @@ afterEach(() => { game?.destroy(); game = undefined; });
 
 describe('Production NPCMultiManager decisions', () => {
 	for (const difficulty of ['normal', 'hard']) {
+		for (const side of ['p3', 'p4']) for (const move of ['batonpass', 'shedtail']) {
+			it(`${difficulty}: ${side} ${move} shares inherited state with both production controllers`, () => {
+				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+				const source = { species: 'Smeargle', ability: 'Own Tempo',
+					moves: ['calmmind', move === 'batonpass' ? 'substitute' : 'splash', move] };
+				const recipient = { species: 'Bronzong', ability: 'Levitate', moves: ['splash'] };
+				const teams = [[passive], [passive], [passive], [passive]];
+				const index = Number(side[1]) - 1;
+				teams[index] = [source, recipient];
+				game = createMulti(teams, false, difficulty);
+				for (const moveSlot of [1, 2, 3]) {
+					const choices = ['move 1', 'move 1', 'move 1', 'move 1'];
+					choices[index] = `move ${moveSlot}`;
+					game.play(choices);
+					game.sync();
+				}
+				const switches = [null, null, null, null];
+				switches[index] = 'switch 2';
+				game.play(switches);
+				game.decide();
+				for (const controller of Object.values(game.manager.controllers)) {
+					const state = difficulty === 'hard' ? controller.state : controller.battleState;
+					const target = (side === 'p4' ? state.self : state.opponent).active.find(p => p.slot === 2);
+					assert.equal(target.species, 'Bronzong');
+					assert.equal(target.boosts.spa, move === 'batonpass' ? 1 : 0);
+					assert(target.volatiles.has('substitute'));
+					assert.equal(target.activeMoveActions, 0);
+				}
+				game.play(['move 1', null, 'move 1', null]);
+				assert.equal(game.battle.turn, 5);
+			});
+		}
+
 		for (const own of [false, true]) {
 			it(`${difficulty}: production Multi preserves ${own ? 'p4' : 'p3'} Illusion state on reveal`, () => {
 				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };

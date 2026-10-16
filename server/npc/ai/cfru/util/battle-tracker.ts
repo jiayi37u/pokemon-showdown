@@ -111,6 +111,8 @@ interface IdentityMemory {
 /** Bounded to one stay, so an Illusion reveal can reassign observations without replaying the battle. */
 interface EntryObservations {
 	ident: string;
+	/** Copy callbacks depending on the recipient's ability wait for public/authorized identity facts. */
+	copyEffectsPending?: boolean;
 	previous?: TrackedPokemon;
 	memory: IdentityMemory;
 	memoryUpdates: IdentityMemory;
@@ -358,6 +360,9 @@ export class BattleTracker {
 		case 'replace':
 			this.handleReplace(parts);
 			break;
+		case 'swap':
+			this.handleSwap(parts);
+			break;
 		case 'faint':
 			this.handleFaint(parts);
 			break;
@@ -499,6 +504,7 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim(); // "p1a"
 		const side = position.slice(0, 2); // "p1"
 		const slot = position.slice(2); // "a" or "b"
+		const transfer = this.getSwitchTransfer(parts, position);
 
 		const sleepIdent = this.publicIdentity(positionPart);
 		const outgoingIdent = this.activeIdentities.get(position);
@@ -507,6 +513,7 @@ export class BattleTracker {
 		const entry: EntryObservations = {
 			ident: sleepIdent, memory: { ...this.identityMemory.get(sleepIdent) }, memoryUpdates: {},
 			sleeping: !!parts[3]?.split(' ').includes('slp'), sleepChecks: 0, moves: new Set(),
+			copyEffectsPending: transfer.copyEffects,
 		};
 		this.entries.set(position, entry);
 		// PS Gen 3–4 carries the recyclable item with the position when switching.
@@ -518,8 +525,8 @@ export class BattleTracker {
 		this.activeIdentities.set(position, sleepIdent);
 		entry.memory = this.memoryOnEntry(entry.memory, entry.sleeping);
 
-		this.activeVolatiles.set(position, new Set());
-		this.transientEffects.delete(position);
+		this.activeVolatiles.set(position, transfer.volatiles);
+		this.transientEffects.set(position, transfer.transient);
 		this.activeTypes.delete(position);
 		this.acted.delete(position);
 		this.transformations.delete(position);
@@ -538,12 +545,10 @@ export class BattleTracker {
 			outgoing.recyclableItem = this.getRecyclableItem(outgoing.ident || '');
 		}
 
-		// CFRU AI Fix: Clear our team boosts, ability stat mods, and lastMove when we switch out
-		// Switching resets all stat boosts to 0 and removes volatile statuses
-		// In multi battles, this handles both p2 and p4 switches
+		// Entry state is reset or inherited by the same rule for both controlled players in Multi.
 		if (this.isOurTeamSide(side)) {
 			const boostKey = `${side}${slot}`;
-			this.ourActiveBoosts.set(boostKey, defaultBoosts());
+			this.ourActiveBoosts.set(boostKey, transfer.boosts);
 			// Reset lastMove (CFRU: switching resets gDisableStructs)
 			this.ourLastMove.set(boostKey, '');
 			return; // Don't need to track our own Pokemon details
@@ -620,7 +625,7 @@ export class BattleTracker {
 			lastMove: '',
 			active: true,
 			position,
-			boosts: defaultBoosts(),
+			boosts: transfer.boosts,
 		};
 
 		// Deactivate previous Pokemon in this exact position (not other positions on same side)
@@ -645,6 +650,76 @@ export class BattleTracker {
 
 		this.opponentPokemon.set(position, tracked);
 		this.opponentTeam.set(ident, tracked);
+		this.resolveCopiedEffects(position, tracked.ability);
+	}
+
+	/** Only a successful switch's public source can authorize carrying effects to another Pokemon. */
+	private getSwitchTransfer(parts: string[], position: string) {
+		const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
+		const source = parts.find(part => part.startsWith('[from] '))?.slice(7).replace(/^move: /, '');
+		const kind = parts[0] === 'switch' && source ? dex.moves.get(source).selfSwitch : false;
+		const volatiles = new Set<string>();
+		const transient = new Map<string, 'turn' | 'move'>();
+		const boosts = kind === 'copyvolatile' ? { ...(this.opponentPokemon.get(position)?.boosts ||
+			this.ourActiveBoosts.get(position) || defaultBoosts()) } : defaultBoosts();
+		if (kind === 'copyvolatile' || kind === 'shedtail') {
+			for (const effect of this.activeVolatiles.get(position) || []) {
+				if (kind === 'shedtail' && effect !== 'substitute') continue;
+				// Perish Song exposes its countdown in the protocol instead of its condition ID.
+				const condition = dex.conditions.get(/^perish[0-3]$/.test(effect) ? 'perishsong' : effect);
+				if (!condition.exists || condition.noCopy) continue;
+				volatiles.add(effect);
+				const lifetime = this.transientEffects.get(position)?.get(effect);
+				if (lifetime) transient.set(effect, lifetime);
+			}
+		}
+		return { boosts, volatiles, transient, copyEffects: kind === 'copyvolatile' };
+	}
+
+	private resolveCopiedEffects(position: string, ability: string): void {
+		const entry = this.entries.get(position);
+		if (!entry?.copyEffectsPending || !ability) return;
+		const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
+		// Gastro Acid's PS onCopy removes suppression when the recipient cannot be suppressed.
+		if (dex.abilities.get(ability).flags.cantsuppress) this.activeVolatiles.get(position)?.delete('gastroacid');
+		entry.copyEffectsPending = false;
+	}
+
+	/** Move the occupants' observations; Wish and future attacks stay on their field positions. */
+	private handleSwap(parts: string[]): void {
+		const from = parts[1]?.split(':')[0].trim();
+		const index = Number(parts[2]);
+		if (!from || !/^\d+$/.test(parts[2] || '') || index > 2) return;
+		const to = `${from.slice(0, 2)}${String.fromCharCode(97 + index)}`;
+		if (from === to) return;
+		const swap = <T>(map: Map<string, T>) => {
+			const a = map.get(from);
+			const b = map.get(to);
+			map.delete(from);
+			map.delete(to);
+			if (a !== undefined) map.set(to, a);
+			if (b !== undefined) map.set(from, b);
+		};
+		swap(this.opponentPokemon);
+		swap(this.activeVolatiles);
+		swap(this.transientEffects);
+		swap(this.activeTypes);
+		swap(this.activeAbilities);
+		swap(this.activeIdentities);
+		swap(this.entries);
+		swap(this.ourPokemon);
+		swap(this.ourActiveBoosts);
+		swap(this.ourLastMove);
+		swap(this.transformations);
+		swap(this.yawnSources);
+		const fromActed = this.acted.delete(from);
+		const toActed = this.acted.delete(to);
+		if (fromActed) this.acted.add(to);
+		if (toActed) this.acted.add(from);
+		for (const position of [from, to]) {
+			const pokemon = this.opponentPokemon.get(position);
+			if (pokemon) pokemon.position = position;
+		}
 	}
 
 	/** Illusion ends without leaving the field: all position-bound effects and action history survive. */
@@ -764,6 +839,7 @@ export class BattleTracker {
 			ability: pokemon.ability, moves: [...pokemon.moves], item: pokemon.item };
 		this.ourPokemon.set(key, { ident: this.sleepIdentity(ident), pokemon: facts });
 		this.activeAbilities.set(key, pokemon.ability);
+		this.resolveCopiedEffects(key, pokemon.ability);
 		// An opening Imposter can precede the first request containing our own stats.
 		for (const transformation of this.transformations.values()) {
 			if (!transformation.target && !transformation.pokemon &&
@@ -804,6 +880,7 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
 		this.activeAbilities.set(position, ability);
+		this.resolveCopiedEffects(position, changed ? previous : ability);
 
 		if (this.isOurTeamSide(side)) {
 			const own = this.ourPokemon.get(position);

@@ -7,6 +7,13 @@ import { getMoveInteraction } from './type-calc';
 /** Existing field/side effects that make a status move fail, independent of tactical value. */
 export function fieldEffectFailure(state: BattleState, attacker: AIPokemon, move: AIMove): string | undefined {
 	if (move.category !== 'Status') return;
+	if (move.id === 'allyswitch') {
+		const gameType = state.field.formatId ? Dex.formats.get(state.field.formatId).gameType :
+			state.isDoubles ? 'doubles' : 'singles';
+		if (!['doubles', 'triples'].includes(gameType)) return 'Ally Switch requires control of both allied positions';
+		if (gameType === 'triples' && attacker.slot === 2) return 'Ally Switch cannot move the middle position';
+		if (!state.self.active.some(p => p.slot !== attacker.slot && !p.fainted)) return 'No ally available to swap with';
+	}
 	if (move.target === 'adjacentAlly' &&
 		!state.self.active.some(p => p.slot !== attacker.slot && !p.fainted)) {
 		return 'No ally available for this move';
@@ -47,6 +54,16 @@ export function volatileEffectFailure(
 	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove
 ): string | undefined {
 	const dex = rulesDex(state.field);
+	const transfer = dex.moves.get(move.id).selfSwitch;
+	if (transfer === 'copyvolatile' || transfer === 'shedtail') {
+		if (attacker.volatiles.has('commanded')) return 'Commanded Pokemon cannot pass effects';
+		if (state.self.active.some(p => p.slot === attacker.slot) &&
+			!state.self.reserve.some(p => !p.fainted)) return 'No reserve available to receive effects';
+		if (transfer === 'shedtail') {
+			if (attacker.volatiles.has('substitute')) return 'Already has Substitute';
+			if (attacker.hp <= Math.ceil(attacker.maxHp / 2)) return 'Not enough HP for Shed Tail';
+		}
+	}
 	if (move.id === 'destinybond' && (dex.gen >= 7 || dex.currentMod === 'mmo') &&
 		attacker.volatiles.has('destinybond')) return 'Consecutive Destiny Bond fails';
 	if (move.id === 'substitute') {

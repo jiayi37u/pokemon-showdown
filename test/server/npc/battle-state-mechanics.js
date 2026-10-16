@@ -6,13 +6,15 @@ const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 const { buildAIMove, buildBattleStateWithTracker, buildBattleStateFromRequests } = require('../../../dist/server/npc/ai/cfru/state-builder');
 const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
-const { inferOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
+const { inferOpponent, predictOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
 const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
-const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
+const { calculateDamage, getSandstormDamage, getHailDamage, getBurnDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { getAttackStat } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { getEffectiveSpeed, isFaster } = require('../../../dist/server/npc/ai/cfru/util/speed');
-const { effectiveAbility, grounded, replaceActivePokemon, normalizeWeather } = require('../../../dist/server/npc/ai/cfru/util/mechanics');
+const { effectiveAbility, effectiveItem, grounded, replaceActivePokemon, normalizeWeather } = require('../../../dist/server/npc/ai/cfru/util/mechanics');
+const { checkContactRisk } = require('../../../dist/server/npc/ai/cfru/scoring/negatives');
+const { rewardDisable, rewardEncore } = require('../../../dist/server/npc/ai/cfru/scoring/positives');
 const { analyzeKnockout } = require('../../../dist/server/npc/ai/cfru/util/knockout');
 
 function decision({ hp = 18, ability = 'Synchronize', weather = '', moves = ['psychic', 'focusblast'] } = {}) {
@@ -288,6 +290,215 @@ describe('Shared public state pipeline across game types', () => {
 			battle.makeChoices(...(multi ? [p1, p2, p3, p4] : gameType === 'doubles' ? [`${p1}, ${p3}`, `${p2}, ${p4}`] : [p1, p2]));
 		};
 		return { battle, tracker, build, play };
+	}
+
+	for (const gameType of ['singles', 'doubles', 'multi']) {
+		for (const suppression of ['', 'magicroom', 'embargo', 'klutz']) {
+			it(`${gameType}: ${suppression || 'active'} Safety Goggles match real weather damage`, () => {
+				const own = { species: 'Mew', ability: suppression === 'klutz' ? 'Klutz' : 'Synchronize',
+					item: 'Safety Goggles', moves: ['splash'] };
+				const game = fixture(gameType, own, own);
+				try {
+					const actor = game.battle.p2.active[0];
+					if (suppression === 'magicroom') game.battle.field.addPseudoWeather('magicroom', actor);
+					if (suppression === 'embargo') actor.addVolatile('embargo', actor);
+					game.battle.field.setWeather('sandstorm', actor);
+					const state = game.build();
+					const snapshot = state.self.active[0];
+					assert.equal(effectiveItem(snapshot, state.field), actor.ignoringItem() ? '' : actor.item);
+					const expected = getSandstormDamage(snapshot, state.field.weather, state.field);
+					assert.equal(getHailDamage(snapshot, 'hail', state.field), expected);
+					const hp = actor.hp;
+					game.play('move 1', 'move 1');
+					assert.equal(hp - actor.hp, expected);
+					assert.equal(expected > 0, !!suppression);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		for (const [item, suppression] of [['', ''], ['Protective Pads', ''], ['Protective Pads', 'embargo'], ['', 'magicroom']]) {
+			it(`${gameType}: ${item || 'no pads'} / ${suppression || 'active'} contact risk agrees with Rocky Helmet`, () => {
+				const game = fixture(gameType,
+					{ species: 'Blissey', ability: 'Healer', item: 'Rocky Helmet', moves: ['splash'] },
+					{ species: 'Mew', ability: 'Frisk', item, moves: ['tackle'] });
+				try {
+					const actor = game.battle.p2.active[0];
+					if (suppression === 'embargo') actor.addVolatile('embargo', actor);
+					if (suppression === 'magicroom') game.battle.field.addPseudoWeather('magicroom', actor);
+					const state = game.build();
+					const engine = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: 'gen9customgame' }, createAICache());
+					engine.setScorers([checkContactRisk], []);
+					const score = engine.scoreMove(state, state.self.active[0], buildAIMove({ id: 'tackle' }, 1), state.opponent.active[0]);
+					const hp = actor.hp;
+					game.play('move 1', 'move 1 1');
+					assert.equal(score.score < 100, actor.hp < hp);
+					assert.equal(score.score, actor.hp < hp ? 98 : 100);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		for (const move of ['encore', 'disable']) for (const room of [false, true]) {
+			it(`${gameType}: ${move} reward follows Mental Herb effectiveness (room=${room})`, () => {
+				const game = fixture(gameType,
+					{ species: 'Slowpoke', ability: 'Oblivious', item: 'Mental Herb', moves: ['splash'] },
+					{ species: 'Mew', ability: 'Frisk', moves: ['splash', move] });
+				try {
+					if (room) game.battle.field.addPseudoWeather('magicroom', game.battle.p2.active[0]);
+					game.play('move 1', 'move 1');
+					const state = game.build();
+					const engine = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: 'gen9customgame' }, createAICache());
+					engine.setScorers([], [move === 'encore' ? rewardEncore : rewardDisable]);
+					const score = engine.scoreMove(state, state.self.active[0], buildAIMove({ id: move }, 2), state.opponent.active[0]);
+					game.play('move 1', 'move 2 1');
+					assert.equal(score.score > 100, !!game.battle.p1.active[0].volatiles[move]);
+					assert.equal(score.score > 100, room);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		it(`${gameType}: suppressed Power Herb cannot justify staying for an immediate KO`, () => {
+			const game = fixture(gameType,
+				{ species: 'Magikarp', ability: 'Swift Swim', moves: ['splash'] },
+				{ species: 'Mew', ability: 'Synchronize', item: 'Power Herb', moves: ['solarbeam'] });
+			try {
+				game.battle.field.addPseudoWeather('magicroom', game.battle.p2.active[0]);
+				const state = game.build();
+				const ai = new NormalAI({ write() {} });
+				ai.battleState = state;
+				const move = buildAIMove({ id: 'solarbeam' }, 1);
+				const target = { ...state.opponent.active[0], hp: 1 };
+				assert(!ai.canKOWithAverageDamage(state.self.active[0], target, move));
+				ai.battleState = { ...state, field: { ...state.field, magicroom: false } };
+				assert(ai.canKOWithAverageDamage(state.self.active[0], target, move));
+				game.play('move 1', 'move 1 1');
+				assert(game.battle.log.some(line => line.startsWith('|-prepare|p2a: Mew|Solar Beam')));
+				assert.equal(game.battle.p1.active[0].hp, game.battle.p1.active[0].maxhp);
+				assert.equal(game.battle.p2.active[0].item, 'powerherb');
+			} finally { game.battle.destroy(); }
+		});
+
+		for (const format of ['gen5customgame', 'gen5pokemmorandombattle', 'gen6customgame', 'gen9customgame']) {
+			it(`${gameType}: burn estimate uses ${format} rules`, () => {
+				const own = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+				const game = fixture(gameType, own, own, undefined, undefined, undefined, format);
+				try {
+					const actor = game.battle.p2.active[0];
+					actor.setStatus('brn', actor);
+					game.battle.makeRequest('move');
+					const state = game.build();
+					const expected = getBurnDamage(state.self.active[0], state.field);
+					const hp = actor.hp;
+					game.play('move 1', 'move 1');
+					assert.equal(hp - actor.hp, expected);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		it(`${gameType}: prediction releases a Choice lock while Magic Room is active`, () => {
+			const game = fixture(gameType,
+				{ species: 'Slowpoke', ability: 'Oblivious', item: 'Choice Scarf', moves: ['tackle', 'watergun'] },
+				{ species: 'Mew', ability: 'Frisk', moves: ['splash', 'magicroom'] });
+			try {
+				game.play('move 1 1', 'move 1');
+				for (const room of [false, true]) {
+					if (room) game.play('move 1 1', 'move 2');
+					game.battle.makeRequest('move');
+					const state = game.build();
+					const foe = state.opponent.active[0];
+					// A public configuration hypothesis supplies alternatives, never the actual hidden set.
+					const models = [{ name: 'test', pokemon: { ...foe, moveKnowledge: undefined }, weight: 1,
+						moves: ['tackle', 'watergun'].map(id => ({ id, availability: 1 })) }];
+					const actions = predictOpponent(state, foe, state.self.active[0], 'gen9customgame',
+						(s, user, moves) => moves.map(move => ({ move, score: 100 })), models);
+					assert.equal(actions.some(a => a.move?.id === 'watergun'), room);
+					assert.equal(!!game.battle.p1.activeRequest.active[0].moves[1].disabled, !room);
+				}
+			} finally { game.battle.destroy(); }
+		});
+	}
+
+	for (const gameType of ['singles', 'doubles', 'multi']) {
+		it(`${gameType}: Hard keeps predicted opponents on their side after rebuilding for a switch`, () => {
+			const game = fixture(gameType,
+				{ species: 'Slowpoke', ability: 'Oblivious', moves: ['splash', 'watergun'] },
+				{ species: 'Mew', ability: 'Synchronize', moves: ['lightscreen'] }, undefined, undefined,
+				{ species: 'Blissey', ability: 'Natural Cure', moves: ['splash'] });
+			try {
+				game.play('move 1', 'move 1');
+				let state = game.build();
+				const foe = state.opponent.active[0];
+				const evaluator = new HardEvaluation(state, 'gen9customgame');
+				const user = evaluator.predictions(state.self.active[0]).get(foe).find(a => a.user).user;
+				const move = buildAIMove({ id: 'watergun' }, 1);
+				const predictions = new Map([[foe, [{ move, weight: 1, switching: false, user }]]]);
+				game.play('move 1', gameType === 'doubles' ? 'switch 3' : 'switch 2');
+				state = game.build();
+				const rebuilt = new HardEvaluation(state, 'gen9customgame');
+				const recipient = state.self.active[0];
+				const options = { isDoubles: state.isDoubles, numAliveTargets: 1,
+					attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
+					defenderAllies: state.self.active };
+				assert(state.self.conditions.lightscreen);
+				const expected = calculateDamage(user, recipient, move, state.field, undefined, options);
+				assert.equal(rebuilt.incoming(recipient, predictions), expected.average);
+				assert.equal(rebuilt.damage(user, recipient, move).average, expected.average);
+				assert(expected.average < calculateDamage(user, recipient, move, state.field).average);
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: Normal threat and Hard damage/order/scoring use each hypothetical active ability`, () => {
+			const game = fixture(gameType,
+				{ species: 'Weezing', ability: 'Levitate', moves: ['splash'] },
+				{ species: 'Bronzong', ability: 'Levitate', moves: ['earthquake'] });
+			try {
+				const state = game.build();
+				const actor = state.self.active[0];
+				const foe = state.opponent.active[0];
+				// Explicit hypotheses are local to the calculation; they must not become tracker facts.
+				const gas = { ...foe, ability: 'Neutralizing Gas' };
+				const move = buildAIMove({ id: 'earthquake' }, 1);
+				const models = [{ name: 'gas', pokemon: gas, weight: 1, matched: true,
+					moves: [{ id: 'earthquake', availability: 1 }] }];
+				foe.presetModels = models;
+				const evaluator = new HardEvaluation(state, 'gen9customgame');
+				assert.equal(calculateDamage(gas, actor, move, state.field).average, 0);
+				assert(evaluator.damage(gas, actor, move).average > 0);
+				assert(evaluator.scoreMoves(actor, [move], foe, new Map())[0].score > 0);
+				const ai = new NormalAI({ write() {} });
+				ai.battleState = state;
+				assert(ai.getIncomingThreat(actor, [foe]) > 0);
+				const rainState = { ...state, field: { ...state.field, weather: 'rain', weatherId: 'raindance' } };
+				const swimmer = { ...actor, ability: 'Swift Swim', baseStats: { ...actor.baseStats, spe: 100 } };
+				const cloud = { ...foe, ability: 'Cloud Nine', baseStats: { ...foe.baseStats, spe: 150 } };
+				const rain = new HardEvaluation(replaceActivePokemon(rainState, actor, swimmer), 'gen9customgame');
+				assert.equal(rain.first(swimmer, cloud, move, move), 0);
+				assert(!state.field.neutralizingGas);
+				assert.notEqual(toID(game.tracker.getActiveOpponent().ability), 'neutralizinggas');
+			} finally { game.battle.destroy(); }
+		});
+
+		for (const room of [false, true]) {
+			it(`${gameType}: Hard Protect values only effective passive recovery (room=${room})`, () => {
+				const game = fixture(gameType,
+					{ species: 'Slowpoke', ability: 'Oblivious', moves: ['splash'] },
+					{ species: 'Mew', ability: 'Synchronize', item: 'Leftovers', moves: ['protect'] });
+				try {
+					const actor = game.battle.p2.active[0];
+					actor.hp = Math.floor(actor.maxhp / 2);
+					if (room) game.battle.field.addPseudoWeather('magicroom', actor);
+					game.battle.makeRequest('move');
+					const state = game.build();
+					const evaluator = new HardEvaluation(state, 'gen9customgame');
+					const result = evaluator.scoreMoves(state.self.active[0], [buildAIMove({ id: 'protect' }, 1)],
+						state.opponent.active[0], new Map())[0];
+					const reward = result.breakdown.details.find(d => d.reason.startsWith('CFRU ShouldProtect:'));
+					assert.equal(reward.amount, room ? -12 : 16);
+					const hp = actor.hp;
+					game.play('move 1', 'move 1');
+					assert.equal(actor.hp > hp, !room);
+				} finally { game.battle.destroy(); }
+			});
+		}
 	}
 
 	for (const gameType of ['singles', 'doubles', 'multi']) {

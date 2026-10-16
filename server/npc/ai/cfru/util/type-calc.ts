@@ -266,69 +266,6 @@ export function getImmunities(types: string[]): string[] {
 	return immunities;
 }
 
-/**
- * Check if a Pokemon resists all of another Pokemon's known moves
- * @param defender - The defending Pokemon
- * @param attacker - The attacking Pokemon
- * @returns true if defender resists all known moves
- */
-export function resistsAllMoves(defender: AIPokemon, attacker: AIPokemon, field?: FieldConditions): boolean {
-	if (attacker.moves.length === 0) {
-		// No known moves, can't determine
-		return false;
-	}
-
-	for (const moveId of attacker.moves) {
-		const move = Dex.moves.get(moveId);
-		if (!move.exists || move.category === 'Status') {
-			continue;
-		}
-
-		const effectiveness = getTypeEffectiveness(move.type, defender.types);
-
-		// Check ability immunity
-		const abilityImmunity = getAbilityTypeImmunity(move.type, effectiveAbility(defender, field));
-		if (abilityImmunity.immune) {
-			continue;
-		}
-
-		// If any move is not resisted, return false
-		if (effectiveness >= 1) {
-			return false;
-		}
-	}
-
-	return true;
-}
-
-/**
- * Check if attacker has a super effective move against defender
- * @param attacker - The attacking Pokemon
- * @param defender - The defending Pokemon
- * @returns true if attacker has a super effective move
- */
-export function hasSuperEffectiveMove(attacker: AIPokemon, defender: AIPokemon, field?: FieldConditions): boolean {
-	for (const moveId of attacker.moves) {
-		const move = Dex.moves.get(moveId);
-		if (!move.exists || move.category === 'Status') {
-			continue;
-		}
-
-		// Check ability immunity first
-		const abilityImmunity = getAbilityTypeImmunity(move.type, effectiveAbility(defender, field));
-		if (abilityImmunity.immune) {
-			continue;
-		}
-
-		const effectiveness = getTypeEffectiveness(move.type, defender.types);
-		if (effectiveness > 1) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
 /** Public active allies are needed for team-wide priority protection in doubles and multi. */
 export interface MoveInteractionContext {
 	defenderAllies?: readonly AIPokemon[];

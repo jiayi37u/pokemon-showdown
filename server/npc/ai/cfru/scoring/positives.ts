@@ -8,7 +8,7 @@
  * @license MIT
  */
 
-import { effectiveAbility } from '../util/mechanics';
+import { effectiveAbility, effectiveItem } from '../util/mechanics';
 
 import { itemRemovalFailure } from '../util/items';
 import { toID } from '../../../../../sim/dex';
@@ -1221,7 +1221,7 @@ export const rewardDisable: PositiveScoringFunction = (ctx) => {
 	}
 
 	// Mental Herb would cure Disable
-	if (toID(ctx.target.item) === 'mentalherb') {
+	if (ctx.dex.gen >= 5 && effectiveItem(ctx.target, ctx.state.field) === 'mentalherb') {
 		return 0;
 	}
 
@@ -1306,7 +1306,7 @@ export const rewardEncore: PositiveScoringFunction = (ctx) => {
 	}
 
 	// Mental Herb would cure Encore
-	if (toID(ctx.target.item) === 'mentalherb') {
+	if (ctx.dex.gen >= 5 && effectiveItem(ctx.target, ctx.state.field) === 'mentalherb') {
 		return 0;
 	}
 

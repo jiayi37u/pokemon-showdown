@@ -59,7 +59,7 @@ export function rulesDex(field: Pick<FieldConditions, 'formatId'>) {
 	return field.formatId ? Dex.forFormat(field.formatId) : Dex;
 }
 
-export function effectiveItem(pokemon: AIPokemon, field: FieldConditions): string {
+export function effectiveItem(pokemon: AIPokemon, field: Partial<FieldConditions> = {}): string {
 	const item = rulesDex(field).items.get(pokemon.item);
 	if (pokemon.itemLost) return '';
 	if (item.isPrimalOrb) return item.id;

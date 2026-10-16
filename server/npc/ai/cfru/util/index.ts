@@ -18,8 +18,6 @@ export {
 	getResistances,
 	getWeaknesses,
 	getImmunities,
-	resistsAllMoves,
-	hasSuperEffectiveMove,
 } from './type-calc';
 
 // Damage calculation utilities

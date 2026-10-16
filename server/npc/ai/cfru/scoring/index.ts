@@ -24,6 +24,7 @@ import { Dex } from '../../../../../sim/dex';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
 import { goesFirst } from '../util/speed';
 import { resolveItemMoveType } from '../util/type-calc';
+import { rulesDex } from '../util/mechanics';
 import { buildAIMove } from '../state-builder';
 
 // Import all negative and positive scorers
@@ -176,7 +177,7 @@ export class ScoringEngine {
 		state = { ...state, field: { ...state.field, formatId: this.config.formatId || state.field.formatId } };
 		move = resolveItemMoveType(attacker, move, state.field);
 		const isTargetingPartner = state.isDoubles && state.self.active.some(p => p === target);
-		const dex = this.config.formatId ? Dex.forFormat(this.config.formatId) : Dex;
+		const dex = rulesDex(state.field);
 		// Pre-calculate damage for non-status moves
 		let damageResult = null;
 		if (move.category !== 'Status') {
@@ -206,7 +207,7 @@ export class ScoringEngine {
 
 		const knowledge = target.moveKnowledge;
 		const responseIds = knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] : target.moves;
-		const responses = responseIds.map(id => buildAIMove({ id }, 1, this.config.formatId));
+		const responses = responseIds.map(id => buildAIMove({ id }, 1, state.field.formatId));
 
 		// Initialize flags
 		const flags: MoveScoreFlags = {

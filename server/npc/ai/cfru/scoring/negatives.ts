@@ -712,7 +712,7 @@ export const checkStatBoostWasted: NegativeScoringFunction = (ctx) => {
 	}
 
 	// Choice item locks prevent setup
-	const itemId = toID(ctx.attacker.item);
+	const itemId = effectiveItem(ctx.attacker, ctx.state.field);
 	if (['choiceband', 'choicespecs', 'choicescarf'].includes(itemId)) {
 		// Only matters if we've already used a move
 		// For now, add a small penalty since setup with Choice is risky
@@ -1503,7 +1503,7 @@ export const checkContactRisk: NegativeScoringFunction = (ctx) => {
 
 	const attackerAbility = effectiveAbility(ctx.attacker, ctx.state.field);
 	const targetAbility = effectiveAbility(ctx.target, ctx.state.field);
-	const targetItem = toID(ctx.target.item);
+	const targetItem = effectiveItem(ctx.target, ctx.state.field);
 
 	// Magic Guard user doesn't care about recoil damage
 	const hasMagicGuard = attackerAbility === 'magicguard';
@@ -1514,7 +1514,7 @@ export const checkContactRisk: NegativeScoringFunction = (ctx) => {
 	if (targetAbility === 'effectspore') {
 		// Only risky if not immune to status
 		if (!ctx.attacker.status && !['overcoat'].includes(attackerAbility) &&
-			toID(ctx.attacker.item) !== 'safetygoggles') {
+			effectiveItem(ctx.attacker, ctx.state.field) !== 'safetygoggles') {
 			penalty -= 3;
 			ctx.adjustments.push({
 				reason: 'Effect Spore may inflict status on contact',
@@ -1698,7 +1698,7 @@ export const checkContactRisk: NegativeScoringFunction = (ctx) => {
 	}
 
 	// Protective Pads negates all contact-triggered effects
-	if (toID(ctx.attacker.item) === 'protectivepads') {
+	if (effectiveItem(ctx.attacker, ctx.state.field) === 'protectivepads') {
 		// If we were going to be penalized, the Protective Pads negates it
 		if (penalty < 0) {
 			ctx.adjustments.push({
@@ -1808,7 +1808,7 @@ export const checkSemiInvulnerable: NegativeScoringFunction = (ctx) => {
 
 	if (!semiInvulnerableMoves.includes(moveId)) return 0;
 
-	const attackerItem = toID(ctx.attacker.item);
+	const attackerItem = effectiveItem(ctx.attacker, ctx.state.field);
 
 	// Power Herb skips charge turn - no penalty
 	if (attackerItem === 'powerherb') {

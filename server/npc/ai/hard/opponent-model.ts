@@ -7,7 +7,7 @@ import { FS } from '../../../../lib';
 import { Dex, toID } from '../../../../sim/dex';
 import type { AIPokemon, AIMove, BattleState, MoveScore, OpponentModel as OpponentHypothesis } from '../cfru/types';
 export type { OpponentModel as OpponentHypothesis } from '../cfru/types';
-import { replaceActivePokemon } from '../cfru/util/mechanics';
+import { effectiveItem, replaceActivePokemon } from '../cfru/util/mechanics';
 import { inferRandomBattle } from '../cfru/util/random-presets';
 import { buildAIMove } from '../cfru/state-builder';
 import {
@@ -25,6 +25,7 @@ export function fightingStyle(pokemon: AIPokemon, formatId: string): FightingSty
 	const ids = moves.map(m => m.id as string);
 	const together = (group: string[]) => knowledge ?
 		canHaveOpponentMoves(knowledge, group) : group.every(id => ids.includes(id));
+	// A role describes the loadout, so temporary item suppression does not change this classification.
 	if (['choiceband', 'choicespecs', 'choicescarf', 'assaultvest'].includes(toID(pokemon.item))) return 'attacker';
 	if (ids.includes('batonpass')) return 'batonpass';
 	if (ids.includes('trickroom')) return 'trickroom';
@@ -195,10 +196,11 @@ export function predictOpponent(
 	const actions: PredictedAction[] = [];
 	for (const hypothesis of hypotheses) {
 		const user = hypothesis.pokemon;
+		const projected = replaceActivePokemon(state, opponent, user);
 		let candidates = hypothesis.moves.filter(m => dex.moves.get(m.id).exists &&
 			dex.moves.get(m.id).isNonstandard !== 'Future' &&
 			(!user.moveKnowledge || canHaveOpponentMoves(user.moveKnowledge, [m.id])));
-		if (user.lastMove && ['choiceband', 'choicespecs', 'choicescarf'].includes(toID(user.item))) {
+		if (user.lastMove && ['choiceband', 'choicespecs', 'choicescarf'].includes(effectiveItem(user, projected.field))) {
 			candidates = candidates.filter(m => toID(m.id) === toID(user.lastMove));
 		}
 		if (user.lastMove) candidates = candidates.filter(m => m.id !== 'fakeout');

@@ -388,7 +388,7 @@ export function getDefenseStat(
 
 	// Eviolite (1.5x both defenses for NFE Pokemon)
 	if (itemId === 'eviolite') {
-		const species = Dex.species.get(defender.species);
+		const species = rulesDex(field).species.get(defender.species);
 		if (species.nfe) {
 			stat = Math.floor(stat * 1.5);
 		}
@@ -771,7 +771,7 @@ export function computeFixedDamage(
 		const candidates = [...defender.moves, ...(knowledge?.revealedMoves || []),
 			...(knowledge?.presetCandidates.filter(id => canHaveOpponentMoves(knowledge, [id])) || [])];
 		const eligible = (id: string) => {
-			const candidate = Dex.moves.get(id);
+			const candidate = rulesDex(field || {}).moves.get(id);
 			return candidate.exists && candidate.category !== 'Status' &&
 				!['counter', 'mirrorcoat', 'metalburst'].includes(candidate.id) &&
 				(!needPhysical || candidate.category === 'Physical') &&
@@ -786,7 +786,7 @@ export function computeFixedDamage(
 		};
 		let best = { min: 0, max: 0 };
 		for (const id of attacks) {
-			const lastDex = Dex.moves.get(id);
+			const lastDex = rulesDex(currentField).moves.get(id);
 
 			// 反向估算候选攻击造成的伤害；候选中排除反击类招式以避免递归。
 			const simulatedMove: AIMove = {
@@ -1245,13 +1245,9 @@ export function getBurnDamage(pokemon: AIPokemon, field?: FieldConditions): numb
 
 	const maxHp = pokemon.maxHp || Math.floor(pokemon.hp / (pokemon.hpPercent / 100));
 
-	// Heatproof halves burn damage
-	if (abilityId === 'heatproof') {
-		return Math.max(1, Math.floor(maxHp / 32));
-	}
-
-	// Standard burn: 1/16 max HP (modern mechanics)
-	return Math.max(1, Math.floor(maxHp / 16));
+	const dex = rulesDex(field || {});
+	const divisor = dex.gen < 7 && dex.currentMod !== 'mmo' ? 8 : 16;
+	return Math.max(1, Math.floor(maxHp / (abilityId === 'heatproof' ? divisor * 2 : divisor)));
 }
 
 /**
@@ -1287,7 +1283,7 @@ export function getSandstormDamage(pokemon: AIPokemon, weather: string, field?: 
 	}
 
 	// Safety Goggles blocks weather damage
-	if (toID(pokemon.item) === 'safetygoggles') {
+	if (effectiveItem(pokemon, field) === 'safetygoggles') {
 		return 0;
 	}
 
@@ -1329,7 +1325,7 @@ export function getHailDamage(pokemon: AIPokemon, weather: string, field?: Field
 	}
 
 	// Safety Goggles blocks weather damage
-	if (toID(pokemon.item) === 'safetygoggles') {
+	if (effectiveItem(pokemon, field) === 'safetygoggles') {
 		return 0;
 	}
 
@@ -1557,9 +1553,10 @@ export function isTakingSecondaryDamage(
 	pokemon: AIPokemon,
 	weather: string,
 	opponentAbility: string = '',
-	checkConfusion: boolean = false
+	checkConfusion = false,
+	field?: FieldConditions
 ): boolean {
-	if (getSecondaryEffectDamage(pokemon, weather, opponentAbility) > 0) {
+	if (getSecondaryEffectDamage(pokemon, weather, opponentAbility, field) > 0) {
 		return true;
 	}
 
@@ -1581,7 +1578,8 @@ export function isTakingSecondaryDamage(
 export function willFaintFromSecondaryDamage(
 	pokemon: AIPokemon,
 	weather: string,
-	opponentAbility: string = ''
+	opponentAbility = '',
+	field?: FieldConditions
 ): boolean {
 	// Check perish song
 	if (pokemon.volatiles.has('perishsong')) {
@@ -1591,10 +1589,10 @@ export function willFaintFromSecondaryDamage(
 	}
 
 	const currentHp = Math.floor((pokemon.maxHp || 100) * pokemon.hpPercent / 100);
-	const secondaryDamage = getSecondaryEffectDamage(pokemon, weather, opponentAbility);
+	const secondaryDamage = getSecondaryEffectDamage(pokemon, weather, opponentAbility, field);
 
 	// Consider Leftovers/Black Sludge recovery
-	const itemId = toID(pokemon.item);
+	const itemId = effectiveItem(pokemon, field);
 	let recovery = 0;
 	if (itemId === 'leftovers' || (itemId === 'blacksludge' && pokemon.types.includes('Poison'))) {
 		const maxHp = pokemon.maxHp || Math.floor(pokemon.hp / (pokemon.hpPercent / 100));
@@ -1615,10 +1613,11 @@ export function willFaintFromSecondaryDamage(
 export function getEffectiveHpAfterSecondary(
 	defender: AIPokemon,
 	weather: string,
-	attackerAbility: string = ''
+	attackerAbility = '',
+	field?: FieldConditions
 ): number {
 	const currentHp = Math.floor((defender.maxHp || 100) * defender.hpPercent / 100);
-	const secondaryDamage = getSecondaryEffectDamage(defender, weather, attackerAbility);
+	const secondaryDamage = getSecondaryEffectDamage(defender, weather, attackerAbility, field);
 
 	return Math.max(0, currentHp - secondaryDamage);
 }

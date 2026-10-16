@@ -13,7 +13,7 @@
  * @license MIT
  */
 
-import { effectiveAbility, replaceActivePokemon } from './cfru/util/mechanics';
+import { effectiveAbility, effectiveItem, replaceActivePokemon } from './cfru/util/mechanics';
 
 import type { ObjectReadWriteStream } from '../../../lib/streams';
 import type { ChoiceRequest } from '../../../sim/side';
@@ -527,7 +527,7 @@ export class NormalAI extends NPCBattleAI {
 		if (['counter', 'mirrorcoat', 'metalburst', 'focuspunch', 'beakblast', 'shelltrap',
 			'futuresight', 'doomdesire', 'suckerpunch'].includes(move.id)) return false;
 		if (move.flags.charge && !attacker.volatiles.has(move.id) && !attacker.volatiles.has('twoturnmove') &&
-			toID(attacker.item) !== 'powerherb' &&
+			effectiveItem(attacker, state.field) !== 'powerherb' &&
 			!(['solarbeam', 'solarblade'].includes(move.id) && state.field.weather === 'sun')) return false;
 		if (target.volatiles.has('substitute') && !move.flags.sound &&
 			effectiveAbility(attacker, state.field) !== 'infiltrator') return false;
@@ -604,18 +604,21 @@ export class NormalAI extends NPCBattleAI {
 			const models = opponent.presetModels || [{ pokemon: opponent,
 				moves: moves.map(id => ({ id })),
 			}];
-			for (const model of models) for (const { id: moveId } of model.moves) {
-				const move = buildAIMove({ id: moveId }, 1, this.cfruConfig.formatId);
-				if (move.category === 'Status') continue;
-				const numAliveTargets = state.self.active.filter(p => !p.fainted).length +
-					(move.target === 'allAdjacent' ? opponents.length - 1 : 0);
-				// Reversed sides and bench slots can collide with the outgoing damage cache.
-				const damage = calculateDamage(model.pokemon, defender, move, state.field, undefined, {
-					isDoubles: state.isDoubles, numAliveTargets,
-					defenderAllies: state.self.active.filter(p => p !== defender),
-					attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
-				});
-				threat = Math.max(threat, damage.average / defender.hp);
+			for (const model of models) {
+				const projected = replaceActivePokemon(state, opponent, model.pokemon);
+				for (const { id: moveId } of model.moves) {
+					const move = buildAIMove({ id: moveId }, 1, this.cfruConfig.formatId);
+					if (move.category === 'Status') continue;
+					const numAliveTargets = state.self.active.filter(p => !p.fainted).length +
+						(move.target === 'allAdjacent' ? opponents.length - 1 : 0);
+					// Reversed sides and bench slots can collide with the outgoing damage cache.
+					const damage = calculateDamage(model.pokemon, defender, move, projected.field, undefined, {
+						isDoubles: state.isDoubles, numAliveTargets,
+						defenderAllies: state.self.active.filter(p => p !== defender),
+						attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
+					});
+					threat = Math.max(threat, damage.average / defender.hp);
+				}
 			}
 		}
 		return threat;
@@ -871,37 +874,6 @@ export class NormalAI extends NPCBattleAI {
 		}
 
 		return { score, reasons };
-	}
-
-	/**
-	 * Check if a Pokemon has a better matchup against the target
-	 */
-	private hasBetterMatchup(pokemon: AnyObject, target: AIPokemon): boolean {
-		const dex = this.cfruConfig.formatId ? Dex.forFormat(this.cfruConfig.formatId) : Dex;
-		// Get Pokemon types
-		let types: string[] = [];
-		if (pokemon.types) {
-			types = pokemon.types;
-		} else if (pokemon.details) {
-			const speciesName = pokemon.details.split(',')[0].trim();
-			const species = dex.species.get(speciesName);
-			types = species.types || [];
-		}
-
-		// Check if we resist opponent's known moves
-		for (const moveId of target.moves) {
-			const move = dex.moves.get(moveId);
-			if (move.category === 'Status') continue;
-
-			const effectiveness = dex.getImmunity(move.type, types) ? 2 ** dex.getEffectiveness(move.type, types) : 0;
-
-			// If we resist this move, that's good
-			if (effectiveness < 1) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

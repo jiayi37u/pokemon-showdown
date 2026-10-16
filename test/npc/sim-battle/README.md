@@ -6,7 +6,7 @@
 
 支持 **singles / doubles / multi** 三种 game type。`--format` 必须存在且与 `--game-type` 一致，否则报错。`--seed` 同时传入战斗与 AI 的随机选择。
 
-选择 Hard 使用 `--npc-difficulty hard`。Multi 中包含 Hard 时通过生产 `NPCMultiManager` 协调 p2/p4，另一位 NPC 可选 `normal` 或 `hard`；不支持与 `basic` 混用。Multi 玩家侧建议使用 `max-damage`、`random` 或 `scripted`，`mirror-npc` 尚未复用四人协调器。
+选择 Hard 使用 `--npc-difficulty hard`。Multi 中 Normal／Hard 均通过生产 `NPCMultiManager` 协调 p2/p4，两位 NPC 可分别选 `normal` 或 `hard`；不支持与 `basic` 混用。Multi 玩家侧建议使用 `max-damage`、`random` 或 `scripted`，`mirror-npc` 尚未复用四人协调器。
 
 ---
 

@@ -8,10 +8,10 @@
  * @license MIT
  */
 
-import { Dex, toID } from '../../../../../sim/dex';
+import { toID } from '../../../../../sim/dex';
 import { pokemonCacheId } from './cache';
 import type { AIPokemon, AIMove, AICache, FieldConditions, SideConditions } from '../types';
-import { getEffectiveStat } from './damage-calc';
+import { effectiveItem, effectivePriority, getEffectiveStat, rulesDex } from './mechanics';
 
 /**
  * Speed context for considering side conditions
@@ -38,7 +38,7 @@ export function getEffectiveSpeed(
 	let speed = getEffectiveStat(baseSpeed, pokemon.boosts.spe);
 
 	const abilityId = toID(pokemon.ability);
-	const itemId = toID(pokemon.item);
+	const itemId = effectiveItem(pokemon, field);
 
 	// Ability modifiers
 	// Chlorophyll (2x in sun)
@@ -83,11 +83,6 @@ export function getEffectiveSpeed(
 		// Assume it's active
 	}
 
-	// Paralysis penalty (unless Quick Feet)
-	if (pokemon.status === 'par' && abilityId !== 'quickfeet') {
-		speed = Math.floor(speed * 0.5);
-	}
-
 	// Item modifiers
 	// Choice Scarf (1.5x)
 	if (itemId === 'choicescarf') {
@@ -109,7 +104,12 @@ export function getEffectiveSpeed(
 		speed = Math.floor(speed * 2);
 	}
 
-	return Math.floor(speed);
+	if (pokemon.abilityStatMod?.stat === 'spe') speed *= pokemon.abilityStatMod.multiplier;
+	if (pokemon.status === 'par' && abilityId !== 'quickfeet') {
+		const dex = rulesDex(field);
+		speed = Math.floor(speed * (dex.gen <= 6 && dex.currentMod !== 'mmo' ? 0.25 : 0.5));
+	}
+	return Math.max(1, Math.floor(speed));
 }
 
 /**
@@ -172,52 +172,9 @@ export function goesFirst(
 	attackerSideConditions?: SideConditions,
 	defenderSideConditions?: SideConditions
 ): boolean {
-	// Get attacker's priority
-	let attackerPriority = attackerMove.priority;
-
-	// Ability priority modifiers
-	const attackerAbility = toID(attacker.ability);
-
-	// Gale Wings (+1 to Flying moves at full HP)
-	if (attackerAbility === 'galewings' && attackerMove.type === 'Flying' && attacker.hpPercent === 100) {
-		attackerPriority += 1;
-	}
-
-	// Prankster (+1 to status moves)
-	if (attackerAbility === 'prankster' && attackerMove.category === 'Status') {
-		attackerPriority += 1;
-		// Dark types are immune to Prankster-boosted moves
-		if (defender.types.includes('Dark')) {
-			// Move fails, but we treat as going first for simplicity
-		}
-	}
-
-	// Triage (+3 to healing moves)
-	if (attackerAbility === 'triage' && attackerMove.flags['heal']) {
-		attackerPriority += 3;
-	}
-
-	// Estimate defender's highest priority move
-	let defenderPriority = 0;
-	for (const move of defenderMoves) {
-		let priority = move.priority;
-
-		const defenderAbility = toID(defender.ability);
-
-		if (defenderAbility === 'galewings' && move.type === 'Flying' && defender.hpPercent === 100) {
-			priority += 1;
-		}
-		if (defenderAbility === 'prankster' && move.category === 'Status') {
-			priority += 1;
-		}
-		if (defenderAbility === 'triage' && move.flags['heal']) {
-			priority += 3;
-		}
-
-		if (priority > defenderPriority) {
-			defenderPriority = priority;
-		}
-	}
+	const attackerPriority = effectivePriority(attacker, attackerMove, field);
+	const defenderPriority = defenderMoves.length ?
+		Math.max(...defenderMoves.map(move => effectivePriority(defender, move, field))) : 0;
 
 	// If priorities differ, higher wins
 	if (attackerPriority !== defenderPriority) {
@@ -241,13 +198,7 @@ export function canPriorityKO(
 	for (const move of moves) {
 		if (move.disabled || move.category === 'Status') continue;
 
-		// Check if this is a priority move
-		let priority = move.priority;
-		const attackerAbility = toID(attacker.ability);
-
-		if (attackerAbility === 'galewings' && move.type === 'Flying' && attacker.hpPercent === 100) {
-			priority += 1;
-		}
+		const priority = effectivePriority(attacker, move, field);
 
 		if (priority > 0) {
 			// Import damage calc here to avoid circular dependency
@@ -264,32 +215,10 @@ export function canPriorityKO(
 /**
  * Get all priority moves for a Pokemon
  */
-export function getPriorityMoves(pokemon: AIPokemon, moves: AIMove[]): AIMove[] {
-	const priorityMoves: AIMove[] = [];
-	const abilityId = toID(pokemon.ability);
-
-	for (const move of moves) {
-		if (move.disabled) continue;
-
-		let priority = move.priority;
-
-		// Ability adjustments
-		if (abilityId === 'galewings' && move.type === 'Flying' && pokemon.hpPercent === 100) {
-			priority += 1;
-		}
-		if (abilityId === 'prankster' && move.category === 'Status') {
-			priority += 1;
-		}
-		if (abilityId === 'triage' && move.flags['heal']) {
-			priority += 3;
-		}
-
-		if (priority > 0) {
-			priorityMoves.push(move);
-		}
-	}
-
-	return priorityMoves;
+export function getPriorityMoves(
+	pokemon: AIPokemon, moves: AIMove[], field: Pick<FieldConditions, 'formatId'> = {}
+): AIMove[] {
+	return moves.filter(move => !move.disabled && effectivePriority(pokemon, move, field) > 0);
 }
 
 /**

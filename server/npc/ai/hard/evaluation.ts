@@ -13,6 +13,7 @@ import {
 import { createCache } from '../cfru/util/cache';
 import { calculateDamage, getSecondaryEffectDamage } from '../cfru/util/damage-calc';
 import { getEffectiveSpeed } from '../cfru/util/speed';
+import { effectivePriority } from '../cfru/util/mechanics';
 import {
 	fightingStyle, hardMove, inferOpponent, predictOpponent, type OpponentHypothesis, type PredictedAction,
 } from './opponent-model';
@@ -38,7 +39,7 @@ export class HardEvaluation {
 	private models = new Map<AIPokemon, OpponentHypothesis[]>();
 	private opposing = new Set<AIPokemon>();
 	constructor(state: BattleState, formatId: string) {
-		this.state = state;
+		this.state = { ...state, field: { ...state.field, formatId } };
 		this.formatId = formatId;
 		this.dex = formatId ? Dex.forFormat(formatId) : Dex;
 		for (const foe of state.opponent.team) {
@@ -68,11 +69,7 @@ export class HardEvaluation {
 
 	/** Priority and speed order, including speed ties (50%, never a guaranteed first strike). */
 	first(actor: AIPokemon, foe: AIPokemon, move: AIMove, response: AIMove): number {
-		const priority = (p: AIPokemon, m: AIMove) => m.priority +
-			(toID(p.ability) === 'prankster' && m.category === 'Status' ? 1 : 0) +
-			(toID(p.ability) === 'galewings' && m.type === 'Flying' && p.hp === p.maxHp ? 1 : 0) +
-			(toID(p.ability) === 'triage' && m.flags.heal ? 3 : 0);
-		const delta = priority(actor, move) - priority(foe, response);
+		const delta = effectivePriority(actor, move, this.state.field) - effectivePriority(foe, response, this.state.field);
 		if (delta) return delta > 0 ? 1 : 0;
 		const ownSide = !this.opposing.has(actor);
 		const a = getEffectiveSpeed(actor, this.state.field, this.state[ownSide ? 'self' : 'opponent'].conditions);
@@ -81,10 +78,10 @@ export class HardEvaluation {
 		return (a > b) !== this.state.field.trickroom ? 1 : 0;
 	}
 
-	damage(actor: AIPokemon, target: AIPokemon, move: AIMove) {
+	damage(actor: AIPokemon, target: AIPokemon, move: AIMove, defenderAllies?: readonly AIPokemon[]) {
 		const models = this.models.get(target);
-		if (!models?.length) return this.rawDamage(actor, target, move);
-		const values = models.map(model => ({ model, result: this.rawDamage(actor, model.pokemon, move),
+		if (!models?.length) return this.rawDamage(actor, target, move, defenderAllies);
+		const values = models.map(model => ({ model, result: this.rawDamage(actor, model.pokemon, move, defenderAllies),
 			scale: target.maxHp / model.pokemon.maxHp }));
 		const average = values.reduce((n, v) => n + v.model.weight * v.result.average * v.scale, 0);
 		return { ...values[0].result, average,
@@ -93,14 +90,17 @@ export class HardEvaluation {
 		};
 	}
 
-	private rawDamage(actor: AIPokemon, target: AIPokemon, move: AIMove) {
+	private rawDamage(actor: AIPokemon, target: AIPokemon, move: AIMove, defenderAllies?: readonly AIPokemon[]) {
 		const spread = ['allAdjacent', 'allAdjacentFoes'].includes(move.target);
 		const foes = this.opposing.has(actor) ? this.state.self.active : this.state.opponent.active;
 		const allies = this.opposing.has(actor) ? this.state.opponent.active : this.state.self.active;
 		const targets = foes.filter(p => !p.fainted).length +
 			(move.target === 'allAdjacent' ? allies.filter(p => p !== actor && !p.fainted).length : 0);
 		const result = calculateDamage(actor, target, move, this.state.field, undefined,
-			{ isDoubles: this.state.isDoubles && spread, numAliveTargets: targets });
+			{ isDoubles: this.state.isDoubles && spread, numAliveTargets: targets,
+				defenderAllies: defenderAllies || (this.opposing.has(target) ? this.state.opponent.active : this.state.self.active),
+				isAllyTarget: this.opposing.has(actor) === this.opposing.has(target),
+			});
 		const conditions = this.state[this.opposing.has(target) ? 'opponent' : 'self'].conditions;
 		const screen = conditions.auroraveil || (move.category === 'Physical' ? conditions.reflect : conditions.lightscreen);
 		if (!screen || toID(actor.ability) === 'infiltrator' ||
@@ -109,22 +109,26 @@ export class HardEvaluation {
 		return { ...result, min: result.min * factor, max: result.max * factor, average: result.average * factor };
 	}
 
-	incoming(actor: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>): number {
+	incoming(
+		actor: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>, defenderAllies?: readonly AIPokemon[]
+	): number {
 		let damage = 0;
 		for (const [foe, actions] of predictions) {
 			for (const action of actions) {
-				if (action.move) damage += action.weight * this.damage(action.user || foe, actor, action.move).average;
+				if (action.move) damage += action.weight * this.damage(action.user || foe, actor, action.move, defenderAllies).average;
 			}
 		}
 		return damage;
 	}
 
 	/** An upper weighted quantile prevents a likely switch from making a lethal attack look safe. */
-	incomingRisk(actor: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>): number {
+	incomingRisk(
+		actor: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>, defenderAllies?: readonly AIPokemon[]
+	): number {
 		let risk = 0;
 		for (const [foe, actions] of predictions) {
 			const outcomes = actions.map(a => ({ weight: a.weight,
-				damage: a.move ? this.damage(a.user || foe, actor, a.move).max : 0,
+				damage: a.move ? this.damage(a.user || foe, actor, a.move, defenderAllies).max : 0,
 			})).sort((a, b) => a.damage - b.damage);
 			let cumulative = 0;
 			for (const outcome of outcomes) {
@@ -132,7 +136,7 @@ export class HardEvaluation {
 				if (cumulative >= 0.85) { risk += outcome.damage; break; }
 			}
 		}
-		return Math.max(risk, this.incoming(actor, predictions));
+		return Math.max(risk, this.incoming(actor, predictions, defenderAllies));
 	}
 
 	private recoveryAmount(actor: AIPokemon, move: AIMove): number {
@@ -364,7 +368,8 @@ export class HardEvaluation {
 		const hazards = this.entryDamage(pokemon);
 		const entered = { ...pokemon, hp: Math.max(0, pokemon.hp - hazards) };
 		entered.hpPercent = 100 * entered.hp / entered.maxHp;
-		const incoming = forced ? 0 : this.incomingRisk(entered, predictions);
+		const allies = this.state.self.active.filter(p => p !== actor);
+		const incoming = forced ? 0 : this.incomingRisk(entered, predictions, allies);
 		const remaining = entered.hp - incoming;
 		const reasons = [`Entry hazards ${hazards} HP; predicted switch-in damage ${incoming.toFixed(1)} HP`];
 		let score = -25 * hazards / pokemon.maxHp - 35 * incoming / Math.max(1, pokemon.hp);
@@ -390,11 +395,13 @@ export class HardEvaluation {
 			}
 			const resistsAll = responses.some(r => r.move && r.move.category !== 'Status') && responses.every(r => {
 				if (!r.move || r.move.category === 'Status') return true;
-				const damage = this.damage(r.user || foe, entered, r.move);
+				const damage = this.damage(r.user || foe, entered, r.move, allies);
 				return damage.effectiveness < 1 || damage.average === 0;
 			});
 			if (resistsAll) matchup += 17;
-			if (responses.some(r => r.move && this.damage(r.user || foe, entered, r.move).average >= remaining)) matchup -= 39;
+			if (responses.some(r => r.move && this.damage(r.user || foe, entered, r.move, allies).average >= remaining)) {
+				matchup -= 39;
+			}
 			matchups.push(matchup);
 		}
 		score += matchups.length ? Math.min(...matchups) : 0;

@@ -22,8 +22,9 @@ import type {
 import { BASE_SCORE } from '../types';
 import { Dex } from '../../../../../sim/dex';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
-import { isFaster, goesFirst } from '../util/speed';
+import { goesFirst } from '../util/speed';
 import { resolveItemMoveType } from '../util/type-calc';
+import { buildAIMove } from '../state-builder';
 
 // Import all negative and positive scorers
 import { allNegativeScorers } from './negatives';
@@ -172,12 +173,15 @@ export class ScoringEngine {
 		move: AIMove,
 		target: AIPokemon
 	): MoveScore {
+		state = { ...state, field: { ...state.field, formatId: this.config.formatId || state.field.formatId } };
 		move = resolveItemMoveType(attacker, move, state.field);
+		const isTargetingPartner = state.isDoubles && state.self.active.some(p => p === target);
+		const dex = this.config.formatId ? Dex.forFormat(this.config.formatId) : Dex;
 		// Pre-calculate damage for non-status moves
 		let damageResult = null;
 		if (move.category !== 'Status') {
 			// Calculate spread move info for doubles/multi (CFRU: damage_calc.c:3239-3247)
-			let spreadInfo: { isDoubles: boolean; numAliveTargets: number } | undefined;
+			let spreadInfo: { isDoubles: boolean, numAliveTargets: number } | undefined;
 			if (state.isDoubles) {
 				const moveTarget = move.target;
 				if (moveTarget === 'allAdjacentFoes') {
@@ -191,16 +195,22 @@ export class ScoringEngine {
 					spreadInfo = { isDoubles: true, numAliveTargets: numAliveOpponents + numAlivePartners };
 				}
 			}
-			damageResult = calculateDamage(attacker, target, move, state.field, this.cache, spreadInfo);
+			damageResult = calculateDamage(attacker, target, move, state.field, this.cache, {
+				isDoubles: false, numAliveTargets: 1, ...spreadInfo,
+				isAllyTarget: isTargetingPartner,
+				defenderAllies: (isTargetingPartner ? state.self : state.opponent).active,
+			});
 		}
 
-		const isTargetingPartner = state.isDoubles && state.self.active.some(p => p === target);
+		const knowledge = target.moveKnowledge;
+		const responseIds = knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] : target.moves;
+		const responses = responseIds.map(id => buildAIMove({ id }, 1, this.config.formatId));
 
 		// Initialize flags
 		const flags: MoveScoreFlags = {
 			canKO: damageResult?.canKO ?? false,
-			can2HKO: damageResult ? damageResult.hitsToKO <= 2 : false,
-			goesFirst: isFaster(attacker, target, state.field, this.cache,
+			can2HKO: !!damageResult && !dex.moves.get(move.id).selfdestruct && damageResult.hitsToKO <= 2,
+			goesFirst: goesFirst(attacker, target, move, responses, state.field,
 				state.self.conditions, isTargetingPartner ? state.self.conditions : state.opponent.conditions),
 			isStrongestMove: false,
 			isImmune: damageResult?.effectiveness === 0,
@@ -216,7 +226,7 @@ export class ScoringEngine {
 
 		// Create scoring context
 		const ctx: ScoringContext = {
-			dex: this.config.formatId ? Dex.forFormat(this.config.formatId) : Dex,
+			dex,
 			state,
 			attacker,
 			target,

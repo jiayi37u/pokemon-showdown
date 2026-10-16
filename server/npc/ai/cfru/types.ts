@@ -210,6 +210,8 @@ export interface SideConditions {
 
 /** Field conditions */
 export interface FieldConditions {
+	/** Rules used to interpret this public field snapshot, including format-specific overrides. */
+	formatId?: string;
 	/** Current weather: 'sun' | 'rain' | 'sand' | 'hail' | 'snow' | '' */
 	weather: string;
 

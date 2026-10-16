@@ -10,11 +10,9 @@
 
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions } from '../types';
-import {
-	getTypeEffectiveness, getSTABMultiplier, getAbilityTypeImmunity, wonderGuardBlocks,
-	airBalloonBlocks, resolveItemMoveType,
-} from './type-calc';
+import { getSTABMultiplier, getMoveInteraction, resolveItemMoveType, type MoveInteractionContext } from './type-calc';
 import { isFaster } from './speed';
+import { getEffectiveStat, effectiveItem, grounded, rulesDex } from './mechanics';
 import { pokemonCacheId } from './cache';
 import { canHaveOpponentMoves } from './opponent-presets';
 
@@ -260,15 +258,7 @@ export function getWeightRatioPower(
  * @param boost - Boost stage (-6 to +6)
  * @returns Effective stat value
  */
-export function getEffectiveStat(base: number, boost: number): number {
-	if (boost === 0) return base;
-
-	if (boost > 0) {
-		return Math.floor(base * (2 + boost) / 2);
-	} else {
-		return Math.floor(base * 2 / (2 - boost));
-	}
-}
+export { getEffectiveStat } from './mechanics';
 
 /**
  * Get attack stat for a move
@@ -312,7 +302,7 @@ export function getAttackStat(
 	}
 
 	// Item modifiers
-	const itemId = toID(attacker.item);
+	const itemId = effectiveItem(attacker, field);
 
 	// Choice Band / Choice Specs
 	if (itemId === 'choiceband' && isPhysical) {
@@ -503,19 +493,15 @@ export function getModifiedBasePower(
 		if (move.type === 'Fire') basePower = Math.floor(basePower * 0.5);
 	}
 
-	// Terrain effects
-	if (field.terrain === 'electric' && move.type === 'Electric' && !attacker.volatiles.has('magnetrise') && !toID(attacker.ability).includes('levitate')) {
-		basePower = Math.floor(basePower * 1.3);
-	}
-	if (field.terrain === 'grassy' && move.type === 'Grass' && !attacker.volatiles.has('magnetrise') && !toID(attacker.ability).includes('levitate')) {
-		basePower = Math.floor(basePower * 1.3);
-	}
-	if (field.terrain === 'psychic' && move.type === 'Psychic' && !attacker.volatiles.has('magnetrise') && !toID(attacker.ability).includes('levitate')) {
-		basePower = Math.floor(basePower * 1.3);
-	}
+	// Terrain boosts require the attacker to be grounded; Gen 6/7 use a 1.5 multiplier.
+	if (grounded(attacker, field) && (
+		(field.terrain === 'electric' && move.type === 'Electric') ||
+		(field.terrain === 'grassy' && move.type === 'Grass') ||
+		(field.terrain === 'psychic' && move.type === 'Psychic')
+	)) basePower = Math.floor(basePower * (rulesDex(field).gen <= 7 ? 1.5 : 1.3));
 
 	// Item modifiers
-	const itemId = toID(attacker.item);
+	const itemId = effectiveItem(attacker, field);
 
 	// Type-boosting items (simplified - just checking common ones)
 	const typeBoostItems: { [key: string]: string } = {
@@ -823,14 +809,15 @@ export function calculateDamage(
 	move: AIMove,
 	field: FieldConditions,
 	cache?: AICache,
-	spreadInfo?: { isDoubles: boolean; numAliveTargets: number }
+	spreadInfo?: { isDoubles: boolean, numAliveTargets: number } & MoveInteractionContext
 ): DamageResult {
 	move = resolveItemMoveType(attacker, move, field);
 	// HP-dependent power, fixed damage and KO flags must reflect the current snapshot.
 	const spreadKey = spreadInfo?.isDoubles ? `-spread${spreadInfo.numAliveTargets}` : '';
+	const protectionKey = `${spreadInfo?.isAllyTarget}-${spreadInfo?.defenderAllies?.map(pokemonCacheId).join(',')}`;
 	const hpKey = `${attacker.hp}/${attacker.maxHp}-${defender.hp}/${defender.maxHp}`;
 	const cacheKey = `${pokemonCacheId(attacker)}-${pokemonCacheId(defender)}-${move.id}-${move.type}-${move.basePower}` +
-		`-${hpKey}${spreadKey}-${JSON.stringify(field)}`;
+		`-${hpKey}${spreadKey}-${protectionKey}-${JSON.stringify(field)}`;
 	if (cache?.damageCalc.has(cacheKey)) {
 		return cache.damageCalc.get(cacheKey)!;
 	}
@@ -853,59 +840,12 @@ export function calculateDamage(
 		return result;
 	}
 
-	// Check immunities
-	const effectiveness = getTypeEffectiveness(move.type, defender.types, cache);
-
-	// Type and item immunity must also clear damage and KO predictions.
-	if (effectiveness === 0 || airBalloonBlocks(defender, move, field)) {
+	const interaction = getMoveInteraction(attacker, defender, move, field, spreadInfo);
+	const effectiveness = interaction.effectiveness;
+	if (interaction.blockedBy) {
 		const result: DamageResult = {
-			min: 0,
-			max: 0,
-			average: 0,
-			minPercent: 0,
-			maxPercent: 0,
-			averagePercent: 0,
-			effectiveness: 0,
-			canKO: false,
-			guaranteedKO: false,
-			hitsToKO: Infinity,
-		};
-		if (cache) cache.damageCalc.set(cacheKey, result);
-		return result;
-	}
-
-	// Ability immunity
-	const abilityImmunity = getAbilityTypeImmunity(move.type, defender.ability);
-	if (abilityImmunity.immune) {
-		const result: DamageResult = {
-			min: 0,
-			max: 0,
-			average: 0,
-			minPercent: 0,
-			maxPercent: 0,
-			averagePercent: 0,
-			effectiveness: 0,
-			canKO: false,
-			guaranteedKO: false,
-			hitsToKO: Infinity,
-		};
-		if (cache) cache.damageCalc.set(cacheKey, result);
-		return result;
-	}
-
-	// Wonder Guard check
-	if (wonderGuardBlocks(move.type, defender.types, defender.ability)) {
-		const result: DamageResult = {
-			min: 0,
-			max: 0,
-			average: 0,
-			minPercent: 0,
-			maxPercent: 0,
-			averagePercent: 0,
-			effectiveness: 0,
-			canKO: false,
-			guaranteedKO: false,
-			hitsToKO: Infinity,
+			min: 0, max: 0, average: 0, minPercent: 0, maxPercent: 0, averagePercent: 0,
+			effectiveness: 0, canKO: false, guaranteedKO: false, hitsToKO: Infinity,
 		};
 		if (cache) cache.damageCalc.set(cacheKey, result);
 		return result;

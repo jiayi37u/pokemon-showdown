@@ -273,6 +273,85 @@ describe('Shared public state pipeline across game types', () => {
 	}
 
 	for (const gameType of ['singles', 'doubles', 'multi']) {
+		it(`${gameType}: gravity removes Flying immunity consistently in public state, damage and scoring`, () => {
+			const game = fixture(gameType,
+				{ species: 'Charizard', ability: 'Blaze', moves: ['splash'] },
+				{ species: 'Mew', ability: 'Synchronize', moves: ['gravity', 'earthquake'] }, undefined,
+				{ species: 'Charizard', ability: 'Blaze', moves: ['splash'] });
+			try {
+				const inspect = immune => {
+					const state = game.build();
+					assert.equal(state.field.formatId, 'gen9customgame');
+					const actor = state.self.active[0];
+					const target = state.opponent.active[0];
+					const move = buildAIMove({ id: 'earthquake' }, 1, state.field.formatId);
+					const result = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: state.field.formatId }, createAICache(state.turn))
+						.scoreMove(state, actor, move, target);
+					assert.equal(result.flags.isImmune, immune);
+					if (!immune && gameType !== 'singles') {
+						assert(result.breakdown.details.some(d => d.reason.startsWith('Spread move') && d.amount < 0));
+					}
+					assert.equal(calculateDamage(actor, target, move, state.field).average === 0, immune);
+					assert.equal(new HardEvaluation(state, state.field.formatId).damage(actor, target, move).average === 0, immune);
+				};
+				inspect(true);
+				game.play('move 1', 'move 1');
+				inspect(false);
+				const hp = game.battle.p1.active[0].hp;
+				game.play('move 1', 'move 2');
+				assert(game.battle.p1.active[0].hp < hp);
+			} finally { game.battle.destroy(); }
+		});
+
+		if (gameType !== 'singles') it(`${gameType}: public Armor Tail protects its ally in scoring and both threat evaluators`, () => {
+			const game = fixture(gameType,
+				{ species: 'Blissey', ability: 'Natural Cure', moves: ['splash'] },
+				{ species: 'Mew', ability: 'Synchronize', moves: ['quickattack'] },
+				{ species: 'Farigiraf', ability: 'Armor Tail', moves: ['splash'] });
+			try {
+				game.play('move 1', 'move 1 1');
+				assert.equal(game.battle.p1.active[0].hp, game.battle.p1.active[0].maxhp);
+				const state = game.build();
+				const actor = state.self.active[0];
+				const target = state.opponent.active[0];
+				assert.equal(toID(state.opponent.active[1].ability), 'armortail');
+				const move = buildAIMove({ id: 'quickattack' }, 1, state.field.formatId);
+				const result = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: state.field.formatId }, createAICache(state.turn))
+					.scoreMove(state, actor, move, target);
+				assert.equal(result.score, 0);
+				assert.equal(result.flags.canKO, false);
+				assert.equal(new HardEvaluation(state, state.field.formatId).damage(actor, target, move).average, 0);
+				const ai = new NormalAI({ write() {} });
+				ai.battleState = { ...state, self: state.opponent, opponent: state.self };
+				assert.equal(ai.getIncomingThreat(target, [actor]), 0);
+				const reserve = { ...target, active: false, slot: 3 };
+				const protector = state.opponent.active[1];
+				assert(ai.getIncomingThreat(reserve, [actor], protector) > 0,
+					'An outgoing Armor Tail holder cannot protect its replacement');
+				const evaluation = new HardEvaluation(ai.battleState, state.field.formatId);
+				const predictions = new Map([[actor, [{ user: actor, move, weight: 1 }]]]);
+				const sheltered = evaluation.scoreSwitch(reserve, predictions, false, target);
+				const exposed = evaluation.scoreSwitch(reserve, predictions, false, protector);
+				assert(sheltered.reasons[0].includes('damage 0.0 HP'));
+				assert(!exposed.reasons[0].includes('damage 0.0 HP'));
+				const cache = createAICache(state.turn);
+				assert(calculateDamage(actor, target, move, state.field, cache).average > 0);
+				assert.equal(calculateDamage(actor, target, move, state.field, cache,
+					{ isDoubles: true, numAliveTargets: 1, defenderAllies: state.opponent.active }).average, 0);
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: public Quark Drive speed matches the simulator`, () => {
+			const game = fixture(gameType, { species: 'Mew', moves: ['splash'] },
+				{ species: 'Iron Bundle', ability: 'Quark Drive', item: 'Booster Energy', moves: ['splash'] });
+			try {
+				const state = game.build();
+				const actor = state.self.active[0];
+				assert.equal(actor.abilityStatMod.stat, 'spe');
+				assert.equal(getEffectiveSpeed(actor, state.field), game.battle.p2.active[0].getStat('spe'));
+			} finally { game.battle.destroy(); }
+		});
+
 		it(`${gameType}: scoring consumes the team's public Tailwind`, () => {
 			const fast = { species: 'Jolteon', ability: 'Volt Absorb', moves: ['splash'] };
 			const setter = { species: 'Jirachi', ability: 'Serene Grace', moves: ['tailwind', 'psychic'] };

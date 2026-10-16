@@ -10,7 +10,8 @@
 
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, NegativeScoringFunction } from './index';
-import { getTypeEffectiveness, airBalloonBlocks } from '../util/type-calc';
+import { getTypeEffectiveness, getMoveInteraction } from '../util/type-calc';
+import { grounded } from '../util/mechanics';
 import { calculateDamage } from '../util/damage-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
 
@@ -18,39 +19,17 @@ import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent
 // Type and Ability Immunity Checks
 // =============================================================================
 
-/** Use the format's type chart: MMO backports Dark's immunity despite its Gen 5 dex. */
-export const checkPranksterImmunity: NegativeScoringFunction = ctx => {
-	if (ctx.move.category !== 'Status' || toID(ctx.attacker.ability) !== 'prankster' || ctx.isTargetingPartner) return 0;
-	if (!['normal', 'any', 'allAdjacent', 'allAdjacentFoes'].includes(ctx.move.target)) return 0;
-	if (ctx.move.id === 'curse' && !ctx.attacker.types.includes('Ghost')) return 0;
-	const dex = ctx.dex;
-	if (dex.getImmunity('prankster', ctx.target.types)) return 0;
+/** All confirmed move immunities use the same rule result as damage and switching. */
+export const checkMoveImmunity: NegativeScoringFunction = ctx => {
+	const result = getMoveInteraction(ctx.attacker, ctx.target, ctx.move, ctx.state.field, {
+		isAllyTarget: ctx.isTargetingPartner,
+		defenderAllies: (ctx.isTargetingPartner ? ctx.state.self : ctx.state.opponent).active,
+	});
+	if (!result.blockedBy) return 0;
 	ctx.flags.isImmune = true;
 	ctx.flags.hasNoEffect = true;
-	ctx.adjustments.push({ reason: 'Dark target immune to Prankster status move', amount: -100, category: 'negative' });
+	ctx.adjustments.push({ reason: result.blockedBy, amount: -100, category: 'negative' });
 	return -100;
-};
-
-/**
- * Check for complete type immunity
- */
-export const checkTypeImmunity: NegativeScoringFunction = (ctx) => {
-	if (ctx.move.category === 'Status') return 0;
-
-	const effectiveness = getTypeEffectiveness(ctx.move.type, ctx.target.types, ctx.cache);
-
-	if (effectiveness === 0) {
-		ctx.adjustments.push({
-			reason: `Type immunity (${ctx.move.type} vs ${ctx.target.types.join('/')})`,
-			amount: -100,
-			category: 'negative',
-		});
-		ctx.flags.isImmune = true;
-		ctx.flags.hasNoEffect = true;
-		return -100;
-	}
-
-	return 0;
 };
 
 /**
@@ -64,10 +43,11 @@ export const checkTypeImmunity: NegativeScoringFunction = (ctx) => {
 export const checkTypeResistance: NegativeScoringFunction = (ctx) => {
 	if (ctx.move.category === 'Status') return 0;
 
-	const effectiveness = getTypeEffectiveness(ctx.move.type, ctx.target.types, ctx.cache);
+	const effectiveness = ctx.damageResult?.effectiveness ??
+		getTypeEffectiveness(ctx.move.type, ctx.target.types, ctx.cache);
 
 	// Only penalize resisted moves (effectiveness < 1, but not immune)
-	if (effectiveness === 0) return 0; // Immunity handled by checkTypeImmunity
+	if (effectiveness === 0) return 0; // Immunity handled by checkMoveImmunity
 
 	if (effectiveness === 0.25) {
 		ctx.adjustments.push({
@@ -145,104 +125,6 @@ export const checkLowDamage: NegativeScoringFunction = (ctx) => {
 };
 
 /**
- * Check for ability-based type immunity
- * Covers: Volt Absorb, Water Absorb, Flash Fire, Sap Sipper, etc.
- */
-export const checkAbilityTypeImmunity: NegativeScoringFunction = (ctx) => {
-	if (ctx.move.category === 'Status') return 0;
-
-	const abilityId = toID(ctx.target.ability);
-	const moveType = ctx.move.type;
-
-	// Electric immunities
-	if (moveType === 'Electric') {
-		if (['voltabsorb', 'lightningrod', 'motordrive'].includes(abilityId)) {
-			ctx.adjustments.push({
-				reason: `Ability immunity: ${ctx.target.ability}`,
-				amount: -20,
-				category: 'negative',
-			});
-			ctx.flags.isImmune = true;
-			return -20;
-		}
-	}
-
-	// Water immunities
-	if (moveType === 'Water') {
-		if (['waterabsorb', 'stormdrain', 'dryskin'].includes(abilityId)) {
-			ctx.adjustments.push({
-				reason: `Ability immunity: ${ctx.target.ability}`,
-				amount: -20,
-				category: 'negative',
-			});
-			ctx.flags.isImmune = true;
-			return -20;
-		}
-	}
-
-	// Fire immunities
-	if (moveType === 'Fire') {
-		if (['flashfire', 'wellbakedbody'].includes(abilityId)) {
-			ctx.adjustments.push({
-				reason: `Ability immunity: ${ctx.target.ability}`,
-				amount: -20,
-				category: 'negative',
-			});
-			ctx.flags.isImmune = true;
-			return -20;
-		}
-	}
-
-	// Grass immunity
-	if (moveType === 'Grass') {
-		if (abilityId === 'sapsipper') {
-			ctx.adjustments.push({
-				reason: `Ability immunity: Sap Sipper`,
-				amount: -20,
-				category: 'negative',
-			});
-			ctx.flags.isImmune = true;
-			return -20;
-		}
-	}
-
-	// Ground immunity (Levitate, Earth Eater)
-	if (moveType === 'Ground') {
-		if (['levitate', 'eartheater'].includes(abilityId)) {
-			ctx.adjustments.push({
-				reason: `Ability immunity: ${ctx.target.ability}`,
-				amount: -20,
-				category: 'negative',
-			});
-			ctx.flags.isImmune = true;
-			return -20;
-		}
-	}
-
-	return 0;
-};
-
-/**
- * Check for item-based type immunity
- * Covers: Air Balloon (Ground immunity)
- */
-export const checkItemTypeImmunity: NegativeScoringFunction = (ctx) => {
-	// Air Balloon - Ground immunity
-	if (airBalloonBlocks(ctx.target, ctx.move, ctx.state.field)) {
-		ctx.adjustments.push({
-			reason: 'Item immunity: Air Balloon',
-			amount: -100,
-			category: 'negative',
-		});
-		ctx.flags.isImmune = true;
-		ctx.flags.hasNoEffect = true;
-		return -100;
-	}
-
-	return 0;
-};
-
-/**
  * Check for Covert Cloak blocking secondary effects
  * Covert Cloak prevents additional effects from damaging moves
  */
@@ -260,66 +142,6 @@ export const checkCovertCloak: NegativeScoringFunction = (ctx) => {
 			category: 'negative',
 		});
 		return -3;
-	}
-
-	return 0;
-};
-
-/**
- * Check for Wonder Guard blocking non-super-effective moves
- */
-export const checkWonderGuard: NegativeScoringFunction = (ctx) => {
-	if (ctx.move.category === 'Status') return 0;
-
-	if (toID(ctx.target.ability) !== 'wonderguard') return 0;
-
-	const effectiveness = getTypeEffectiveness(ctx.move.type, ctx.target.types, ctx.cache);
-
-	if (effectiveness <= 1) {
-		ctx.adjustments.push({
-			reason: 'Wonder Guard blocks non-super-effective move',
-			amount: -100,
-			category: 'negative',
-		});
-		ctx.flags.isImmune = true;
-		ctx.flags.hasNoEffect = true;
-		return -100;
-	}
-
-	return 0;
-};
-
-/**
- * Check for Soundproof blocking sound moves
- */
-export const checkSoundproof: NegativeScoringFunction = (ctx) => {
-	if (toID(ctx.target.ability) !== 'soundproof') return 0;
-
-	if (ctx.move.flags['sound']) {
-		ctx.adjustments.push({
-			reason: 'Soundproof blocks sound move',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	return 0;
-};
-
-/**
- * Check for Bulletproof blocking ball/bomb moves
- */
-export const checkBulletproof: NegativeScoringFunction = (ctx) => {
-	if (toID(ctx.target.ability) !== 'bulletproof') return 0;
-
-	if (ctx.move.flags['bullet']) {
-		ctx.adjustments.push({
-			reason: 'Bulletproof blocks ball/bomb move',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
 	}
 
 	return 0;
@@ -390,31 +212,6 @@ export const checkStatBoostOnHit: NegativeScoringFunction = (ctx) => {
 	}
 
 	return penalty;
-};
-
-/**
- * Check for Dazzling / Queenly Majesty / Armor Tail blocking priority moves
- * CFRU: ai_negatives.c lines 339-346, 562-569
- */
-export const checkPriorityBlock: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
-
-	// These abilities block priority moves targeting the user
-	if (!['dazzling', 'queenlymajesty', 'armortail'].includes(abilityId)) {
-		return 0;
-	}
-
-	// Check if move has priority > 0 and targets the opponent
-	if (ctx.move.priority > 0 && ctx.move.target !== 'self') {
-		ctx.adjustments.push({
-			reason: `${ctx.target.ability} blocks priority moves`,
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	return 0;
 };
 
 /**
@@ -846,9 +643,7 @@ export const checkSleepMove: NegativeScoringFunction = (ctx) => {
 	// Electric Terrain blocks sleep
 	if (ctx.state.field.terrain === 'electric') {
 		// Check if target is grounded
-		const isGrounded = !ctx.target.types.includes('Flying') &&
-			toID(ctx.target.ability) !== 'levitate' &&
-			!ctx.target.volatiles.has('magnetrise');
+		const isGrounded = grounded(ctx.target, ctx.state.field);
 
 		if (isGrounded) {
 			ctx.adjustments.push({
@@ -1138,8 +933,7 @@ export const checkConfusionMove: NegativeScoringFunction = (ctx) => {
 
 	// Misty Terrain blocks confusion
 	if (ctx.state.field.terrain === 'misty') {
-		const isGrounded = !ctx.target.types.includes('Flying') &&
-			toID(ctx.target.ability) !== 'levitate';
+		const isGrounded = grounded(ctx.target, ctx.state.field);
 
 		if (isGrounded) {
 			ctx.adjustments.push({
@@ -1315,10 +1109,7 @@ export const checkTerrainBlock: NegativeScoringFunction = (ctx) => {
 	const terrain = ctx.state.field.terrain;
 
 	// Check if target is grounded
-	const isGrounded = !ctx.target.types.includes('Flying') &&
-		toID(ctx.target.ability) !== 'levitate' &&
-		!ctx.target.volatiles.has('magnetrise') &&
-		!ctx.target.volatiles.has('telekinesis');
+	const isGrounded = grounded(ctx.target, ctx.state.field);
 
 	if (!isGrounded) return 0;
 
@@ -1342,18 +1133,6 @@ export const checkTerrainBlock: NegativeScoringFunction = (ctx) => {
 		if (statusMoves.includes(moveId)) {
 			ctx.adjustments.push({
 				reason: 'Misty Terrain blocks status on grounded Pokemon',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	// Psychic Terrain blocks priority on grounded Pokemon
-	if (terrain === 'psychic') {
-		if (ctx.move.priority > 0 && ctx.move.target !== 'self') {
-			ctx.adjustments.push({
-				reason: 'Psychic Terrain blocks priority moves',
 				amount: -10,
 				category: 'negative',
 			});
@@ -2363,74 +2142,12 @@ export const checkSpreadMoveHitsPartner: NegativeScoringFunction = (ctx) => {
 	// Check if we have a partner
 	if (!ctx.partner || ctx.partner.fainted) return 0;
 
-	const partnerAbility = toID(ctx.partner.ability);
-	const moveType = ctx.move.type;
-
-	// Check if partner is immune by type
-	const typeEffect = getTypeEffectiveness(moveType, ctx.partner.types, ctx.cache);
-	if (typeEffect === 0) return 0; // Partner immune by type
-
-	// Check if partner has absorbing/beneficial ability
-	// Electric absorption abilities
-	if (moveType === 'Electric' &&
-		['voltabsorb', 'lightningrod', 'motordrive'].includes(partnerAbility)) {
-		return 0; // Don't penalize - positive handled elsewhere
-	}
-	// Water absorption abilities
-	if (moveType === 'Water' &&
-		['waterabsorb', 'dryskin', 'stormdrain'].includes(partnerAbility)) {
-		return 0; // Don't penalize - heal/boost partner
-	}
-	// Fire absorption
-	if (moveType === 'Fire' && partnerAbility === 'flashfire') {
-		return 0; // Don't penalize - power up partner
-	}
-	// Grass absorption
-	if (moveType === 'Grass' && partnerAbility === 'sapsipper') {
-		return 0; // Don't penalize - boost partner
-	}
-	// Ground immunity
-	if (moveType === 'Ground' && ['levitate', 'eartheater'].includes(partnerAbility)) {
-		return 0; // Partner immune
-	}
-
-	// Calculate actual damage to partner
-	// Use try-catch in case partner data is incomplete (e.g., in tests)
-	let partnerDamage;
-	try {
-		// Calculate spread move damage reduction info
-		// For allAdjacent: count all except attacker (opponents + partner)
-		const numAliveOpponents = ctx.state.opponent.active.filter(p => !p.fainted).length;
-		const numAlivePartners = ctx.state.self.active.filter(p => p !== ctx.attacker && !p.fainted).length;
-		const spreadInfo = { isDoubles: true, numAliveTargets: numAliveOpponents + numAlivePartners };
-
-		partnerDamage = calculateDamage(
-			ctx.attacker,
-			ctx.partner,
-			ctx.move,
-			ctx.state.field,
-			ctx.cache,
-			spreadInfo
-		);
-	} catch (e) {
-		// If damage calculation fails (incomplete data), use a default penalty
-		ctx.adjustments.push({
-			reason: `Spread move (${ctx.move.id}) will hit partner`,
-			amount: -5,
-			category: 'negative',
-		});
-		return -5;
-	}
-
-	// If damage result is invalid or zero damage, still apply small penalty
-	if (!partnerDamage || partnerDamage.averagePercent === undefined) {
-		ctx.adjustments.push({
-			reason: `Spread move (${ctx.move.id}) will hit partner`,
-			amount: -5,
-			category: 'negative',
-		});
-		return -5;
-	}
+	const numAliveOpponents = ctx.state.opponent.active.filter(p => !p.fainted).length;
+	const numAlivePartners = ctx.state.self.active.filter(p => p !== ctx.attacker && !p.fainted).length;
+	const partnerDamage = calculateDamage(ctx.attacker, ctx.partner, ctx.move, ctx.state.field, ctx.cache, {
+		isDoubles: true, numAliveTargets: numAliveOpponents + numAlivePartners,
+		isAllyTarget: true, defenderAllies: ctx.state.self.active,
+	});
 
 	const damagePercent = partnerDamage.averagePercent;
 	let penalty = 0;
@@ -3126,28 +2843,19 @@ export const checkKnockOff: NegativeScoringFunction = (ctx) => {
 // =============================================================================
 
 export const allNegativeScorers: NegativeScoringFunction[] = [
-	// Doubles partner checks (run first as they're high priority)
+	checkMoveImmunity,
+	// Partner effects after confirmed immunities
 	checkTargetingPartnerDamage,
 	checkTargetingPartnerStatus,
 	checkSpreadMoveHitsPartner,
 
 	// Type and ability immunity
-	checkPranksterImmunity,
-	checkTypeImmunity,
-	checkTypeResistance,  // NEW: Penalize resisted moves
-	checkAbilityTypeImmunity,
-	checkItemTypeImmunity,
+	checkTypeResistance,
 	checkCovertCloak,
-	checkWonderGuard,
-	checkSoundproof,
-	checkBulletproof,
 	checkStatBoostOnHit,
 
 	// Low damage penalty (should run early so other bonuses can override)
 	checkLowDamage,  // NEW: Penalize very low damage moves
-
-	// Priority blocking abilities (CFRU: ai_negatives.c 339-346)
-	checkPriorityBlock,
 
 	// Stat drop related abilities (CFRU: ai_negatives.c 383-467)
 	checkMirrorArmor,

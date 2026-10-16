@@ -154,7 +154,22 @@ function createDoublesContext(overrides = {}) {
 		cache: { typeEffectiveness: new Map() },
 	};
 
-	return deepMerge(defaultCtx, overrides);
+	const ctx = deepMerge(defaultCtx, overrides);
+	const { makeAIPokemonSkeleton } = require('../../../dist/server/npc/ai/cfru/util/pokemon-builder');
+	const { createAICache } = require('../../../dist/server/npc/ai/cfru/types');
+	for (const key of ['attacker', 'target', 'partner']) {
+		const base = makeAIPokemonSkeleton({
+			slot: key === 'attacker' ? 0 : 1, species: 'Mew', hp: 300, maxHp: 300, hpPercent: 100,
+			status: '', fainted: false, types: ['Normal'], ability: '', item: '', moves: ['earthquake'],
+			baseStats: { hp: 300, atk: 200, def: 200, spa: 200, spd: 200, spe: 100 },
+			active: true, level: 100, gender: 'N',
+		});
+		ctx[key] = { ...base, ...ctx[key], baseStats: { ...base.baseStats, ...ctx[key].baseStats } };
+	}
+	ctx.state.self.active = [ctx.attacker, ctx.partner];
+	ctx.state.opponent.active = [ctx.target];
+	ctx.cache = createAICache(1);
+	return ctx;
 }
 
 /**

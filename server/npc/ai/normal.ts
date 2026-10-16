@@ -531,7 +531,7 @@ export class NormalAI extends NPCBattleAI {
 		const numAliveTargets = this.battleState!.opponent.active.filter(p => !p.fainted).length +
 			(move.target === 'allAdjacent' ? state.self.active.filter(p => !p.fainted && p !== attacker).length : 0);
 		return calculateDamage(attacker, target, move, state.field, undefined,
-			{ isDoubles: state.isDoubles, numAliveTargets }).average >= target.hp;
+			{ isDoubles: state.isDoubles, numAliveTargets, defenderAllies: state.opponent.active }).average >= target.hp;
 	}
 
 	/** A likely KO before the sole opponent acts takes precedence over incoming damage. */
@@ -585,7 +585,7 @@ export class NormalAI extends NPCBattleAI {
 	}
 
 	/** Maximum average damage from revealed/preset attacks, relative to the defender's current HP. */
-	private getIncomingThreat(defender: AIPokemon, opponents: AIPokemon[]): number {
+	private getIncomingThreat(defender: AIPokemon, opponents: AIPokemon[], replacing = defender): number {
 		if (defender.hp <= 0) return Infinity;
 		const state = this.battleState!;
 		let threat = 0;
@@ -604,6 +604,7 @@ export class NormalAI extends NPCBattleAI {
 				// Reversed sides and bench slots can collide with the outgoing damage cache.
 				const damage = calculateDamage(model.pokemon, defender, move, state.field, undefined, {
 					isDoubles: state.isDoubles, numAliveTargets,
+					defenderAllies: state.self.active.filter(p => p !== replacing),
 				});
 				threat = Math.max(threat, damage.average / defender.hp);
 			}
@@ -682,7 +683,7 @@ export class NormalAI extends NPCBattleAI {
 				const pokemonName = switchOption.pokemon.details?.split(',')[0]?.trim() || `Slot ${switchOption.slot}`;
 				// Build from this player's request: Multi teammates can have identical party slots.
 				const defender = buildPokemonFromRequest(switchOption.pokemon, switchOption.slot, false, this.cfruConfig.formatId);
-				const switchThreat = this.getIncomingThreat(defender, opponents);
+				const switchThreat = this.getIncomingThreat(defender, opponents, attacker);
 				if (switchThreat > NormalAI.SWITCH_THREAT_LIMIT) {
 					switchScores.push({
 						pokemon: pokemonName,

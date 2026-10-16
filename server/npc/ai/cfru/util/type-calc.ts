@@ -9,6 +9,7 @@
 
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, AICache, FieldConditions } from '../types';
+import { defensiveAbility, effectiveItem, effectivePriority, grounded, rulesDex } from './mechanics';
 
 /** Resolve item-dependent move types from the AI's current item knowledge. */
 export function resolveItemMoveType(attacker: AIPokemon, move: AIMove, field: FieldConditions): AIMove {
@@ -23,14 +24,6 @@ export function resolveItemMoveType(attacker: AIPokemon, move: AIMove, field: Fi
 		if (typeof itemType === 'string') type = itemType;
 	}
 	return move.type === type ? move : { ...move, type };
-}
-
-/** Item-based Ground immunity, including public grounding and item suppression. */
-export function airBalloonBlocks(defender: AIPokemon, move: AIMove, field: FieldConditions): boolean {
-	return move.type === 'Ground' && move.category !== 'Status' && toID(move.id) !== 'thousandarrows' &&
-		toID(defender.item) === 'airballoon' && toID(defender.ability) !== 'klutz' &&
-		!field.gravity && !field.magicroom && !defender.volatiles.has('embargo') &&
-		!defender.volatiles.has('ingrain') && !defender.volatiles.has('smackdown');
 }
 
 /** Type effectiveness multipliers */
@@ -182,6 +175,17 @@ export function getAbilityTypeImmunity(
 	return { immune: false };
 }
 
+/** Apply public ability bypass and grounding conditions to an ability's type immunity. */
+export function getEffectiveAbilityTypeImmunity(
+	attacker: AIPokemon, defender: AIPokemon, move: AIMove, field: FieldConditions
+): { immune: boolean, effect?: string } {
+	const immunity = getAbilityTypeImmunity(move.type, defensiveAbility(attacker, defender, move, field));
+	if (immunity.effect === 'levitate' && (grounded(defender, field) || toID(move.id) === 'thousandarrows')) {
+		return { immune: false };
+	}
+	return immunity;
+}
+
 /**
  * Check if Wonder Guard blocks a move
  * @param moveType - The move's type
@@ -323,4 +327,76 @@ export function hasSuperEffectiveMove(attacker: AIPokemon, defender: AIPokemon):
 	}
 
 	return false;
+}
+
+/** Public active allies are needed for team-wide priority protection in doubles and multi. */
+export interface MoveInteractionContext {
+	defenderAllies?: readonly AIPokemon[];
+	isAllyTarget?: boolean;
+}
+
+/** A rule result shared by damage, scoring and threat estimates; no strategy weights. */
+export function getMoveInteraction(
+	attacker: AIPokemon, defender: AIPokemon, move: AIMove, field: FieldConditions,
+	context: MoveInteractionContext = {}
+): { effectiveness: number, blockedBy?: string } {
+	const dex = rulesDex(field);
+	const data = dex.moves.get(move.id);
+	const ability = defensiveAbility(attacker, defender, move, field);
+	const block = (blockedBy: string) => ({ effectiveness: 0, blockedBy });
+	const direct = ['normal', 'any', 'allAdjacent', 'allAdjacentFoes', 'adjacentAlly', 'adjacentAllyOrSelf']
+		.includes(move.target) &&
+		!(move.id === 'curse' && !attacker.types.includes('Ghost'));
+	const foeTarget = direct && attacker !== defender && !context.isAllyTarget;
+	if (foeTarget && move.category === 'Status' && toID(attacker.ability) === 'prankster' &&
+		!dex.getImmunity('prankster', defender.types)) {
+		return block('Dark target immune to Prankster status move');
+	}
+	if (foeTarget && effectivePriority(attacker, move, field) > 0) {
+		if (field.terrain === 'psychic' && grounded(defender, field)) {
+			return block('Psychic Terrain blocks priority moves');
+		}
+		for (const holder of [defender, ...(context.defenderAllies || [])]) {
+			if (holder.fainted) continue;
+			const protection = defensiveAbility(attacker, holder, move, field);
+			if (['dazzling', 'queenlymajesty', 'armortail'].includes(protection)) {
+				return block(`${holder.ability} blocks priority moves`);
+			}
+		}
+	}
+	if ((direct || move.id === 'perishsong') && attacker !== defender && ability === 'soundproof' && move.flags.sound) {
+		return block('Soundproof blocks sound move');
+	}
+	if (ability === 'bulletproof' && move.flags.bullet) return block('Bulletproof blocks ball/bomb move');
+	if (move.category === 'Status') return { effectiveness: 1 };
+
+	let types = defender.volatiles.has('roost') ? defender.types.filter(t => t !== 'Flying') : defender.types;
+	if (!types.length) types = [dex.gen >= 5 ? 'Normal' : '???'];
+	const item = effectiveItem(defender, field);
+	const arrows = move.id === 'thousandarrows';
+	const isGrounded = grounded(defender, field, ability !== 'levitate');
+	let exponent = 0;
+	for (const type of types) {
+		const ignoreImmunity = data.ignoreImmunity === true ||
+			(typeof data.ignoreImmunity === 'object' && data.ignoreImmunity[move.type]) || item === 'ringtarget' ||
+			(move.type === 'Ground' && (arrows || isGrounded)) ||
+			(type === 'Ghost' && ['Normal', 'Fighting'].includes(move.type) &&
+				['scrappy', 'mindseye'].includes(toID(attacker.ability)));
+		if (!ignoreImmunity && !dex.getImmunity(move.type, type)) return block(`Type immunity (${move.type} vs ${type})`);
+		exponent += move.id === 'freezedry' && type === 'Water' ? 1 : dex.getEffectiveness(move.type, type);
+		if (move.id === 'flyingpress') exponent += dex.getEffectiveness('Flying', type);
+	}
+	// Iron Ball alone makes Ground neutral against Flying dual types, unlike Gravity/Smack Down.
+	const ironBallNeutral = move.type === 'Ground' && item === 'ironball' && types.includes('Flying') &&
+		!field.gravity && !defender.volatiles.has('ingrain') && !defender.volatiles.has('smackdown');
+	const effectiveness = ironBallNeutral || (arrows && types.includes('Flying') && !isGrounded) ? 1 : 2 ** exponent;
+	if (move.type === 'Ground' && !arrows && !isGrounded &&
+		(item === 'airballoon' || defender.volatiles.has('magnetrise') || defender.volatiles.has('telekinesis'))) {
+		return block('Airborne target immune to Ground');
+	}
+	if (getEffectiveAbilityTypeImmunity(attacker, defender, move, field).immune) {
+		return block(`Ability immunity: ${defender.ability}`);
+	}
+	if (ability === 'wonderguard' && effectiveness <= 1) return block('Wonder Guard blocks non-super-effective move');
+	return { effectiveness };
 }

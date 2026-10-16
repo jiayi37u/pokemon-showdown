@@ -3,71 +3,10 @@
  * 测试双打中队友伤害、状态招式、群攻招式等
  */
 
-const { section, test, assertEqual, assert, deepMerge } = require('./test-utils');
+const { section, test, assertEqual, assert, createDoublesContext } = require('./test-utils');
 
 function runDoublesPartnerTests() {
 	const { checkTargetingPartnerDamage, checkTargetingPartnerStatus, checkSpreadMoveHitsPartner } = require('../../../dist/server/npc/ai/cfru/scoring/negatives');
-
-	/**
-	 * 创建双打评分上下文
-	 */
-	function createDoublesContext(overrides = {}) {
-		const defaultCtx = {
-			state: {
-				isDoubles: true,
-				field: { weather: '', terrain: '' },
-				opponent: { conditions: {} },
-				self: {
-					conditions: {},
-					active: [
-						{ slot: 0, fainted: false },
-						{ slot: 1, fainted: false },
-					],
-				},
-			},
-			attacker: {
-				slot: 0,
-				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
-				hpPercent: 100,
-				ability: '',
-				item: '',
-				types: ['Normal'],
-				baseStats: { spe: 100 },
-			},
-			target: {
-				slot: 1,
-				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
-				hpPercent: 100,
-				ability: '',
-				item: '',
-				types: ['Normal'],
-				baseStats: { spe: 100 },
-			},
-			partner: {
-				slot: 1,
-				fainted: false,
-				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
-				hpPercent: 100,
-				ability: '',
-				item: '',
-				types: ['Normal'],
-			},
-			move: {
-				id: 'earthquake',
-				category: 'Physical',
-				type: 'Ground',
-				basePower: 100,
-				target: 'normal',
-				flags: {},
-			},
-			isTargetingPartner: false,
-			flags: { canKO: false },
-			adjustments: [],
-			cache: { typeEffectiveness: new Map() },
-		};
-
-		return deepMerge(defaultCtx, overrides);
-	}
 
 	// =============================================================================
 	// 双打队友检查测试 / DOUBLES PARTNER CHECK TESTS

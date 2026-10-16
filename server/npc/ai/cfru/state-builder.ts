@@ -178,7 +178,7 @@ export function buildBattleStateFromRequests(
 			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(), futuremove: 0 } },
 		opponent: { remaining: tracker.getRemainingOpponents(), active: opponentActive, reserve: opponentReserve,
 			team: [...opponentActive, ...opponentReserve], conditions: buildOpponentConditionsFromTracker(tracker) },
-		field: buildFieldConditionsFromTracker(tracker),
+		field: { ...buildFieldConditionsFromTracker(tracker), formatId },
 	};
 }
 

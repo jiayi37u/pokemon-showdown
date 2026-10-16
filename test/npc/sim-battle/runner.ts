@@ -309,11 +309,11 @@ async function main(): Promise<void> {
 
 	// ---------- NPC AI ----------
 	let coordinator: NPCMultiManager | undefined;
-	const coordinated = isMulti && [args.npcDifficulty, args.npc2Difficulty].includes('hard');
+	const coordinated = isMulti && [args.npcDifficulty, args.npc2Difficulty].some(difficulty => difficulty !== 'basic');
 	const failPlayer = (label: string, error: unknown) => { console.error(`[${label} crashed]`, error); process.exit(1); };
 	if (coordinated) {
 		if ([args.npcDifficulty, args.npc2Difficulty].includes('basic')) {
-			throw new Error('Coordinated Hard Multi requires normal or hard for both NPCs');
+			throw new Error('Coordinated Multi requires normal or hard for both NPCs');
 		}
 		// Exercise the production coordinator; individual p4 requests are not standalone doubles states.
 		const room = {

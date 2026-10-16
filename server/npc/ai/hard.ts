@@ -6,7 +6,7 @@ import { Dex, toID } from '../../../sim/dex';
 import { NPCBattleAI, type MoveChoice, type SwitchChoice } from './index';
 import { DEFAULT_AI_CONFIG, type AIPokemon, type BattleState, type CFRUAIConfig, type MoveScore } from './cfru/types';
 import { buildBattleStateWithTracker, buildPokemonFromRequest } from './cfru/state-builder';
-import { createBattleTracker, normalizeWeather } from './cfru/util/battle-tracker';
+import { createBattleTracker } from './cfru/util/battle-tracker';
 import { createBattleLogger, type LogLevel } from './cfru/logger';
 import { HardEvaluation } from './hard/evaluation';
 import { fightingStyle, hardMove } from './hard/opponent-model';
@@ -48,17 +48,13 @@ export class HardAI extends NPCBattleAI {
 	override receiveRequest(request: ChoiceRequest): void {
 		if (request.wait) return;
 		const state = buildBattleStateWithTracker(request, this.battleRef, this.tracker, this.configCFRU);
-		state.turn = this.battleRef?.turn ?? this.tracker.getTurn();
 		this.receiveRequestWithState(request, state);
 	}
 
 	/** Multi supplies a combined public state, with reserves scoped to this controller's own request. */
 	receiveRequestWithState(request: ChoiceRequest, state: BattleState, activeSlot = 1): void {
 		this.activeSlot = activeSlot;
-		this.state = { ...state, field: { ...state.field,
-			weather: normalizeWeather(state.field.weather),
-			terrain: toID(state.field.terrain.replace(/^move: /, '')).replace(/terrain$/, ''),
-		} };
+		this.state = state;
 		try {
 			super.receiveRequest(request);
 		} finally {
@@ -145,7 +141,7 @@ export class HardAI extends NPCBattleAI {
 		const best = this.prng.sample(top);
 		const replacements = switches.map(sw =>
 			evaluator.scoreSwitch(
-				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId), predictions, false))
+				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId), predictions, false, actor))
 			.sort((a, b) => b.score - a.score);
 		const replacement = replacements.find(p => p.safe);
 		if (!active.trapped && replacement) {

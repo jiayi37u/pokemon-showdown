@@ -11,6 +11,7 @@
 import type { AIPokemon, AIMove, KnockoutResult, AICache, FieldConditions } from '../types';
 import { calculateDamage, findStrongestMove } from './damage-calc';
 import { isFaster, goesFirst } from './speed';
+import { pokemonCacheId } from './cache';
 
 /**
  * Full knockout analysis for a move against a target
@@ -25,7 +26,8 @@ export function analyzeKnockout(
 	cache?: AICache
 ): KnockoutResult {
 	// Check cache
-	const cacheKey = `ko-${attacker.slot}-${defender.slot}-${move.id}`;
+	const cacheKey = JSON.stringify([pokemonCacheId(attacker), pokemonCacheId(defender),
+		attacker.hp, defender.hp, move, defenderMoves, field]);
 	if (cache?.knockoutCalc.has(cacheKey)) {
 		return cache.knockoutCalc.get(cacheKey)!;
 	}

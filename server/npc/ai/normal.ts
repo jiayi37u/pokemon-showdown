@@ -31,7 +31,7 @@ import {
 } from './cfru/types';
 import { createScoringEngine, ScoringEngine } from './cfru/scoring';
 import {
-	buildBattleState, buildBattleStateWithTracker, buildMovesFromRequest, buildAIMove, buildPokemonFromRequest,
+	buildBattleStateWithTracker, buildAIMove, buildPokemonFromRequest,
 } from './cfru/state-builder';
 import { calculateDamage } from './cfru/util/damage-calc';
 import { goesFirst } from './cfru/util/speed';
@@ -201,7 +201,7 @@ export class NormalAI extends NPCBattleAI {
 	override receiveRequest(request: ChoiceRequest): void {
 		if (request.wait) return;
 		const state = buildBattleStateWithTracker(request, this.battleRef, this.tracker, this.cfruConfig);
-		state.turn = this.battleRef?.turn ?? this.currentTurn + 1;
+		state.turn = this.battleRef?.turn ?? (this.tracker.getTurn() || this.currentTurn + 1);
 		this.receiveRequestWithState(request, state);
 	}
 
@@ -494,7 +494,7 @@ export class NormalAI extends NPCBattleAI {
 	 */
 	private convertToAIMoves(moves: MoveChoice[], active: AnyObject): AIMove[] {
 		// 直接委托给 state-builder 的统一实现；MoveChoice 的字段是 buildAIMove 入参的超集
-		return moves.map(m => buildAIMove(m, m.slot));
+		return moves.map(m => buildAIMove(m, m.slot, this.cfruConfig.formatId));
 	}
 
 	/** Switch evaluation thresholds
@@ -541,9 +541,9 @@ export class NormalAI extends NPCBattleAI {
 		const knowledge = target.moveKnowledge;
 		const responseIds = knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] :
 			getOpponentThreatMoves(target.species, target.moves, this.cfruConfig.formatId);
-		const responses = responseIds.map(id => buildAIMove({ id }, 1));
+		const responses = responseIds.map(id => buildAIMove({ id }, 1, this.cfruConfig.formatId));
 		// No known moves still means an ordinary-priority action, not a free turn.
-		if (!responses.length) responses.push(buildAIMove({ id: 'tackle' }, 1));
+		if (!responses.length) responses.push(buildAIMove({ id: 'tackle' }, 1, this.cfruConfig.formatId));
 		if (!goesFirst(attacker, target, move, responses, state.field, state.self.conditions, state.opponent.conditions)) {
 			return false;
 		}
@@ -590,11 +590,14 @@ export class NormalAI extends NPCBattleAI {
 		const state = this.battleState!;
 		let threat = 0;
 		for (const opponent of opponents) {
+			const knowledge = opponent.moveKnowledge;
+			const moves = knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] :
+				getOpponentThreatMoves(opponent.species, opponent.moves, this.cfruConfig.formatId);
 			const models = opponent.presetModels || [{ pokemon: opponent,
-				moves: getOpponentThreatMoves(opponent.species, opponent.moves, this.cfruConfig.formatId).map(id => ({ id })),
+				moves: moves.map(id => ({ id })),
 			}];
 			for (const model of models) for (const { id: moveId } of model.moves) {
-				const move = buildAIMove({ id: moveId }, 1);
+				const move = buildAIMove({ id: moveId }, 1, this.cfruConfig.formatId);
 				if (move.category === 'Status') continue;
 				const numAliveTargets = state.self.active.filter(p => !p.fainted).length +
 					(move.target === 'allAdjacent' ? opponents.length - 1 : 0);

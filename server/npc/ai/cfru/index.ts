@@ -20,9 +20,4 @@ export type { ScoringContext, NegativeScoringFunction, PositiveScoringFunction }
 export { allNegativeScorers, allPositiveScorers } from './scoring';
 
 // Export state builder
-export { buildBattleState, buildMovesFromRequest } from './state-builder';
-
-// Note: The following modules will be added in later milestones:
-// - Switching (M5): Switch decision system
-// - Advanced (M6-M7): Fighting style, prediction
-// - Doubles (M9): Partner AI
+export { buildBattleStateWithTracker, buildBattleStateFromRequests, buildMovesFromRequest } from './state-builder';

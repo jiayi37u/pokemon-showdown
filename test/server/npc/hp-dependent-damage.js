@@ -6,6 +6,101 @@ const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 const { buildAIMove, buildPokemonFromRequest } = require('../../../dist/server/npc/ai/cfru/state-builder');
 const { calculateDamage, getModifiedBasePower } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { createCache } = require('../../../dist/server/npc/ai/cfru/util/cache');
+const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
+const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
+
+describe('AI item-dependent move types', () => {
+	for (const [id, item, type, format] of [
+		['judgment', 'skyplate', 'Flying', 'gen5pokemmorandombattle'],
+		['multiattack', 'fightingmemory', 'Fighting', 'gen7customgame'],
+		['technoblast', 'dousedrive', 'Water', 'gen5pokemmorandombattle'],
+	]) {
+		it(`scores ${id} with its held-item type and respects item suppression`, () => {
+			for (const suppressed of [false, true]) {
+				const ability = suppressed ? 'Klutz' : 'Synchronize';
+				const battle = new Battle({
+					formatid: format, seed: [1, 2, 3, 4],
+					p1: { name: 'Attacker', team: [{ species: 'Mew', ability, item, moves: [id] }] },
+					p2: { name: 'Target', team: [{ species: 'Tyranitar', ability: 'Unnerve', moves: ['splash'] }] },
+				});
+				try {
+					if (battle.requestState === 'teampreview') battle.makeChoices('team 1', 'team 1');
+					battle.makeChoices('move 1', 'move 1');
+					const attacker = { ...pokemon(), ability, item, types: [type] };
+					const target = { ...pokemon(), types: ['Rock', 'Dark'] };
+					const state = {
+						turn: 1, isDoubles: false, field,
+						self: { active: [attacker], reserve: [], team: [attacker], conditions: {} },
+						opponent: { active: [target], reserve: [], team: [target], conditions: {} },
+					};
+					const engine = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: format }, createAICache(1));
+					const move = buildAIMove({ id }, 1, format);
+					const score = engine.scoreMove(state, attacker, move, target);
+					assert.equal(score.move.type, suppressed ? 'Normal' : type);
+					assert.equal(score.flags.isSuperEffective, battle.log.some(line => line.startsWith('|-supereffective|')));
+					assert.equal(score.breakdown.details.some(d => /STAB bonus/.test(d.reason)), !suppressed);
+					const damage = calculateDamage(attacker, target, move, field);
+					assert.equal(damage.effectiveness > 1, score.flags.isSuperEffective);
+				} finally {
+					battle.destroy();
+				}
+			}
+		});
+	}
+
+	it('Judgment hits Ghosts with a Plate but not a Z-Crystal or suppressed Plate', () => {
+		const move = buildAIMove({ id: 'judgment' }, 1);
+		const target = { ...pokemon(), types: ['Ghost'] };
+		const attacker = { ...pokemon(), item: 'skyplate' };
+		const cache = createCache(1);
+		assert(calculateDamage(attacker, target, move, field, cache).average > 0);
+		attacker.item = 'flyiniumz';
+		assert.equal(calculateDamage(attacker, target, move, field, cache).average, 0);
+		attacker.item = 'skyplate';
+		assert.equal(calculateDamage(attacker, target, move, { ...field, magicroom: true }).average, 0);
+		attacker.volatiles.add('embargo');
+		assert.equal(calculateDamage(attacker, target, move, field).average, 0);
+	});
+});
+
+describe('AI format-specific move damage', () => {
+	for (const format of ['gen5customgame', 'gen5pokemmorandombattle', 'gen7randombattle', 'gen9randombattle']) {
+		it(`uses ${format} Knock Off power with and without an item`, () => {
+			const move = buildAIMove({ id: 'knockoff', basePower: 65 }, 1, format);
+			const oldPower = format.startsWith('gen5');
+			assert.equal(move.basePower, oldPower ? 20 : 65);
+			const attacker = pokemon();
+			const defender = pokemon();
+			for (const item of ['', 'leftovers']) {
+				defender.item = item;
+				assert.equal(getModifiedBasePower(attacker, defender, move, field),
+					oldPower ? 20 : item ? 97 : 65);
+			}
+		});
+	}
+
+	it('Normal does not mistake MMO Knock Off for a reliable KO over Power Whip', () => {
+		const ai = new NormalAI({ write() {} }, { seed: [1, 2, 3, 4] });
+		ai.setBattle({ format: 'gen5pokemmorandombattle' });
+		ai.getTracker().parseMessage('|switch|p1a: Claydol|Claydol, L86|42/100');
+		ai.getTracker().parseMessage('|-enditem|p1a: Claydol|Leftovers|[from] move: Knock Off');
+		let choice;
+		ai.choose = value => { choice = value; };
+		const moves = ['powerwhip', 'knockoff', 'sleeppowder', 'synthesis'];
+		ai.receiveRequest({
+			side: { id: 'p2', pokemon: [{
+				ident: 'p2: Carnivine', details: 'Carnivine, L100', condition: '276/310', active: true,
+				stats: { atk: 257, def: 200, spa: 237, spd: 200, spe: 149 },
+				moves, ability: 'Levitate', item: 'leftovers',
+			}] },
+			active: [{ moves: moves.map(id => ({ id, move: id, pp: 10, maxpp: 10, target: 'normal' })) }],
+		});
+		assert.equal(choice, 'move 1');
+		const knockOff = ai.lastMoveScores.find(s => s.move.id === 'knockoff');
+		assert.equal(knockOff.move.basePower, 20);
+		assert.equal(knockOff.flags.canKO, false);
+	});
+});
 
 const field = { weather: '', terrain: '', trickroom: false };
 function pokemon(hp = 480, maxHp = 480) {

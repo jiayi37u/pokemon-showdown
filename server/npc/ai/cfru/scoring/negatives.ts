@@ -8,7 +8,7 @@
  * @license MIT
  */
 
-import { Dex, toID } from '../../../../../sim/dex';
+import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, NegativeScoringFunction } from './index';
 import { getTypeEffectiveness, airBalloonBlocks } from '../util/type-calc';
 import { calculateDamage } from '../util/damage-calc';
@@ -23,7 +23,7 @@ export const checkPranksterImmunity: NegativeScoringFunction = ctx => {
 	if (ctx.move.category !== 'Status' || toID(ctx.attacker.ability) !== 'prankster' || ctx.isTargetingPartner) return 0;
 	if (!['normal', 'any', 'allAdjacent', 'allAdjacentFoes'].includes(ctx.move.target)) return 0;
 	if (ctx.move.id === 'curse' && !ctx.attacker.types.includes('Ghost')) return 0;
-	const dex = ctx.config.formatId ? Dex.forFormat(ctx.config.formatId) : Dex;
+	const dex = ctx.dex;
 	if (dex.getImmunity('prankster', ctx.target.types)) return 0;
 	ctx.flags.isImmune = true;
 	ctx.flags.hasNoEffect = true;
@@ -804,6 +804,16 @@ export const checkSleepMove: NegativeScoringFunction = (ctx) => {
 		'lovelykiss', 'darkvoid', 'yawn', 'relicsong'];
 
 	if (!sleepMoves.includes(moveId)) return 0;
+
+	if (moveId === 'yawn' && ctx.target.volatiles.has('yawn')) {
+		ctx.adjustments.push({
+			reason: 'Yawn fails: target is already drowsy',
+			amount: -20,
+			category: 'negative',
+		});
+		ctx.flags.hasNoEffect = true;
+		return -20;
+	}
 
 	// Already has status
 	if (ctx.target.status) {
@@ -1936,7 +1946,7 @@ export const checkCounterMirrorCoat: NegativeScoringFunction = (ctx) => {
 	const complete = knowledge.remainingSlots === 0 || (knowledge.slots?.length || 0) >= slots ||
 		!!knowledge.movePools?.length && knowledge.movePools.every(pool => pool.length >= slots);
 	const canUseCategory = (category: string) => !complete || possibleMoves.some(id => {
-		const move = Dex.moves.get(id);
+		const move = ctx.dex.moves.get(id);
 		return move.exists && move.category === category;
 	});
 

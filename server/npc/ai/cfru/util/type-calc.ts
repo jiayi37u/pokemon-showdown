@@ -10,6 +10,21 @@
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, AICache, FieldConditions } from '../types';
 
+/** Resolve item-dependent move types from the AI's current item knowledge. */
+export function resolveItemMoveType(attacker: AIPokemon, move: AIMove, field: FieldConditions): AIMove {
+	const moveId = toID(move.id);
+	if (!['judgment', 'multiattack', 'technoblast'].includes(moveId)) return move;
+	let type = 'Normal';
+	if (attacker.item && !attacker.itemLost && toID(attacker.ability) !== 'klutz' &&
+		!field.magicroom && !attacker.volatiles.has('embargo')) {
+		const item = Dex.items.get(attacker.item);
+		const itemType = moveId === 'judgment' ? (!item.zMove && item.onPlate) :
+			moveId === 'multiattack' ? item.onMemory : item.onDrive;
+		if (typeof itemType === 'string') type = itemType;
+	}
+	return move.type === type ? move : { ...move, type };
+}
+
 /** Item-based Ground immunity, including public grounding and item suppression. */
 export function airBalloonBlocks(defender: AIPokemon, move: AIMove, field: FieldConditions): boolean {
 	return move.type === 'Ground' && move.category !== 'Status' && toID(move.id) !== 'thousandarrows' &&

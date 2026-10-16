@@ -102,6 +102,7 @@ function runNegativesScoringTests() {
 	function createCounterContext(overrides = {}) {
 		return {
 			config: { formatId: 'gen5customgame' },
+			dex: require('../../../dist/sim').Dex.forFormat('gen5customgame'),
 			state: {
 				isDoubles: false,
 				field: { weather: '', terrain: '' },

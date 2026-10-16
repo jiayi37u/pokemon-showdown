@@ -16,9 +16,6 @@ import type { Move } from '../../../../sim/dex-moves';
 
 /** AI configuration options for CFRU-based AI */
 export interface CFRUAIConfig {
-	/** Whether to use full opponent info (default: false - only revealed info) */
-	useFullInfo: boolean;
-
 	/** Whether to use move prediction (default: true for Hard+) */
 	usePrediction: boolean;
 
@@ -34,7 +31,6 @@ export interface CFRUAIConfig {
 
 /** Default AI config */
 export const DEFAULT_AI_CONFIG: CFRUAIConfig = {
-	useFullInfo: false,
 	usePrediction: false,
 	useFightingStyle: false,
 	isDoubles: false,
@@ -205,8 +201,8 @@ export interface SideConditions {
 	/** Tailwind (remaining turns) */
 	tailwind: number;
 
-	/** Wish (remaining turns, 0 = no wish) */
-	wish: number;
+	/** Wish remaining turns by field slot; follows the position across switches. */
+	wishes: Record<number, number>;
 
 	/** Future Sight / Doom Desire (remaining turns) */
 	futuremove: number;
@@ -268,7 +264,7 @@ export interface BattleState {
 		remaining?: number;
 		/** Active Pokemon */
 		active: AIPokemon[];
-		/** Reserve Pokemon (only team preview info if not useFullInfo) */
+		/** Previously observed opposing party members. */
 		reserve: AIPokemon[];
 		/** All Pokemon */
 		team: AIPokemon[];

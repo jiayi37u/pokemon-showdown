@@ -2,23 +2,24 @@
  * CFRU AI - Battle State Builder
  * Pokemon Showdown - http://pokemonshowdown.com/
  *
- * Utility to build BattleState from Pokemon Showdown battle data.
- * Handles both revealed-only and full information modes.
+ * Builds BattleState from authorized requests, public protocol facts and separate preset estimates.
  *
  * @license MIT
  */
 
 import { Dex, toID } from '../../../../sim/dex';
-import type {
-	BattleState,
-	AIPokemon,
-	AIMove,
-	SideConditions,
-	FieldConditions,
-	CFRUAIConfig,
+import {
+	DEFAULT_AI_CONFIG,
+	type BattleState,
+	type AIPokemon,
+	type AIMove,
+	type SideConditions,
+	type FieldConditions,
+	type CFRUAIConfig,
 } from './types';
-import { DEFAULT_AI_CONFIG, resolveLevel, defaultBoosts } from './types';
-import { normalizeWeather, type BattleTracker, type TrackedPokemon } from './util/battle-tracker';
+import {
+	normalizeWeather, type BattleTracker, type TrackedPokemon, type TrackedTransformation,
+} from './util/battle-tracker';
 import {
 	parseCondition,
 	parseDetails,
@@ -29,132 +30,8 @@ import { getOpponentPreset, getOpponentMoveKnowledge, computeStatsFromPreset } f
 import { applyRandomBattlePresets } from './util/random-presets';
 
 /**
- * Build BattleState from Pokemon Showdown request and battle data
- */
-export function buildBattleState(
-	request: AnyObject,
-	battle: AnyObject | null,
-	config: CFRUAIConfig = DEFAULT_AI_CONFIG
-): BattleState {
-	const side = request.side;
-	const isDoubles = (request.active || request.forceSwitch || []).length > 1 || config.isDoubles;
-	const turn = battle?.turn ?? 1;
-
-	// Build self (full information)
-	// Pass battle object to get boosts and volatiles from battle.sides[0].active
-	const selfActive = buildSelfActive(request, battle, 0, config.formatId);
-	const selfReserve = buildSelfReserve(request, selfActive, config.formatId);
-	const selfConditions = buildSideConditions(battle?.sides?.[0]?.sideConditions);
-
-	// Build opponent (revealed or full based on config)
-	const opponentSide = battle?.sides?.[1];
-	const opponentActive = config.useFullInfo
-		? buildOpponentActiveFull(opponentSide)
-		: buildOpponentActiveRevealed(battle);
-	const opponentReserve = config.useFullInfo
-		? buildOpponentReserveFull(opponentSide, opponentActive)
-		: buildOpponentReserveRevealed(battle, opponentActive);
-	const opponentConditions = buildSideConditions(opponentSide?.sideConditions);
-
-	// Build field conditions
-	const field = buildFieldConditions(battle);
-
-	return {
-		turn,
-		isDoubles,
-		self: {
-			active: selfActive,
-			reserve: selfReserve,
-			team: [...selfActive, ...selfReserve],
-			conditions: selfConditions,
-		},
-		opponent: {
-			active: opponentActive,
-			reserve: opponentReserve,
-			team: [...opponentActive, ...opponentReserve],
-			conditions: opponentConditions,
-		},
-		field,
-	};
-}
-
-/**
- * Build self active Pokemon from request
- * Takes battle object to get boosts and volatiles from battle.sides[ourSideIndex].active
- *
- * @param request - The battle request object
- * @param battle - The battle object (may be null)
- * @param ourSideIndex - The index of our side in battle.sides (0 for p1, 1 for p2)
- */
-function buildSelfActive(
-	request: AnyObject, battle: AnyObject | null, ourSideIndex = 0, formatId = ''
-): AIPokemon[] {
-	const active: AIPokemon[] = [];
-	const pokemon = request.side.pokemon;
-	const activeData = request.active || [];
-	// CFRU AI Fix: Use correct side index based on which player we are
-	const battleActive = battle?.sides?.[ourSideIndex]?.active || [];
-
-	for (let i = 0; i < activeData.length; i++) {
-		const mon = pokemon[i];
-		if (!mon || mon.condition.endsWith(' fnt')) continue;
-
-		const aiPokemon = buildPokemonFromRequest(mon, i + 1, true, formatId);
-
-		// Get boosts and volatiles from battle object if available
-		// CFRU AI Fix: This is critical for setup move scoring to work correctly
-		const battleMon = battleActive[i];
-		if (battleMon) {
-			// Copy boosts from battle data
-			if (battleMon.boosts) {
-				aiPokemon.boosts = {
-					atk: battleMon.boosts.atk || 0,
-					def: battleMon.boosts.def || 0,
-					spa: battleMon.boosts.spa || 0,
-					spd: battleMon.boosts.spd || 0,
-					spe: battleMon.boosts.spe || 0,
-					accuracy: battleMon.boosts.accuracy || 0,
-					evasion: battleMon.boosts.evasion || 0,
-				};
-			}
-
-			// Copy volatiles from battle data
-			if (battleMon.volatiles) {
-				aiPokemon.volatiles = new Set(Object.keys(battleMon.volatiles));
-			}
-		}
-
-		active.push(aiPokemon);
-	}
-
-	return active;
-}
-
-/**
- * Build self reserve Pokemon from request
- */
-function buildSelfReserve(request: AnyObject, active: AIPokemon[], formatId = ''): AIPokemon[] {
-	const reserve: AIPokemon[] = [];
-	const pokemon = request.side.pokemon;
-	const activeSlots = new Set(active.map(p => p.slot));
-
-	for (let i = 0; i < pokemon.length; i++) {
-		const slot = i + 1;
-		if (activeSlots.has(slot)) continue;
-
-		const mon = pokemon[i];
-		if (!mon) continue;
-
-		reserve.push(buildPokemonFromRequest(mon, slot, false, formatId));
-	}
-
-	return reserve;
-}
-
-/**
  * Build Pokemon from request data (self)
- * Note: This function builds basic Pokemon info from request.
- * For active Pokemon with boosts, use buildSelfActiveWithBoosts which requires battle object.
+ * Active effects and estimates are applied by the shared state assembly path.
  */
 export function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: boolean, formatId = ''): AIPokemon {
 	const { currentHp, maxHp, hpPercent, status, fainted } = parseCondition(mon.condition);
@@ -195,322 +72,6 @@ export function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: 
 }
 
 /**
- * Build opponent active Pokemon from revealed information
- */
-function buildOpponentActiveRevealed(battle: AnyObject | null): AIPokemon[] {
-	if (!battle?.sides?.[1]) return [];
-
-	const active: AIPokemon[] = [];
-	const opponentSide = battle.sides[1];
-
-	for (let i = 0; i < opponentSide.active.length; i++) {
-		const mon = opponentSide.active[i];
-		if (!mon || mon.fainted) continue;
-
-		active.push(buildOpponentPokemonRevealed(mon, i + 1, true));
-	}
-
-	return active;
-}
-
-/**
- * Build opponent reserve from revealed information
- */
-function buildOpponentReserveRevealed(battle: AnyObject | null, active: AIPokemon[]): AIPokemon[] {
-	if (!battle?.sides?.[1]) return [];
-
-	const reserve: AIPokemon[] = [];
-	const opponentSide = battle.sides[1];
-	const activeSlots = new Set(active.map(p => p.slot));
-
-	// Can only see team preview info for reserves
-	for (let i = 0; i < opponentSide.pokemon.length; i++) {
-		const slot = i + 1;
-		if (activeSlots.has(slot)) continue;
-
-		const mon = opponentSide.pokemon[i];
-		if (!mon) continue;
-
-		// Limited information for reserves
-		reserve.push({
-			slot,
-			species: mon.speciesForme || mon.species || 'Unknown',
-			hp: 0, // Unknown
-			maxHp: 0,
-			hpPercent: mon.fainted ? 0 : 100, // Assume full if not fainted
-			status: '',
-			sleepTurns: 0,
-			toxicCounter: 0,
-			types: Dex.species.get(mon.speciesForme || mon.species).types || [],
-			ability: '', // Unknown
-			item: '', // Unknown
-			itemLost: false, // Unknown, assume has item
-			moves: [], // Unknown
-			lastMove: '',
-			abilityStatMod: { stat: null, multiplier: 1 },
-			baseStats: Dex.species.get(mon.speciesForme || mon.species).baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 },
-			boosts: defaultBoosts(),
-			volatiles: new Set(),
-			fainted: mon.fainted || false,
-			active: false,
-			level: mon.level || 100,
-			gender: mon.gender || 'N',
-		});
-	}
-
-	return reserve;
-}
-
-/**
- * Build opponent Pokemon from revealed battle data
- */
-function buildOpponentPokemonRevealed(mon: AnyObject, slot: number, isActive: boolean): AIPokemon {
-	const speciesData = Dex.species.get(mon.speciesForme || mon.species);
-
-	// HP is shown as percentage
-	const hpPercent = mon.hp !== undefined ? (mon.hp / mon.maxhp) * 100 : 100;
-
-	// Get revealed moves
-	const moves: string[] = [];
-	if (mon.moveSlots) {
-		for (const moveSlot of mon.moveSlots) {
-			if (moveSlot.revealed || moveSlot.used) {
-				moves.push(moveSlot.id);
-			}
-		}
-	}
-
-	// Get revealed ability
-	let ability = '';
-	if (mon.ability) {
-		ability = mon.ability;
-	} else if (mon.baseAbility && mon.abilityRevealed) {
-		ability = mon.baseAbility;
-	}
-
-	// Get revealed item
-	let item = '';
-	if (mon.item && mon.itemRevealed) {
-		item = mon.item;
-	}
-
-	// Get boosts
-	const boosts = { ...defaultBoosts(), ...mon.boosts };
-
-	// Get volatiles
-	const volatiles = new Set<string>();
-	if (mon.volatiles) {
-		for (const v in mon.volatiles) {
-			volatiles.add(v);
-		}
-	}
-
-	return {
-		slot,
-		species: mon.speciesForme || mon.species || 'Unknown',
-		hp: Math.floor(mon.hp || 0),
-		maxHp: mon.maxhp || 0,
-		hpPercent,
-		status: mon.status || '',
-		sleepTurns: mon.statusData?.sleepTurns || 0,
-		toxicCounter: mon.statusData?.toxicTurns || 0,
-		types: speciesData.types || [],
-		ability,
-		item,
-		itemLost: !!mon.itemRevealed && !mon.item,
-		itemKnown: !!mon.itemRevealed,
-		moves,
-		lastMove: toID(mon.lastMove),
-		baseStats: speciesData.baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 },
-		boosts,
-		abilityStatMod: { stat: null, multiplier: 1 },
-		volatiles,
-		fainted: mon.fainted || false,
-		active: isActive,
-		level: mon.level || 100,
-		gender: mon.gender || 'N',
-	};
-}
-
-/**
- * Build opponent active Pokemon with full information
- */
-function buildOpponentActiveFull(opponentSide: AnyObject | undefined): AIPokemon[] {
-	if (!opponentSide) return [];
-
-	const active: AIPokemon[] = [];
-
-	for (let i = 0; i < opponentSide.active.length; i++) {
-		const mon = opponentSide.active[i];
-		if (!mon || mon.fainted) continue;
-
-		active.push(buildOpponentPokemonFull(mon, i + 1, true));
-	}
-
-	return active;
-}
-
-/**
- * Build opponent reserve with full information
- */
-function buildOpponentReserveFull(opponentSide: AnyObject | undefined, active: AIPokemon[]): AIPokemon[] {
-	if (!opponentSide) return [];
-
-	const reserve: AIPokemon[] = [];
-	const activeSlots = new Set(active.map(p => p.slot));
-
-	for (let i = 0; i < opponentSide.pokemon.length; i++) {
-		const slot = i + 1;
-		if (activeSlots.has(slot)) continue;
-
-		const mon = opponentSide.pokemon[i];
-		if (!mon) continue;
-
-		reserve.push(buildOpponentPokemonFull(mon, slot, false));
-	}
-
-	return reserve;
-}
-
-/**
- * Build opponent Pokemon with full information
- */
-function buildOpponentPokemonFull(mon: AnyObject, slot: number, isActive: boolean): AIPokemon {
-	const speciesData = Dex.species.get(mon.speciesForme || mon.species);
-	const hpPercent = mon.maxhp > 0 ? (mon.hp / mon.maxhp) * 100 : 0;
-
-	// Get all moves
-	const moves: string[] = [];
-	if (mon.moveSlots) {
-		for (const moveSlot of mon.moveSlots) {
-			moves.push(moveSlot.id);
-		}
-	}
-
-	// Get boosts
-	const boosts = { ...defaultBoosts(), ...mon.boosts };
-
-	// Get volatiles
-	const volatiles = new Set<string>();
-	if (mon.volatiles) {
-		for (const v in mon.volatiles) {
-			volatiles.add(v);
-		}
-	}
-
-	return {
-		slot,
-		species: mon.speciesForme || mon.species || 'Unknown',
-		hp: mon.hp || 0,
-		maxHp: mon.maxhp || 0,
-		hpPercent,
-		status: mon.status || '',
-		sleepTurns: mon.statusData?.sleepTurns || 0,
-		toxicCounter: mon.statusData?.toxicTurns || 0,
-		types: speciesData.types || [],
-		ability: mon.ability || mon.baseAbility || '',
-		item: mon.item || '',
-		itemLost: !mon.item,
-		itemKnown: true,
-		moves,
-		lastMove: toID(mon.lastMove),
-		baseStats: speciesData.baseStats || { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 },
-		boosts,
-		abilityStatMod: { stat: null, multiplier: 1 },
-		volatiles,
-		fainted: mon.fainted || false,
-		active: isActive,
-		level: mon.level || 100,
-		gender: mon.gender || 'N',
-	};
-}
-
-/**
- * Build side conditions from battle data
- */
-function buildSideConditions(sideConditions: AnyObject | undefined): SideConditions {
-	if (!sideConditions) {
-		return {
-			stealthrock: false,
-			spikes: 0,
-			toxicspikes: 0,
-			stickyweb: false,
-			lightscreen: 0,
-			reflect: 0,
-			auroraveil: 0,
-			tailwind: 0,
-			wish: 0,
-			futuremove: 0,
-		};
-	}
-
-	return {
-		stealthrock: !!sideConditions.stealthrock,
-		spikes: sideConditions.spikes?.layers || 0,
-		toxicspikes: sideConditions.toxicspikes?.layers || 0,
-		stickyweb: !!sideConditions.stickyweb,
-		lightscreen: sideConditions.lightscreen?.duration || 0,
-		reflect: sideConditions.reflect?.duration || 0,
-		auroraveil: sideConditions.auroraveil?.duration || 0,
-		tailwind: sideConditions.tailwind?.duration || 0,
-		wish: sideConditions.wish?.duration || 0,
-		futuremove: sideConditions.futuremove?.duration || 0,
-	};
-}
-
-/**
- * Build field conditions from battle data
- */
-function buildFieldConditions(battle: AnyObject | null): FieldConditions {
-	if (!battle) {
-		return {
-			weather: '',
-			weatherTurns: -1,
-			terrain: '',
-			terrainTurns: 0,
-			trickroom: false,
-			trickroomTurns: 0,
-			gravity: false,
-			magicroom: false,
-			wonderroom: false,
-		};
-	}
-
-	const field = battle.field || {};
-
-	// Parse weather
-	let weather = '';
-	let weatherTurns = -1;
-	if (field.weather) {
-		weather = normalizeWeather(field.weather);
-		weatherTurns = field.weatherData?.duration || 0;
-	}
-
-	// Parse terrain
-	let terrain = '';
-	let terrainTurns = 0;
-	if (field.terrain) {
-		terrain = field.terrain;
-		terrainTurns = field.terrainData?.duration || 0;
-	}
-
-	// Parse pseudo weather
-	const pseudoWeather = field.pseudoWeather || {};
-
-	return {
-		weather,
-		weatherTurns,
-		terrain,
-		terrainTurns,
-		trickroom: !!pseudoWeather.trickroom,
-		trickroomTurns: pseudoWeather.trickroom?.duration || 0,
-		gravity: !!pseudoWeather.gravity,
-		magicroom: !!pseudoWeather.magicroom,
-		wonderroom: !!pseudoWeather.wonderroom,
-	};
-}
-
-/**
  * 把单条 PS move 数据转成 AIMove。
  *
  * 入参 `moveData` 容忍三种来源：
@@ -522,10 +83,13 @@ function buildFieldConditions(battle: AnyObject | null): FieldConditions {
  *
  * Return/Frustration 这类 PS 名字带 BP 的招（例如 "Return 102"），Dex 查不到，硬编码。
  */
-export function buildAIMove(moveData: AnyObject, slot: number): AIMove {
+export function buildAIMove(moveData: AnyObject, slot: number, formatId = ''): AIMove {
 	const moveName = moveData.move || moveData.id || '';
 	const moveId = toID(moveName);
-	const dexMove = Dex.moves.get(moveName);
+	const dexMove = (formatId ? Dex.forFormat(formatId) : Dex).moves.get(moveName);
+	// MoveChoice may contain metadata filled from the global Dex upstream.
+	// When the format is known, its move data is authoritative.
+	const metadata = formatId && dexMove.exists ? dexMove : moveData;
 	const isReturn = moveId.startsWith('return') && moveId !== 'returntoearth';
 	const isFrustration = moveId.startsWith('frustration');
 
@@ -533,10 +97,10 @@ export function buildAIMove(moveData: AnyObject, slot: number): AIMove {
 		id: moveId,
 		name: isReturn ? 'Return' : (isFrustration ? 'Frustration' : (dexMove.name || moveName)),
 		slot,
-		type: isReturn || isFrustration ? 'Normal' : (moveData.type || dexMove.type || '???'),
+		type: isReturn || isFrustration ? 'Normal' : (metadata.type || dexMove.type || '???'),
 		category: isReturn || isFrustration ? 'Physical' :
-			((moveData.category || dexMove.category || 'Status') as 'Physical' | 'Special' | 'Status'),
-		basePower: isReturn ? 102 : (isFrustration ? 1 : (moveData.basePower || dexMove.basePower || 0)),
+		((metadata.category || dexMove.category || 'Status') as 'Physical' | 'Special' | 'Status'),
+		basePower: isReturn ? 102 : (isFrustration ? 1 : (metadata.basePower ?? dexMove.basePower ?? 0)),
 		accuracy: isReturn || isFrustration ? 100 : dexMove.accuracy,
 		pp: moveData.pp ?? dexMove.pp ?? 10,
 		maxPp: moveData.maxpp ?? dexMove.pp ?? 10,
@@ -557,136 +121,73 @@ export function buildAIMove(moveData: AnyObject, slot: number): AIMove {
 /**
  * Build AIMove array from request move data
  */
-export function buildMovesFromRequest(request: AnyObject, activeIndex: number): AIMove[] {
+export function buildMovesFromRequest(request: AnyObject, activeIndex: number, formatId = ''): AIMove[] {
 	const active = request.active?.[activeIndex];
 	if (!active?.moves) return [];
-	return active.moves.map((moveData: AnyObject, i: number) => buildAIMove(moveData, i + 1));
+	return active.moves.map((moveData: AnyObject, i: number) => buildAIMove(moveData, i + 1, formatId));
 }
 
-/**
- * Build BattleState using BattleTracker for opponent info
- * This is used in server environment where battle.sides is not accessible
- */
-export function buildBattleStateWithTracker(
-	request: AnyObject,
-	battle: AnyObject | null,
-	tracker: BattleTracker,
-	config: CFRUAIConfig = DEFAULT_AI_CONFIG
+/** A request belongs to one player; field slots and party slots are separate in Multi. */
+export interface AIPlayerRequest {
+	side: string;
+	request: AnyObject;
+}
+
+/** The sole state assembly path for singles, doubles and Multi. */
+export function buildBattleStateFromRequests(
+	requests: AIPlayerRequest[], tracker: BattleTracker, config: CFRUAIConfig = DEFAULT_AI_CONFIG,
+	turn = tracker.getTurn()
 ): BattleState {
-	const isDoubles = (request.active || request.forceSwitch || []).length > 1 || config.isDoubles;
-	const turn = battle?.turn ?? 1;
-
-	// Build self (full information from request)
-	// CFRU AI Fix: battle.sides is not accessible in server environment
-	// Use tracker.getOurActiveBoosts() to get boosts from stream messages
-	const selfActive = buildSelfActiveWithTracker(request, tracker, isDoubles, config.formatId);
-	const selfReserve = buildSelfReserve(request, selfActive, config.formatId);
-	const selfConditions = { ...tracker.getOurSideConditions(), wish: tracker.getWish(), futuremove: 0 };
-
-	// Build opponent from tracker
-	const formatId = config.formatId || '';
-	const opponentActive = buildOpponentActiveFromTracker(tracker, isDoubles, formatId);
+	const formatId = config.formatId;
+	const isDoubles = config.isDoubles || requests.length > 1 || requests.some(({ request }) =>
+		(request.active || request.forceSwitch || []).length > 1);
+	const entries: { mon: AnyObject, pokemon: AIPokemon, position: string, active: boolean }[] = requests.flatMap(
+		({ side, request }) => (request.side?.pokemon || []).map((mon: AnyObject, i: number) => {
+			const active = mon.active ?? i < (request.active || request.forceSwitch || []).length;
+			const position = tracker.getPosition(side, i);
+			const pokemon = buildPokemonFromRequest(mon, active ? tracker.getFieldSlot(position) : i + 1, active, formatId);
+			// Register only request facts. Transform may have occurred before the first request.
+			if (active) tracker.rememberOurPokemon(position, mon.ident, pokemon);
+			return { mon, pokemon, position, active };
+		}));
+	const selfActive: AIPokemon[] = [];
+	const selfReserve: AIPokemon[] = [];
+	for (const { mon, pokemon, position, active } of entries) {
+		if (!active) {
+			selfReserve.push(pokemon);
+		} else if (!pokemon.fainted) {
+			pokemon.boosts = tracker.getOurActiveBoosts(position);
+			pokemon.abilityStatMod = tracker.getOurAbilityStatMod(position);
+			pokemon.lastMove = tracker.getOurLastMove(position);
+			pokemon.volatiles = tracker.getVolatiles(position);
+			pokemon.activeMoveActions = tracker.hasActed(position) ? 1 : 0;
+			const transformed = applyTransformation(pokemon, tracker.getTransformation(position), formatId, true);
+			// Newer requests expose the current ability, including changes after Transform.
+			if (mon.ability !== undefined) transformed.ability = mon.ability;
+			transformed.sleepTurns = transformed.status === 'slp' ? tracker.getSleepTurns(position, transformed.ability) : 0;
+			selfActive.push(transformed);
+		}
+	}
+	const opponentActive = tracker.getActiveOpponents().map(({ position, pokemon }) =>
+		trackedPokemonToAIPokemon(pokemon, tracker.getFieldSlot(position), true, formatId,
+			tracker.getSleepTurns(position, pokemon.ability)));
 	const opponentReserve = buildOpponentReserveFromTracker(tracker, opponentActive, formatId);
-	const opponentConditions = buildOpponentConditionsFromTracker(tracker);
-
-	// Build field conditions from tracker
-	const field = buildFieldConditionsFromTracker(tracker, battle);
-
 	return {
-		turn,
-		isDoubles,
-		self: {
-			active: selfActive,
-			reserve: selfReserve,
-			team: [...selfActive, ...selfReserve],
-			conditions: selfConditions,
-		},
-		opponent: {
-			remaining: tracker.getRemainingOpponents(),
-			active: opponentActive,
-			reserve: opponentReserve,
-			team: [...opponentActive, ...opponentReserve],
-			conditions: opponentConditions,
-		},
-		field,
+		turn, isDoubles,
+		self: { active: selfActive, reserve: selfReserve, team: [...selfActive, ...selfReserve],
+			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(), futuremove: 0 } },
+		opponent: { remaining: tracker.getRemainingOpponents(), active: opponentActive, reserve: opponentReserve,
+			team: [...opponentActive, ...opponentReserve], conditions: buildOpponentConditionsFromTracker(tracker) },
+		field: buildFieldConditionsFromTracker(tracker),
 	};
 }
 
-/**
- * Build self active Pokemon from request, using tracker for boosts
- * This is used in server environment where battle.sides is not accessible
- */
-function buildSelfActiveWithTracker(
-	request: AnyObject, tracker: BattleTracker, isDoubles: boolean, formatId = ''
-): AIPokemon[] {
-	const active: AIPokemon[] = [];
-	const pokemon = request.side.pokemon;
-	const activeData = request.active || [];
-
-	for (let i = 0; i < activeData.length; i++) {
-		const mon = pokemon[i];
-		if (!mon || mon.condition.endsWith(' fnt')) continue;
-
-		const aiPokemon = buildPokemonFromRequest(mon, i + 1, true, formatId);
-
-		// CFRU AI Fix: Get boosts from tracker instead of battle.sides
-		// Tracker listens to stream messages and tracks our boosts
-		const slot = isDoubles ? (i === 0 ? 'a' : 'b') : 'a';
-		const trackerBoosts = tracker.getOurActiveBoosts(slot);
-		aiPokemon.boosts = {
-			atk: trackerBoosts.atk,
-			def: trackerBoosts.def,
-			spa: trackerBoosts.spa,
-			spd: trackerBoosts.spd,
-			spe: trackerBoosts.spe,
-			accuracy: trackerBoosts.accuracy,
-			evasion: trackerBoosts.evasion,
-		};
-
-		// Get ability stat modifier (Quark Drive, Protosynthesis, etc.)
-		const abilityStatMod = tracker.getOurAbilityStatMod(slot);
-		aiPokemon.abilityStatMod = {
-			stat: abilityStatMod.stat,
-			multiplier: abilityStatMod.multiplier,
-		};
-
-		// Get lastMove for consecutive Protect detection
-		// CFRU: gLastResultingMoves[bankAtk]
-		aiPokemon.lastMove = tracker.getOurLastMove(slot);
-		aiPokemon.sleepTurns = aiPokemon.status === 'slp' ? tracker.getSleepTurns(slot, aiPokemon.ability) : 0;
-		aiPokemon.volatiles = tracker.getVolatiles(slot);
-		aiPokemon.activeMoveActions = tracker.hasActed(slot) ? 1 : 0;
-
-		active.push(aiPokemon);
-	}
-
-	return active;
-}
-
-/**
- * Build opponent active Pokemon from tracker
- */
-function buildOpponentActiveFromTracker(tracker: BattleTracker, isDoubles: boolean, formatId: string = ''): AIPokemon[] {
-	const active: AIPokemon[] = [];
-
-	if (isDoubles) {
-		const opponents = tracker.getActiveOpponents();
-		for (const { position, pokemon } of opponents) {
-			// Extract slot from position: p1a -> 1, p1b -> 2
-			const slotChar = position.charAt(position.length - 1); // 'a' or 'b'
-			const slot = slotChar === 'a' ? 1 : 2;
-			active.push(trackedPokemonToAIPokemon(pokemon, slot, true, formatId, tracker.getSleepTurns(position, pokemon.ability)));
-		}
-	} else {
-		const opponent = tracker.getActiveOpponent();
-		if (opponent) {
-			active.push(trackedPokemonToAIPokemon(
-				opponent, 1, true, formatId, tracker.getSleepTurns(opponent.position, opponent.ability)
-			));
-		}
-	}
-
-	return active;
+/** Single-controller adapter; the battle reference supplies only the public turn number. */
+export function buildBattleStateWithTracker(
+	request: AnyObject, battle: AnyObject | null, tracker: BattleTracker, config: CFRUAIConfig = DEFAULT_AI_CONFIG
+): BattleState {
+	return buildBattleStateFromRequests([{ side: request.side?.id || tracker.getOurSide(), request }],
+		tracker, config, battle?.turn ?? tracker.getTurn());
 }
 
 /**
@@ -696,7 +197,7 @@ function buildOpponentReserveFromTracker(tracker: BattleTracker, active: AIPokem
 	const reserve: AIPokemon[] = [];
 	const team = tracker.getOpponentTeam();
 
-	let slot = active.length + 1;
+	let slot = Math.max(0, ...active.map(p => p.slot)) + 1;
 	for (const mon of team) {
 		if (mon.active) continue;
 		if (mon.hpPercent <= 0) continue; // Skip fainted
@@ -786,21 +287,45 @@ export function trackedPokemonToAIPokemon(
 	pokemon.originalItem = tracked.originalItem || '';
 	pokemon.abilityChanged = tracked.abilityChanged;
 	pokemon.moveKnowledge = getOpponentMoveKnowledge(tracked.species, tracked.knownMoves, formatId);
-	return applyRandomBattlePresets(pokemon, formatId);
+	return applyTransformation(applyRandomBattlePresets(pokemon, formatId), tracked.transformation, formatId);
+}
+
+/** Transform copies the target's non-HP stats, types, moves and ability, not its item or level. */
+function applyTransformation(
+	pokemon: AIPokemon, transformation: TrackedTransformation | undefined, formatId = '', own = false
+): AIPokemon {
+	if (!transformation) return pokemon;
+	const source = transformation.target ? trackedPokemonToAIPokemon(transformation.target, 1, true, formatId) :
+		transformation.pokemon;
+	if (!source) return pokemon;
+	const dex = formatId ? Dex.forFormat(formatId) : Dex;
+	const revealedMoves = [...new Set([...source.moves, ...transformation.knownMoves].map(toID))];
+	const knowledge = transformation.target ? (source as AIPokemon).moveKnowledge : undefined;
+	return {
+		...pokemon,
+		species: source.species,
+		volatiles: new Set([...pokemon.volatiles, 'transform']),
+		types: [...source.types],
+		baseStats: { ...source.baseStats, hp: pokemon.baseStats.hp },
+		ability: dex.gen <= 2 ? pokemon.ability : own ? source.ability || pokemon.ability : pokemon.ability || source.ability,
+		abilityChanged: dex.gen > 2 || pokemon.abilityChanged,
+		moves: own ? pokemon.moves : revealedMoves,
+		moveKnowledge: own ? undefined : {
+			revealedMoves,
+			presetCandidates: (knowledge?.presetCandidates || []).filter(id => !revealedMoves.includes(toID(id))),
+			remainingSlots: Math.max(0, 4 - revealedMoves.length),
+			movePools: knowledge?.movePools?.map(pool => [...pool]),
+		},
+		presetModels: undefined,
+	};
 }
 
 /**
- * Build field conditions combining tracker and battle data
+ * Build canonical field conditions from public protocol facts.
  */
-function buildFieldConditionsFromTracker(tracker: BattleTracker, battle: AnyObject | null): FieldConditions {
+function buildFieldConditionsFromTracker(tracker: BattleTracker): FieldConditions {
 	const trackerField = tracker.getFieldConditions();
 
-	// If we have battle data, use it (more accurate)
-	if (battle?.field) {
-		return buildFieldConditions(battle);
-	}
-
-	// Otherwise use tracker data
 	return {
 		weather: normalizeWeather(trackerField.weather || ''),
 		weatherTurns: -1, // Not tracked
@@ -808,9 +333,9 @@ function buildFieldConditionsFromTracker(tracker: BattleTracker, battle: AnyObje
 		terrainTurns: 0, // Not tracked
 		trickroom: trackerField.trickRoom || false,
 		trickroomTurns: 0, // Not tracked
-		gravity: false, // Not tracked
-		magicroom: false, // Not tracked
-		wonderroom: false, // Not tracked
+		gravity: trackerField.gravity,
+		magicroom: trackerField.magicRoom,
+		wonderroom: trackerField.wonderRoom,
 	};
 }
 
@@ -829,7 +354,7 @@ function buildOpponentConditionsFromTracker(tracker: BattleTracker): SideConditi
 		reflect: conditions.reflect,
 		auroraveil: conditions.auroraveil,
 		tailwind: conditions.tailwind,
-		wish: 0, // Not tracked
+		wishes: tracker.getWishes(false),
 		futuremove: 0, // Not tracked
 	};
 }

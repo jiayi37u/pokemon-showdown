@@ -8,7 +8,7 @@
  * @license MIT
  */
 
-import { Dex, toID } from '../../../../../sim/dex';
+import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, PositiveScoringFunction } from './index';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
 import { isFaster, goesFirst } from '../util/speed';
@@ -23,7 +23,7 @@ function targetLacksRecovery(ctx: ScoringContext): boolean {
 	const moves = [...ctx.target.moves, ...knowledge.revealedMoves,
 		...knowledge.presetCandidates.filter(id => canHaveOpponentMoves(knowledge, [id]))];
 	if (moves.some(id => {
-		const move = Dex.moves.get(id);
+		const move = ctx.dex.moves.get(id);
 		return (move.heal && ['self', 'allies'].includes(move.target)) ||
 			['wish', 'rest', 'strengthsap', 'junglehealing', 'lunarblessing'].includes(move.id);
 	})) return false;
@@ -229,7 +229,7 @@ export const rewardSleepMove: PositiveScoringFunction = (ctx) => {
 
 	// Bonus if target is a setup threat
 	const targetHasSetup = ctx.target.moves.some(m => {
-		const dexMove = Dex.moves.get(m);
+		const dexMove = ctx.dex.moves.get(m);
 		return dexMove.boosts || ['swordsdance', 'dragondance', 'nastyplot', 'calmmind',
 			'quiverdance', 'shellsmash', 'bulkup'].includes(toID(m));
 	});
@@ -486,7 +486,7 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	if (atkBoostMoves.includes(moveId)) {
 		// Check if we have physical moves (CFRU: RealPhysicalMoveInMoveset)
 		const hasPhysicalMove = ctx.attacker.moves.some(m => {
-			const dexMove = Dex.moves.get(m);
+			const dexMove = ctx.dex.moves.get(m);
 			return dexMove.category === 'Physical' && dexMove.basePower > 0;
 		});
 
@@ -535,7 +535,7 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	// Special Attack boost moves
 	if (spaBoostMoves.includes(moveId)) {
 		const hasSpecialMove = ctx.attacker.moves.some(m => {
-			const dexMove = Dex.moves.get(m);
+			const dexMove = ctx.dex.moves.get(m);
 			return dexMove.category === 'Special' && dexMove.basePower > 0;
 		});
 
@@ -710,7 +710,7 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 
 		// Check if opponent likely uses physical moves
 		const targetHasPhysical = ctx.target.moves?.some(m => {
-			const dexMove = Dex.moves.get(m);
+			const dexMove = ctx.dex.moves.get(m);
 			return dexMove.category === 'Physical' && dexMove.basePower > 0;
 		}) ?? true; // Default to assuming physical moves if unknown
 
@@ -766,7 +766,7 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 
 		// Check if opponent likely uses special moves
 		const targetHasSpecial = ctx.target.moves?.some(m => {
-			const dexMove = Dex.moves.get(m);
+			const dexMove = ctx.dex.moves.get(m);
 			return dexMove.category === 'Special' && dexMove.basePower > 0;
 		}) ?? true; // Default to assuming special moves if unknown
 
@@ -803,12 +803,12 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 
 		// Check opponent's likely attack type
 		const targetHasPhysical = ctx.target.moves?.some(m => {
-			const dexMove = Dex.moves.get(m);
+			const dexMove = ctx.dex.moves.get(m);
 			return dexMove.category === 'Physical' && dexMove.basePower > 0;
 		}) ?? true;
 
 		const targetHasSpecial = ctx.target.moves?.some(m => {
-			const dexMove = Dex.moves.get(m);
+			const dexMove = ctx.dex.moves.get(m);
 			return dexMove.category === 'Special' && dexMove.basePower > 0;
 		}) ?? true;
 
@@ -1225,7 +1225,7 @@ export const rewardDisable: PositiveScoringFunction = (ctx) => {
 	}
 
 	let bonus = 0;
-	const lastMoveData = Dex.moves.get(lastMove);
+	const lastMoveData = ctx.dex.moves.get(lastMove);
 	const lastMoveIsStatus = lastMoveData.category === 'Status';
 
 	// If we're faster, we can disable before they act again
@@ -1249,10 +1249,9 @@ export const rewardDisable: PositiveScoringFunction = (ctx) => {
 		}
 
 		// Extra bonus if the move we're disabling is super effective against us
-		const effectiveness = Dex.getEffectiveness(lastMoveData.type, ctx.attacker.types[0]);
-		const effectiveness2 = ctx.attacker.types[1]
-			? Dex.getEffectiveness(lastMoveData.type, ctx.attacker.types[1])
-			: 0;
+		const effectiveness = ctx.dex.getEffectiveness(lastMoveData.type, ctx.attacker.types[0]);
+		const effectiveness2 = ctx.attacker.types[1] ?
+			ctx.dex.getEffectiveness(lastMoveData.type, ctx.attacker.types[1]) : 0;
 
 		if (effectiveness > 0 || effectiveness2 > 0) {
 			bonus += 2;
@@ -1311,13 +1310,13 @@ export const rewardEncore: PositiveScoringFunction = (ctx) => {
 	}
 
 	let bonus = 0;
-	const lastMoveData = Dex.moves.get(lastMove);
+	const lastMoveData = ctx.dex.moves.get(lastMove);
 	const lastMoveIsStatus = lastMoveData.category === 'Status';
 
 	// CFRU line 961-964: Check if last move is Status OR doesn't affect us
 	// Calculate if move is immune against us
 	const isImmune = lastMoveData.category !== 'Status' &&
-		!Dex.getImmunity(lastMoveData.type, ctx.attacker.types);
+		!ctx.dex.getImmunity(lastMoveData.type, ctx.attacker.types);
 
 	// If we're faster, we can encore before they can change moves
 	if (ctx.flags.goesFirst) {
@@ -1364,7 +1363,7 @@ export const rewardTaunt: PositiveScoringFunction = (ctx) => {
 
 	// Check if opponent has status moves in known moveset
 	const hasStatusMoves = ctx.target.moves.some(m => {
-		const dexMove = Dex.moves.get(m);
+		const dexMove = ctx.dex.moves.get(m);
 		return dexMove.category === 'Status';
 	});
 
@@ -1445,7 +1444,7 @@ export const rewardPartnerAbsorption: PositiveScoringFunction = (ctx) => {
 			if (ctx.target.boosts.spa < 6) {
 				// Extra value if partner has special moves
 				const hasSpecialMoves = ctx.target.moves?.some(m => {
-					const dexMove = Dex.moves.get(m);
+					const dexMove = ctx.dex.moves.get(m);
 					return dexMove.category === 'Special' && dexMove.basePower > 0;
 				}) ?? false;
 
@@ -1478,7 +1477,7 @@ export const rewardPartnerAbsorption: PositiveScoringFunction = (ctx) => {
 			// SpA boost - CFRU: IncreaseHelpingHandViability + special move check
 			if (ctx.target.boosts.spa < 6) {
 				const hasSpecialMoves = ctx.target.moves?.some(m => {
-					const dexMove = Dex.moves.get(m);
+					const dexMove = ctx.dex.moves.get(m);
 					return dexMove.category === 'Special' && dexMove.basePower > 0;
 				}) ?? false;
 
@@ -1501,7 +1500,7 @@ export const rewardPartnerAbsorption: PositiveScoringFunction = (ctx) => {
 			// CFRU: !(gBattleResources->flags->flags[bankAtkPartner] & RESOURCE_FLAG_FLASH_FIRE)
 			// We can't track this exactly, so just check if partner has Fire moves
 			const hasFireMoves = ctx.target.moves?.some(m => {
-				const dexMove = Dex.moves.get(m);
+				const dexMove = ctx.dex.moves.get(m);
 				return dexMove.type === 'Fire' && dexMove.basePower > 0;
 			}) ?? false;
 
@@ -1522,7 +1521,7 @@ export const rewardPartnerAbsorption: PositiveScoringFunction = (ctx) => {
 			// Attack boost - CFRU: IncreaseHelpingHandViability + physical move check
 			if (ctx.target.boosts.atk < 6) {
 				const hasPhysicalMoves = ctx.target.moves?.some(m => {
-					const dexMove = Dex.moves.get(m);
+					const dexMove = ctx.dex.moves.get(m);
 					return dexMove.category === 'Physical' && dexMove.basePower > 0;
 				}) ?? false;
 
@@ -1544,7 +1543,7 @@ export const rewardPartnerAbsorption: PositiveScoringFunction = (ctx) => {
 			// Attack boost - CFRU: check physical moves + won't KO partner
 			if (ctx.target.boosts.atk < 6) {
 				const hasPhysicalMoves = ctx.target.moves?.some(m => {
-					const dexMove = Dex.moves.get(m);
+					const dexMove = ctx.dex.moves.get(m);
 					return dexMove.category === 'Physical' && dexMove.basePower > 0;
 				}) ?? false;
 
@@ -1733,7 +1732,7 @@ export const rewardHelpingHand: PositiveScoringFunction = (ctx) => {
 
 	// Check if partner has strong attacking move
 	const partnerHasAttack = partner.moves.some(m => {
-		const dexMove = Dex.moves.get(m);
+		const dexMove = ctx.dex.moves.get(m);
 		return dexMove.category !== 'Status' && dexMove.basePower >= 80;
 	});
 
@@ -1796,7 +1795,7 @@ export const rewardWeatherMove: PositiveScoringFunction = (ctx) => {
 			});
 		}
 		// Water type moves benefit
-		if (ctx.attacker.types.includes('Water') || ctx.attacker.moves.some(m => Dex.moves.get(m).type === 'Water')) {
+		if (ctx.attacker.types.includes('Water') || ctx.attacker.moves.some(m => ctx.dex.moves.get(m).type === 'Water')) {
 			bonus += 3;
 			ctx.adjustments.push({
 				reason: 'Rain Dance boosts Water moves',
@@ -1827,7 +1826,7 @@ export const rewardWeatherMove: PositiveScoringFunction = (ctx) => {
 			});
 		}
 		// Fire type moves benefit
-		if (ctx.attacker.types.includes('Fire') || ctx.attacker.moves.some(m => Dex.moves.get(m).type === 'Fire')) {
+		if (ctx.attacker.types.includes('Fire') || ctx.attacker.moves.some(m => ctx.dex.moves.get(m).type === 'Fire')) {
 			bonus += 3;
 			ctx.adjustments.push({
 				reason: 'Sunny Day boosts Fire moves',

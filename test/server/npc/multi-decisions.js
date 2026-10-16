@@ -81,6 +81,45 @@ let game;
 afterEach(() => { game?.destroy(); game = undefined; });
 
 describe('Production NPCMultiManager decisions', () => {
+	for (const difficulty of ['normal', 'hard']) {
+		it(`${difficulty}: applies shared Transform state to p4 and to an opponent copying p4`, () => {
+			const ditto = { species: 'Ditto', ability: 'Limber', moves: ['transform'] };
+			const jolteon = { species: 'Jolteon', ability: 'Volt Absorb', moves: ['calmmind'] };
+			const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+			for (const own of [true, false]) {
+				game = createMulti([[own ? jolteon : passive], [passive], [own ? passive : ditto],
+					[own ? ditto : jolteon]], false, difficulty);
+				game.play(['move 1', 'move 1', own ? 'move 1' : 'move 1 2', own ? 'move 1 1' : 'move 1']);
+				game.decide();
+				const controller = game.manager.controllers.p4;
+				const state = controller.battleState || controller.state;
+				const mon = (own ? state.self : state.opponent).active.find(p => p.slot === 2);
+				assert.equal(mon.species, 'Jolteon');
+				assert.deepEqual(mon.types, ['Electric']);
+				assert.equal(Dex.toID(mon.ability), 'voltabsorb');
+				assert.equal(mon.boosts.spa, 1);
+				game.destroy();
+				game = undefined;
+			}
+		});
+
+		it(`${difficulty}: sees a partner's statused reserve for Heal Bell but cannot switch into it`, () => {
+			const cleric = { species: 'Blissey', ability: 'Natural Cure', moves: ['healbell', 'splash'] };
+			const burned = { species: 'Chansey', ability: 'Serene Grace', item: 'Flame Orb', moves: ['splash'] };
+			const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+			game = createMulti([[passive], [cleric], [passive], [burned, passive]], false, difficulty);
+			game.play(['move 1', 'move 2', 'move 1', 'move 1']);
+			assert.equal(game.battle.p4.active[0].status, 'brn');
+			game.play(['move 1', 'move 2', 'move 1', 'switch 2']);
+			game.decide();
+			const controller = game.manager.controllers.p2;
+			const state = controller.battleState || controller.state;
+			assert(state.self.team.some(p => p.species === 'Chansey' && p.status === 'brn'));
+			assert.equal(state.self.reserve.length, 0);
+			assert.equal(game.choices.find(c => c.side === 'p2').choice, 'move 1');
+		});
+	}
+
 	it('should handle team preview before both NPCs start choosing moves', () => {
 		game = createMulti([[lanturn], [partner, venusaur], [vibrava], [partner, scizor]], true);
 		assert.deepEqual(game.decide(), [{ side: 'p2', choice: 'default' }, { side: 'p4', choice: 'default' }]);

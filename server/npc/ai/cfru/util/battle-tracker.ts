@@ -10,7 +10,19 @@
  */
 
 import { Dex, toID } from '../../../../../sim/dex';
-import { defaultBoosts } from '../types';
+import { defaultBoosts, type AIPokemon } from '../types';
+
+/** Only facts available in our request; never store inferred models or scoring state here. */
+type RequestPokemonFacts = Pick<AIPokemon, 'species' | 'types' | 'baseStats' | 'ability' | 'moves'>;
+
+export interface TrackedTransformation {
+	targetIdent: string;
+	/** Public opponent state at the instant of Transform, before later switches or boosts. */
+	target?: TrackedPokemon;
+	/** Our own request data is legitimate knowledge of what the opponent copied. */
+	pokemon?: RequestPokemonFacts;
+	knownMoves: string[];
+}
 
 /** Protocol names and engine IDs share one vocabulary in AI calculations. */
 export function normalizeWeather(weather: string): string {
@@ -26,6 +38,7 @@ export function normalizeWeather(weather: string): string {
  * Tracked Pokemon information
  */
 export interface TrackedPokemon {
+	transformation?: TrackedTransformation;
 	/** Public identity scoped to a player, not the active position. */
 	ident?: string;
 	/** Public temporary effects; cleared when this Pokemon leaves the field. */
@@ -117,21 +130,27 @@ export class BattleTracker {
 	private turn = 0;
 	private acted = new Set<string>();
 	private wishes = new Map<string, number>();
+	private pendingWishPosition = '';
 	private teamSizes = new Map<string, number>();
 	private formatId = '';
 	private activeIdentities = new Map<string, string>();
 	/** Successful Rest followed by public cant|slp actions; random sleep stays unknown. */
 	private restSleep = new Map<string, number>();
+	private transformations = new Map<string, TrackedTransformation>();
+	private ourPokemon = new Map<string, { ident: string, pokemon: RequestPokemonFacts }>();
 
 	/** All known opponent Pokemon (keyed by player and public nickname for team tracking) */
 	private opponentTeam: Map<string, TrackedPokemon> = new Map();
 
 	/** Field conditions */
 	private fieldConditions: {
-		weather: string;
-		terrain: string;
-		trickRoom: boolean;
-	} = { weather: '', terrain: '', trickRoom: false };
+		weather: string,
+		terrain: string,
+		trickRoom: boolean,
+		gravity: boolean,
+		magicRoom: boolean,
+		wonderRoom: boolean,
+	} = { weather: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false };
 
 	/** Opponent side conditions */
 	private opponentSideConditions: {
@@ -307,6 +326,9 @@ export class BattleTracker {
 		case 'faint':
 			this.handleFaint(parts);
 			break;
+		case '-transform':
+			this.handleTransform(parts);
+			break;
 		case 'detailschange':
 		case '-formechange': {
 			const tracked = this.opponentPokemon.get(parts[1]?.split(':')[0].trim());
@@ -350,9 +372,22 @@ export class BattleTracker {
 			break;
 		case 'move':
 			this.acted.add(parts[1].split(':')[0].trim());
-			if (toID(parts[2]) === 'wish') this.wishes.set(parts[1].slice(0, 2), this.turn + 2);
+			this.pendingWishPosition = '';
+			if (toID(parts[2]) === 'wish') {
+				const position = parts[1].split(':')[0].trim();
+				if (!this.getWish(position)) {
+					this.wishes.set(position, this.turn + 2);
+					this.pendingWishPosition = position;
+				}
+			}
 			this.handleMove(parts);
 			break;
+		case '-fail': {
+			const position = parts[1]?.split(':')[0].trim();
+			// A repeated Wish must not extend an existing timer; a failed new Wish creates none.
+			if (position === this.pendingWishPosition) this.wishes.delete(position);
+			break;
+		}
 		case '-weather':
 			this.handleWeather(parts);
 			break;
@@ -413,6 +448,16 @@ export class BattleTracker {
 
 		this.activeVolatiles.set(position, new Set());
 		this.acted.delete(position);
+		this.transformations.delete(position);
+		this.ourPokemon.delete(position);
+		const outgoing = this.opponentPokemon.get(position);
+		if (outgoing?.transformation) {
+			delete outgoing.transformation;
+			outgoing.ability = outgoing.baseAbility || '';
+			outgoing.abilityChanged = false;
+			outgoing.boosts = defaultBoosts();
+			outgoing.lastMove = '';
+		}
 
 		// CFRU AI Fix: Clear our team boosts, ability stat mods, and lastMove when we switch out
 		// Switching resets all stat boosts to 0 and removes volatile statuses
@@ -521,6 +566,58 @@ export class BattleTracker {
 		this.opponentTeam.set(ident, tracked);
 	}
 
+	private handleTransform(parts: string[]): void {
+		const position = parts[1]?.split(':')[0].trim();
+		const targetPosition = parts[2]?.split(':')[0].trim();
+		if (!position || !targetPosition) return;
+		const target = this.opponentPokemon.get(targetPosition);
+		const own = this.ourPokemon.get(targetPosition);
+		const transformation: TrackedTransformation = {
+			targetIdent: this.sleepIdentity(parts[2]),
+			knownMoves: [],
+		};
+		if (target) {
+			transformation.target = { ...target, types: [...target.types], knownMoves: [...target.knownMoves],
+				boosts: { ...target.boosts }, volatiles: new Set(target.volatiles) };
+		} else if (own?.ident === transformation.targetIdent) {
+			transformation.pokemon = { ...own.pokemon, types: [...own.pokemon.types],
+				baseStats: { ...own.pokemon.baseStats }, moves: [...own.pokemon.moves] };
+		}
+		this.transformations.set(position, transformation);
+		const boosts = target ? { ...target.boosts } : this.getOurActiveBoosts(targetPosition);
+		if (this.isOurTeamSide(position.slice(0, 2))) {
+			this.ourActiveBoosts.set(position, boosts);
+		} else {
+			const tracked = this.opponentPokemon.get(position);
+			if (!tracked) return;
+			if (parts.includes('[from] ability: Imposter')) this.recordAbility(parts[1], 'Imposter');
+			tracked.transformation = transformation;
+			tracked.boosts = boosts;
+			if ((this.formatId ? Dex.forFormat(this.formatId) : Dex).gen > 2) {
+				tracked.abilityChanged = true;
+				tracked.ability = target?.ability || own?.pokemon.ability || '';
+			}
+		}
+	}
+
+	getTransformation(position: string): TrackedTransformation | undefined {
+		return this.transformations.get(position.startsWith('p') ? position : `${this.ourSide}${position}`);
+	}
+
+	rememberOurPokemon(position: string, ident: string, pokemon: RequestPokemonFacts): void {
+		const key = position.startsWith('p') ? position : `${this.ourSide}${position}`;
+		const facts = { species: pokemon.species, types: [...pokemon.types], baseStats: { ...pokemon.baseStats },
+			ability: pokemon.ability, moves: [...pokemon.moves] };
+		this.ourPokemon.set(key, { ident: this.sleepIdentity(ident), pokemon: facts });
+		// An opening Imposter can precede the first request containing our own stats.
+		for (const transformation of this.transformations.values()) {
+			if (!transformation.target && !transformation.pokemon &&
+				transformation.targetIdent === this.sleepIdentity(ident)) {
+				transformation.pokemon = { ...facts };
+			}
+		}
+	}
+
 	/**
 	 * Handle faint
 	 * Format: |faint|p1a: Nickname
@@ -550,6 +647,11 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
 
+		if (this.isOurTeamSide(side)) {
+			const own = this.ourPokemon.get(position);
+			if (own) own.pokemon.ability = ability;
+			return;
+		}
 		if (!this.isOpponentSide(side)) return;
 
 		const tracked = this.opponentPokemon.get(position);
@@ -803,6 +905,12 @@ export class BattleTracker {
 			if (tracked) {
 				// Record as last move used (for Encore/Disable evaluation)
 				tracked.lastMove = move;
+				if (tracked.transformation) {
+					const moves = tracked.transformation.knownMoves;
+					if (!Dex.moves.get(move).isZ && moveId !== 'struggle' &&
+						!parts.some(p => p.startsWith('[from]')) && !moves.includes(moveId)) moves.push(moveId);
+					return;
+				}
 
 				// Also add to known moves if not already known
 				if (!Dex.moves.get(move).isZ && moveId !== 'struggle' && !parts.some(p => p.startsWith('[from]')) && !tracked.knownMoves.includes(move)) {
@@ -841,10 +949,17 @@ export class BattleTracker {
 
 		const isStart = command === '-fieldstart';
 
-		if (field.includes('Trick Room')) {
+		const id = toID(field.replace(/^move: /, ''));
+		if (id === 'trickroom') {
 			this.fieldConditions.trickRoom = isStart;
-		} else if (field.includes('Terrain')) {
-			this.fieldConditions.terrain = isStart ? field : '';
+		} else if (id === 'gravity') {
+			this.fieldConditions.gravity = isStart;
+		} else if (id === 'magicroom') {
+			this.fieldConditions.magicRoom = isStart;
+		} else if (id === 'wonderroom') {
+			this.fieldConditions.wonderRoom = isStart;
+		} else if (id.endsWith('terrain')) {
+			this.fieldConditions.terrain = isStart ? id.replace(/terrain$/, '') : '';
 		}
 	}
 
@@ -877,7 +992,8 @@ export class BattleTracker {
 		const conditionId = toID(condition);
 
 		// Determine which side's conditions to update
-		const isOpponentSide = side === this.opponentSide;
+		if (!this.isOpponentSide(side) && !this.isOurTeamSide(side)) return;
+		const isOpponentSide = this.isOpponentSide(side);
 		const conditions = isOpponentSide ? this.opponentSideConditions : this.ourSideConditions;
 
 		// Entry hazards
@@ -1325,6 +1441,15 @@ export class BattleTracker {
 		return this.ourSide;
 	}
 
+	/** Protocol positions differ from party indices in Multi: p3b/p4b occupy field slot 2. */
+	getPosition(side: string, activeIndex = 0): string {
+		return `${side}${this.isMultiBattle ? (Number(side.slice(1)) > 2 ? 'b' : 'a') : String.fromCharCode(97 + activeIndex)}`;
+	}
+
+	getFieldSlot(position: string): number {
+		return this.isMultiBattle ? (Number(position.slice(1, 2)) > 2 ? 2 : 1) : position.charCodeAt(2) - 96;
+	}
+
 	/**
 	 * Get which side the opponent is ('p1' or 'p2')
 	 */
@@ -1518,8 +1643,19 @@ export class BattleTracker {
 		return this.acted.has(position.startsWith('p') ? position : `${this.ourSide}${position}`);
 	}
 
-	getWish(side = this.ourSide): number {
-		return Math.max(0, (this.wishes.get(side) || 0) - this.turn);
+	getWish(position = this.getPosition(this.ourSide)): number {
+		return Math.max(0, (this.wishes.get(position) || 0) - this.turn);
+	}
+
+	getWishes(ours = true): Record<number, number> {
+		const wishes: Record<number, number> = {};
+		for (const position of this.wishes.keys()) {
+			const side = position.slice(0, 2);
+			if (ours ? this.isOurTeamSide(side) : this.isOpponentSide(side)) {
+				wishes[this.getFieldSlot(position)] = this.getWish(position);
+			}
+		}
+		return wishes;
 	}
 
 	getTurn(): number {
@@ -1555,16 +1691,21 @@ export class BattleTracker {
 		this.turn = 0;
 		this.acted.clear();
 		this.wishes.clear();
+		this.pendingWishPosition = '';
 		this.teamSizes.clear();
 		this.activeIdentities.clear();
 		this.restSleep.clear();
+		this.transformations.clear();
+		this.ourPokemon.clear();
 		this.activeVolatiles.clear();
 		this.opponentPokemon.clear();
 		this.opponentTeam.clear();
 		this.ourActiveBoosts.clear();
 		this.ourAbilityStatMods.clear();
 		this.ourLastMove.clear();
-		this.fieldConditions = { weather: '', terrain: '', trickRoom: false };
+		this.fieldConditions = {
+			weather: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false,
+		};
 		this.opponentSideConditions = {
 			stealthrock: false,
 			spikes: 0,

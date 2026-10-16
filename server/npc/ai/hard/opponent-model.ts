@@ -42,13 +42,13 @@ export function fightingStyle(pokemon: AIPokemon, formatId: string): FightingSty
 	return 'support';
 }
 
-/** Read format-specific metadata (notably MMO move power/PP/priority) without changing Normal's builder. */
+/** Read format-specific metadata and the power encoded in Return/Frustration names. */
 export function hardMove(id: string, slot: number, formatId: string): AIMove {
 	const dex = formatId ? Dex.forFormat(formatId) : Dex;
 	const power = /^(return|frustration)(\d+)$/.exec(toID(id));
 	const move = dex.moves.get(power ? power[1] : id);
 	return {
-		...buildAIMove({ id: move.id }, slot), type: move.type, category: move.category,
+		...buildAIMove({ id: move.id }, slot, formatId), type: move.type, category: move.category,
 		basePower: power ? Number(power[2]) : ['return', 'frustration'].includes(move.id) ? 102 : move.basePower,
 		accuracy: move.accuracy, priority: move.priority, target: move.target,
 		flags: move.flags, status: move.status, boosts: move.boosts, recoil: move.recoil,
@@ -84,6 +84,12 @@ export function compatibleSlots(slots: string[][], revealed: string[]): boolean 
 
 /** Recomputed from tracker evidence: an inference never becomes a public observation. */
 export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHypothesis[] {
+	if (opponent.volatiles.has('transform')) {
+		const knowledge = opponent.moveKnowledge;
+		const moves = [...new Set(knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] : opponent.moves)];
+		return [{ name: 'transform', pokemon: opponent, matched: true, weight: 1,
+			moves: moves.map(id => ({ id: toID(id), availability: 1 })) }];
+	}
 	const randomModels = opponent.presetModels || inferRandomBattle(opponent, formatId);
 	if (randomModels) return randomModels;
 	const dex = formatId ? Dex.forFormat(formatId) : Dex;

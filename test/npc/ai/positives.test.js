@@ -4,6 +4,7 @@
  */
 
 const { section, test, assertEqual, assert, deepMerge } = require('./test-utils');
+const { Dex } = require('../../../dist/sim');
 
 function runPositivesScoringTests() {
 	const { DEFAULT_AI_CONFIG } = require('../../../dist/server/npc/ai/cfru/types');
@@ -17,6 +18,7 @@ function runPositivesScoringTests() {
 
 	function createDrainContext(overrides = {}) {
 		return {
+			dex: Dex,
 			state: {
 				isDoubles: false,
 				field: { weather: '', terrain: '' },
@@ -96,6 +98,7 @@ function runPositivesScoringTests() {
 
 	function createControlContext(overrides = {}) {
 		return {
+			dex: Dex,
 			state: {
 				isDoubles: false,
 				field: { weather: '', terrain: '' },
@@ -252,6 +255,7 @@ function runPositivesScoringTests() {
 
 	function createWeatherContext(overrides = {}) {
 		return {
+			dex: Dex,
 			state: {
 				isDoubles: overrides.isDoubles || false,
 				field: { weather: overrides.currentWeather || '', terrain: '' },
@@ -434,6 +438,7 @@ function runPositivesScoringTests() {
 
 	function createSaltCureContext(targetTypes, targetAbility = '', targetVolatiles = []) {
 		return {
+			dex: Dex,
 			config: DEFAULT_AI_CONFIG,
 			move: {
 				id: 'saltcure',
@@ -557,6 +562,7 @@ function runPositivesScoringTests() {
 
 	function createSpreadMoveContext(overrides = {}) {
 		const defaultCtx = {
+			dex: Dex,
 			state: {
 				isDoubles: true,
 				field: { weather: '', terrain: '' },
@@ -838,6 +844,7 @@ function runPositivesScoringTests() {
 
 	function createKnockOffContext(overrides = {}) {
 		return {
+			dex: Dex,
 			state: {
 				isDoubles: false,
 				field: { weather: '', terrain: '' },

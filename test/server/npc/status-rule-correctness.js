@@ -22,18 +22,43 @@ function pokemon(overrides = {}) {
 	};
 }
 
-function score(id, { actor = pokemon(), target = pokemon(), reserve = [] } = {}) {
+function score(id, { actor = pokemon(), target = pokemon(), reserve = [], formatId = 'gen5pokemmorandombattle' } = {}) {
 	const state = {
 		turn: 1, isDoubles: false,
 		self: { active: [actor], reserve, team: [actor, ...reserve], conditions: {} },
 		opponent: { active: [target], reserve: [], team: [target], conditions: {} },
 		field: { weather: '', terrain: '', trickroom: false },
 	};
-	const engine = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: 'gen5pokemmorandombattle' }, createAICache(1));
-	return engine.scoreMove(state, actor, buildAIMove({ id }, 1), target);
+	const engine = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId }, createAICache(1));
+	return engine.scoreMove(state, actor, buildAIMove({ id }, 1, formatId), target);
 }
 
 describe('NPC team cures and opponent stat-drop effects', () => {
+	it('uses the current generation when scoring the category of an opponent move', () => {
+		const target = pokemon({ moves: ['crunch', 'protect', 'toxic', 'rest'] });
+		for (const [formatId, expected] of [['gen3customgame', true], ['gen4customgame', false]]) {
+			const result = score('counter', { target, formatId });
+			assert.equal(result.breakdown.details.some(d => /target has no physical/.test(d.reason)), expected, formatId);
+		}
+	});
+
+	it('rejects repeated Yawn from public drowsiness without blocking immediate sleep moves', () => {
+		const tracker = createBattleTracker('p2');
+		tracker.setFormat('gen5pokemmorandombattle');
+		tracker.parseMessage('|switch|p1a: Granbull|Granbull, L90|100/100');
+		tracker.parseMessage('|-start|p1a: Granbull|move: Yawn|[of] p2a: Torkoal');
+		const target = trackedPokemonToAIPokemon(tracker.getActiveOpponent(), 1, true, 'gen5pokemmorandombattle');
+		const result = score('yawn', { target });
+		assert.equal(result.flags.hasNoEffect, true);
+		assert(result.breakdown.details.some(d => /already drowsy/.test(d.reason) && d.amount < 0));
+		assert(!result.breakdown.details.some(d => /Sleep is disruptive/.test(d.reason)));
+		assert(score('flamethrower', { target }).score > result.score);
+		assert.equal(score('hypnosis', { target }).flags.hasNoEffect, false);
+		tracker.parseMessage('|-end|p1a: Granbull|move: Yawn|[silent]');
+		const awake = trackedPokemonToAIPokemon(tracker.getActiveOpponent(), 1, true, 'gen5pokemmorandombattle');
+		assert.equal(score('yawn', { target: awake }).flags.hasNoEffect, false);
+	});
+
 	for (const [id, attack, other] of [['counter', 'waterfall', 'surf'], ['mirrorcoat', 'surf', 'waterfall']]) {
 		it(`${id} uses public candidates without treating unknown slots as empty`, () => {
 			const noAttackReason = result => result.breakdown.details.some(d => /target has no/.test(d.reason));

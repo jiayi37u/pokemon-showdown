@@ -9,6 +9,7 @@
  */
 
 import { Dex, toID } from '../../../../../sim/dex';
+import { pokemonCacheId } from './cache';
 import type { AIPokemon, AIMove, AICache, FieldConditions, SideConditions } from '../types';
 import { getEffectiveStat } from './damage-calc';
 
@@ -130,7 +131,7 @@ export function isFaster(
 	pokemon2SideConditions?: SideConditions
 ): boolean {
 	// Check cache (note: cache doesn't account for side conditions)
-	const cacheKey = `${pokemon1.slot}-${pokemon2.slot}`;
+	const cacheKey = `${pokemonCacheId(pokemon1)}-${pokemonCacheId(pokemon2)}-${JSON.stringify(field)}`;
 	if (cache?.speedComparison.has(cacheKey) && !pokemon1SideConditions && !pokemon2SideConditions) {
 		return cache.speedComparison.get(cacheKey)!;
 	}
@@ -146,7 +147,7 @@ export function isFaster(
 	const result = speed1 >= speed2;
 
 	// Cache result
-	if (cache) {
+	if (cache && !pokemon1SideConditions && !pokemon2SideConditions) {
 		cache.speedComparison.set(cacheKey, result);
 	}
 

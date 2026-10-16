@@ -1,5 +1,23 @@
 # NormalAI 技术实现
 
+## 共享信息层
+
+Normal 和 Hard 共用信息层。单打、双打、Multi 均由 `buildBattleStateFromRequests` 构建状态；`multi-manager.ts` 只负责收齐请求、分配控制权和提交选择。
+
+| 模块 | 职责 |
+| --- | --- |
+| `cfru/util/battle-tracker.ts` | 记录公开协议事实、己方请求中的必要事实，以及切换、变身、效果结束时的生命周期；不保存 preset 推测结果。 |
+| `cfru/state-builder.ts` | 合并请求和 tracker，统一场地名称、场上位置和双方队伍信息，应用公开效果及对手配置估计。 |
+| `cfru/util/opponent-presets.ts`、`random-presets.ts`、`hard/opponent-model.ts` | 管理配置候选与推断；已观察事实优先于候选，未知槽位不等于不存在招式。 |
+| `cfru/util/damage-calc.ts`、`type-calc.ts`、`speed.ts` | 集中维护共享机制估算；缓存区分状态快照和计算条件，不能只按敌我可能重复的槽位编号区分精灵。 |
+| `cfru/scoring/`、`hard/evaluation.ts` | 根据同一状态做策略评分；评分上下文的 `dex` 对应当前 format。 |
+
+新增机制时，先区分其作用范围：精灵本身、场上位置、整队或全场。例如变身随精灵离场清除，Wish 留在施放位置，Reflect 属于队伍，Gravity 属于全场。共享机制不分别写在 Normal、Hard 或 Multi 控制器中，也不按单个招式拆文件。
+
+Multi 中，`self.team` 包含己方两名玩家的精灵；每个控制器的 `self.reserve` 只包含自己可以换入的后备。场上 `slot` 表示位置，后备 `slot` 表示所属玩家的队伍序号，不能拿它充当全局精灵身份。
+
+`test/server/npc/battle-state-mechanics.js` 用真实 PS 战斗产生公开事件，再核对 AI 状态；`multi-decisions.js` 验证生产 Multi 控制器。涉及位置和信息生命周期的改动应覆盖单打、双打、Multi。模拟器内部状态仅用于测试断言，AI 输入来自授权请求和公开协议。
+
 ## 类结构
 
 ```typescript
@@ -29,7 +47,7 @@ class NormalAI extends NPCBattleAI {
 
 ```typescript
 interface CFRUAIConfig {
-    useFullInfo: boolean;      // 是否使用完整对手信息
+    formatId: string;         // 当前对战规则
     usePrediction: boolean;    // 是否使用招式预测
     useFightingStyle: boolean; // 是否使用战斗风格分类
     isDoubles: boolean;        // 是否双打
@@ -218,7 +236,15 @@ interface BattleState {
 ### 构建函数
 
 ```typescript
-// 使用 BattleTracker 构建状态
+// 所有模式共用的状态构建入口
+function buildBattleStateFromRequests(
+    requests: { side: string; request: AnyObject }[],
+    tracker: BattleTracker,
+    config: CFRUAIConfig,
+    turn?: number
+): BattleState;
+
+// 单控制器适配入口；battle 只提供公开回合数
 function buildBattleStateWithTracker(
     request: AnyObject,
     battle: AnyObject | null,
@@ -229,10 +255,10 @@ function buildBattleStateWithTracker(
 
 ### 对手能力值估算
 
-由于 AI 无法直接访问对手的个体值、努力值和性格，使用以下默认值进行估算：
+AI 不读取对手隐藏配置。Normal 使用默认 preset，random battle 使用项目内公开配置候选；Hard 在有对应分级配置时进一步推断。缺失具体精灵配置时回退到默认 preset，默认 preset 也缺失时才使用以下估算：
 
 ```typescript
-// state-builder.ts: estimateOpponentStats()
+// state-builder.ts: trackedPokemonToAIPokemon()
 const IV = 31;   // 满个体值
 const EV = 85;   // 平均努力值 (510 总努力值 / 6 项 ≈ 85)
 // 性格修正: 不应用 (假设中性性格)
@@ -243,13 +269,6 @@ const EV = 85;   // 平均努力值 (510 总努力值 / 6 项 ≈ 85)
 HP = floor((2 × base + IV + floor(EV/4)) × level / 100) + level + 10
 其他 = floor((floor((2 × base + IV + floor(EV/4)) × level / 100) + 5) × 1.0)
 ```
-
-**设计理由**:
-- **IV=31**: 竞技对战中几乎所有宝可梦都有满个体值
-- **EV=85**: 保守估计，避免高估或低估对手
-- **无性格修正**: 无法推断性格，使用中性假设
-
-> 未来可通过 [使用率数据系统](../../npc-battle/ROADMAP.md#未来优化方向---使用率数据系统) 优化这一估算。
 
 ## 伤害计算
 
@@ -319,6 +338,9 @@ function willFaintFromSecondaryDamage(
 ```
 server/npc/ai/
 ├── normal.ts             # NormalAI 主文件
+├── hard.ts               # HardAI 控制器
+├── hard/                 # Hard 配置推断与策略
+├── multi-manager.ts      # Multi 请求与控制权协调
 └── cfru/
     ├── types.ts          # 类型定义
     ├── state-builder.ts  # 状态构建

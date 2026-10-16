@@ -7,7 +7,17 @@
  * @license MIT
  */
 
-import type { AICache, DamageResult, KnockoutResult } from '../types';
+import type { AICache, AIPokemon } from '../types';
+
+const pokemonSnapshots = new WeakMap<AIPokemon, number>();
+let nextSnapshot = 0;
+
+/** Party/field slot numbers overlap across players; cache immutable state snapshots instead. */
+export function pokemonCacheId(pokemon: AIPokemon): number {
+	let id = pokemonSnapshots.get(pokemon);
+	if (id === undefined) pokemonSnapshots.set(pokemon, id = ++nextSnapshot);
+	return id;
+}
 
 /** Maximum cache size to prevent memory issues */
 const MAX_CACHE_SIZE = 1000;

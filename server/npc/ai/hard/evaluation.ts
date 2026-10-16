@@ -246,7 +246,7 @@ export class HardEvaluation {
 				const residual = getSecondaryEffectDamage(target, this.state.field.weather, actor.ability);
 				const passiveHeal = actor.hp < actor.maxHp && (toID(actor.item) === 'leftovers' ||
 					(toID(actor.item) === 'blacksludge' && actor.types.includes('Poison')));
-				const pendingWish = this.state.self.conditions.wish === 1 && actor.hp < actor.maxHp;
+				const pendingWish = this.state.self.conditions.wishes?.[actor.slot] === 1 && actor.hp < actor.maxHp;
 				const usefulOrb = !actor.status && ((toID(actor.item) === 'toxicorb' && toID(actor.ability) === 'poisonheal') ||
 					(toID(actor.item) === 'flameorb' && toID(actor.ability) === 'guts'));
 				const ownResidual = getSecondaryEffectDamage(actor, this.state.field.weather, target.ability);
@@ -257,12 +257,13 @@ export class HardEvaluation {
 					add(-35, 'Repeated protection risks failure');
 				}
 			} else if (move.id === 'wish') {
-				const needsHealing = this.state.self.team.filter(p => !p.fainted && p.hpPercent < 65);
+				// Only this position's occupant or a legal replacement can receive its Wish.
+				const needsHealing = [actor, ...this.state.self.reserve].filter(p => !p.fainted && p.hpPercent < 65);
 				const protection = actor.moves.some(id => protectionMoves.has(toID(id)));
 				const canReceive = incoming < actor.hp && (protection || 2 * incoming < actor.hp);
 				const safeRecipient = this.state.self.reserve.some(p => !p.fainted && p.hpPercent < 65 &&
 					p.hp > this.entryDamage(p) + this.incomingRisk(p, predictions));
-				add(this.state.self.conditions.wish || !needsHealing.length ? -90 :
+				add(this.state.self.conditions.wishes?.[actor.slot] || !needsHealing.length ? -90 :
 					canReceive || safeRecipient ? 28 : -65, 'CFRU Wish: heal a surviving recipient after the delay');
 			} else if (['healbell', 'aromatherapy'].includes(move.id)) {
 				const patients = this.state.self.team.filter(p => !p.fainted && p.status &&
@@ -358,7 +359,8 @@ export class HardEvaluation {
 	}
 
 	/** CFRU replacement weights: KO +31, outspeed +14, resist all +17, 2HKO +2, faint -39. */
-	scoreSwitch(pokemon: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>, forced: boolean): SwitchEvaluation {
+	scoreSwitch(pokemon: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>, forced: boolean,
+		actor?: AIPokemon): SwitchEvaluation {
 		const hazards = this.entryDamage(pokemon);
 		const entered = { ...pokemon, hp: Math.max(0, pokemon.hp - hazards) };
 		entered.hpPercent = 100 * entered.hp / entered.maxHp;
@@ -370,8 +372,8 @@ export class HardEvaluation {
 			return { pokemon, score: score - 100, safe: false,
 				reasons: [...reasons, 'Would faint on entry or to the predicted attack'] };
 		}
-		if (!forced && this.state.self.conditions.wish === 1) {
-			const healing = Math.min(pokemon.maxHp - remaining, this.state.self.active[0].maxHp / 2);
+		if (!forced && actor && this.state.self.conditions.wishes?.[actor.slot] === 1) {
+			const healing = Math.min(pokemon.maxHp - remaining, actor.maxHp / 2);
 			score += 40 * healing / pokemon.maxHp;
 			reasons.push(`Wish recipient can recover ${healing.toFixed(1)} HP after surviving entry`);
 		}
@@ -416,7 +418,8 @@ export class HardEvaluation {
 			(predictions.get(foes[0]) || []).every(a => !a.move || this.first(actor, a.user || foes[0], move, a.move) === 1)) {
 			return null;
 		}
-		if (this.state.self.conditions.wish === 1 && actor.hpPercent >= 65 && replacement.pokemon.hpPercent < 65) {
+		if (this.state.self.conditions.wishes?.[actor.slot] === 1 &&
+			actor.hpPercent >= 65 && replacement.pokemon.hpPercent < 65) {
 			return 'CFRU Wish: pass delayed recovery to a safe injured teammate';
 		}
 		if (bestMove.score >= 115 && this.recoveryAmount(actor, move)) return null;

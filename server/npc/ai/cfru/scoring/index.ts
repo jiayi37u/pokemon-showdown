@@ -20,9 +20,10 @@ import type {
 	AICache,
 } from '../types';
 import { BASE_SCORE } from '../types';
+import { Dex } from '../../../../../sim/dex';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
 import { isFaster, goesFirst } from '../util/speed';
-import { getTypeEffectiveness, getAbilityTypeImmunity, wonderGuardBlocks } from '../util/type-calc';
+import { resolveItemMoveType } from '../util/type-calc';
 
 // Import all negative and positive scorers
 import { allNegativeScorers } from './negatives';
@@ -36,6 +37,8 @@ export { allPositiveScorers } from './positives';
  * Scoring context passed to negative/positive scoring functions
  */
 export interface ScoringContext {
+	/** Every scorer reads rules from this format, never the global default generation. */
+	dex: ReturnType<typeof Dex.forFormat>;
 	/** Battle state */
 	state: BattleState;
 
@@ -169,6 +172,7 @@ export class ScoringEngine {
 		move: AIMove,
 		target: AIPokemon
 	): MoveScore {
+		move = resolveItemMoveType(attacker, move, state.field);
 		// Pre-calculate damage for non-status moves
 		let damageResult = null;
 		if (move.category !== 'Status') {
@@ -190,22 +194,19 @@ export class ScoringEngine {
 			damageResult = calculateDamage(attacker, target, move, state.field, this.cache, spreadInfo);
 		}
 
+		const isTargetingPartner = state.isDoubles && state.self.active.some(p => p === target);
+
 		// Initialize flags
 		const flags: MoveScoreFlags = {
 			canKO: damageResult?.canKO ?? false,
 			can2HKO: damageResult ? damageResult.hitsToKO <= 2 : false,
-			goesFirst: isFaster(attacker, target, state.field, this.cache),
+			goesFirst: isFaster(attacker, target, state.field, this.cache,
+				state.self.conditions, isTargetingPartner ? state.self.conditions : state.opponent.conditions),
 			isStrongestMove: false,
 			isImmune: damageResult?.effectiveness === 0,
 			isSuperEffective: (damageResult?.effectiveness ?? 1) > 1,
 			hasNoEffect: false,
 		};
-
-		// Determine if targeting partner (doubles)
-		// Check if target is in self.active by reference (same object), not by slot number
-		// because slot numbers can overlap between sides
-		const isTargetingPartner = state.isDoubles &&
-			state.self.active.some(p => p === target);
 
 		// Find partner Pokemon (doubles only)
 		let partner: AIPokemon | null = null;
@@ -215,6 +216,7 @@ export class ScoringEngine {
 
 		// Create scoring context
 		const ctx: ScoringContext = {
+			dex: this.config.formatId ? Dex.forFormat(this.config.formatId) : Dex,
 			state,
 			attacker,
 			target,

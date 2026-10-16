@@ -11,9 +11,11 @@
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions } from '../types';
 import {
-	getTypeEffectiveness, getSTABMultiplier, getAbilityTypeImmunity, wonderGuardBlocks, airBalloonBlocks,
+	getTypeEffectiveness, getSTABMultiplier, getAbilityTypeImmunity, wonderGuardBlocks,
+	airBalloonBlocks, resolveItemMoveType,
 } from './type-calc';
 import { isFaster } from './speed';
+import { pokemonCacheId } from './cache';
 import { canHaveOpponentMoves } from './opponent-presets';
 
 /** Damage roll range (0.85 to 1.0) */
@@ -662,9 +664,9 @@ function getVariableBasePower(
 		return 110;
 	}
 
-	// Knock Off: boosted if target has item
-	if (moveId === 'knockoff' && defender.item) {
-		return 97; // 65 * 1.5
+	// Gen 5 and MMO retain 20-power Knock Off without the modern item boost.
+	if (moveId === 'knockoff' && basePower === 65 && defender.item) {
+		return Math.floor(basePower * 1.5);
 	}
 
 	// Weather Ball: type and power change in weather
@@ -823,10 +825,12 @@ export function calculateDamage(
 	cache?: AICache,
 	spreadInfo?: { isDoubles: boolean; numAliveTargets: number }
 ): DamageResult {
+	move = resolveItemMoveType(attacker, move, field);
 	// HP-dependent power, fixed damage and KO flags must reflect the current snapshot.
 	const spreadKey = spreadInfo?.isDoubles ? `-spread${spreadInfo.numAliveTargets}` : '';
 	const hpKey = `${attacker.hp}/${attacker.maxHp}-${defender.hp}/${defender.maxHp}`;
-	const cacheKey = `${attacker.slot}-${defender.slot}-${move.id}-${hpKey}${spreadKey}`;
+	const cacheKey = `${pokemonCacheId(attacker)}-${pokemonCacheId(defender)}-${move.id}-${move.type}-${move.basePower}` +
+		`-${hpKey}${spreadKey}-${JSON.stringify(field)}`;
 	if (cache?.damageCalc.has(cacheKey)) {
 		return cache.damageCalc.get(cacheKey)!;
 	}

@@ -3,9 +3,10 @@
  * 测试腹鼓、反击、状态招式、抵抗扣分、半无敌招式等
  */
 
-const { section, test, assertEqual, assert, deepMerge } = require('./test-utils');
+const { section, test, assertEqual, assert, deepMerge, createDoublesContext } = require('./test-utils');
 
 function runNegativesScoringTests() {
+	const { buildAIMove } = require('../../../dist/server/npc/ai/cfru/state-builder');
 	const {
 		checkBellyDrum,
 		checkCounterMirrorCoat,
@@ -184,44 +185,14 @@ function runNegativesScoringTests() {
 	section('Magic Guard 状态招式 / Magic Guard Status Moves');
 
 	function createStatusMoveContext(overrides = {}) {
-		return {
-			state: {
-				isDoubles: false,
-				field: { weather: '', terrain: '' },
-				opponent: { conditions: {} },
-				self: { conditions: {} },
-			},
-			attacker: {
-				slot: 0,
-				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
-				hpPercent: 100,
-				ability: '',
-				item: '',
-				types: ['Fire'],
-				status: '',
-				moves: overrides.attackerMoves || [],
-			},
-			target: {
-				slot: 1,
-				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
-				hpPercent: 100,
-				ability: overrides.targetAbility || '',
-				item: overrides.targetItem || '',
-				types: overrides.targetTypes || ['Normal'],
-				status: overrides.targetStatus || '',
-			},
-			move: {
-				id: overrides.moveId || 'willowisp',
-				category: 'Status',
-				type: overrides.moveType || 'Fire',
-				basePower: 0,
-				accuracy: 85,
-				flags: {},
-				secondaryChance: overrides.secondaryChance || 0,
-			},
-			flags: { canKO: false, hasNoEffect: false },
-			adjustments: [],
-		};
+		return createDoublesContext({
+			state: { isDoubles: false },
+			attacker: { types: ['Fire'], moves: overrides.attackerMoves || [] },
+			target: { ability: overrides.targetAbility || '', item: overrides.targetItem || '',
+				types: overrides.targetTypes || ['Normal'], status: overrides.targetStatus || '' },
+			move: { ...buildAIMove({ id: overrides.moveId || 'willowisp' }, 1),
+				secondaryChance: overrides.secondaryChance || 0 },
+		});
 	}
 
 	test('对 Magic Guard 使用鬼火应扣分 / Will-O-Wisp vs Magic Guard penalized', () => {
@@ -969,82 +940,34 @@ function runNegativesScoringTests() {
 	const { checkSleepMove } = require('../../../dist/server/npc/ai/cfru/scoring/negatives');
 
 	function createSleepClauseContext(overrides = {}) {
-		return {
-			attacker: {
-				species: 'Amoonguss',
-				hpPercent: 100,
-				status: '',
-				types: ['Grass', 'Poison'],
-				ability: 'Effect Spore',
-				item: '',
-				itemLost: false,
-				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
-				volatiles: new Set(),
-				baseStats: { hp: 114, atk: 85, def: 70, spa: 85, spd: 80, spe: 30 },
-				moves: overrides.attackerMoves || [],
+		return createDoublesContext({
+			state: { isDoubles: false,
+				field: { formatId: 'gen5pokemmorandombattle', terrain: overrides.terrain || '', weather: overrides.weather || '' },
+				opponent: { team: overrides.opponentTeam || [
+					{ species: 'Landorus', fainted: false, status: overrides.targetStatus || '' },
+					{ species: 'Garchomp', fainted: false, status: overrides.reserve1Status || '' },
+					{ species: 'Dragonite', fainted: false, status: overrides.reserve2Status || '' },
+				] },
 			},
-			target: {
-				species: overrides.targetSpecies || 'Landorus',
-				hpPercent: overrides.targetHP || 100,
-				status: overrides.targetStatus || '',
-				types: overrides.targetTypes || ['Ground', 'Flying'],
-				ability: overrides.targetAbility || 'Intimidate',
-				item: overrides.targetItem || '',
-				itemLost: false,
-				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
-				volatiles: new Set(),
-				baseStats: { hp: 89, atk: 125, def: 90, spa: 115, spd: 80, spe: 101 },
-				moves: overrides.targetMoves || [],
-			},
-			state: {
-				opponent: {
-					team: overrides.opponentTeam || [
-						// Active Pokemon (target)
-						{
-							species: overrides.targetSpecies || 'Landorus',
-							fainted: false,
-							status: overrides.targetStatus || '',
-						},
-						// Reserve Pokemon 1
-						{
-							species: 'Garchomp',
-							fainted: false,
-							status: overrides.reserve1Status || '',
-						},
-						// Reserve Pokemon 2
-						{
-							species: 'Dragonite',
-							fainted: false,
-							status: overrides.reserve2Status || '',
-						},
-					],
-				},
-				field: {
-					terrain: overrides.terrain || '',
-					weather: overrides.weather || '',
-				},
-			},
-			move: {
-				id: overrides.moveId || 'spore',
-				category: 'Status',
-				type: 'Grass',
-				basePower: 0,
-				flags: overrides.moveFlags || { powder: 1 },
-			},
+			attacker: { species: 'Amoonguss', ability: 'Effect Spore', moves: overrides.attackerMoves || [] },
+			target: { species: overrides.targetSpecies || 'Landorus', hpPercent: overrides.targetHP || 100,
+				status: overrides.targetStatus || '', types: overrides.targetTypes || ['Ground', 'Flying'],
+				ability: overrides.targetAbility || 'Intimidate', item: overrides.targetItem || '', moves: overrides.targetMoves || [] },
+			move: { ...buildAIMove({ id: overrides.moveId || 'spore' }, 1, 'gen5pokemmorandombattle'),
+				...(overrides.moveFlags ? { flags: overrides.moveFlags } : {}) },
 			flags: overrides.flags || { canKO: false, goesFirst: true, hasNoEffect: false },
-			adjustments: [],
-		};
+		});
 	}
 
-	test('睡眠条款：对手已有睡眠精灵时应扣 20 分 / Sleep Clause: deduct 20 when opponent has sleeping Pokemon', () => {
+	test('睡眠条款：对手已有睡眠精灵时应扣 100 分 / Sleep Clause: deduct 100 when opponent has sleeping Pokemon', () => {
 		const ctx = createSleepClauseContext({
 			reserve1Status: 'slp', // Garchomp is asleep
 		});
 		const penalty = checkSleepMove(ctx);
-		assertEqual(penalty, -20, '对手已有睡眠精灵时睡眠招式应扣 20 分');
+		assertEqual(penalty, -100, '对手已有睡眠精灵时睡眠招式应扣 100 分');
 		assert(
 			ctx.adjustments.some(adj =>
-				adj.reason.includes('Sleep Clause') && adj.amount === -20
+				adj.reason.includes('Sleep Clause') && adj.amount === -100
 			),
 			'应记录睡眠条款扣分'
 		);
@@ -1076,10 +999,10 @@ function runNegativesScoringTests() {
 			reserve1Status: 'slp', // Another Pokemon is asleep
 		});
 		const penalty = checkSleepMove(ctx);
-		assertEqual(penalty, -20, '目标已有状态时应扣分');
+		assertEqual(penalty, -100, '目标已有状态时应扣分');
 		assert(
 			ctx.adjustments.some(adj =>
-				adj.reason.includes('already has status') && adj.amount === -20
+				adj.reason.includes('already has status') && adj.amount === -100
 			),
 			'应记录"目标已有状态"而非睡眠条款'
 		);
@@ -1090,10 +1013,10 @@ function runNegativesScoringTests() {
 			targetTypes: ['Grass', 'Poison'],
 		});
 		const penalty = checkSleepMove(ctx);
-		assertEqual(penalty, -20, '草系免疫粉末招式');
+		assertEqual(penalty, -100, '草系免疫粉末招式');
 		assert(
 			ctx.adjustments.some(adj =>
-				adj.reason.includes('Grass type immune') && adj.amount === -20
+				adj.reason.includes('Grass type immune') && adj.amount === -100
 			),
 			'应记录草系免疫粉末'
 		);
@@ -1105,10 +1028,10 @@ function runNegativesScoringTests() {
 			targetTypes: ['Ground', 'Rock'], // Grounded types
 		});
 		const penalty = checkSleepMove(ctx);
-		assertEqual(penalty, -10, '电气场地阻止接地精灵睡眠');
+		assertEqual(penalty, -100, '电气场地阻止接地精灵睡眠');
 		assert(
 			ctx.adjustments.some(adj =>
-				adj.reason.includes('Electric Terrain') && adj.amount === -10
+				adj.reason.includes('Electric Terrain') && adj.amount === -100
 			),
 			'应记录电气场地阻止睡眠'
 		);
@@ -1119,10 +1042,10 @@ function runNegativesScoringTests() {
 			targetAbility: 'Insomnia',
 		});
 		const penalty = checkSleepMove(ctx);
-		assertEqual(penalty, -20, '不眠特性阻止睡眠');
+		assertEqual(penalty, -100, '不眠特性阻止睡眠');
 		assert(
 			ctx.adjustments.some(adj =>
-				adj.reason.includes('Insomnia') && adj.amount === -20
+				adj.reason.includes('Insomnia') && adj.amount === -100
 			),
 			'应记录不眠特性阻止睡眠'
 		);
@@ -1143,7 +1066,7 @@ function runNegativesScoringTests() {
 			reserve1Status: 'slp', // Opponent has sleeping Pokemon
 		});
 		const penalty = checkSleepMove(ctx);
-		assertEqual(penalty, -20, '睡眠条款违规应扣 20 分');
+		assertEqual(penalty, -100, '睡眠条款违规应扣 100 分');
 		assertEqual(ctx.flags.hasNoEffect, true, 'hasNoEffect 标志应为 true');
 	});
 
@@ -1158,7 +1081,7 @@ function runNegativesScoringTests() {
 
 		// First run negative scorer to set hasNoEffect
 		const penalty = checkSleepMove(ctx);
-		assertEqual(penalty, -20, '应扣 20 分');
+		assertEqual(penalty, -100, '应扣 100 分');
 		assertEqual(ctx.flags.hasNoEffect, true, 'hasNoEffect 应为 true');
 
 		// Now verify that positive scorer returns 0

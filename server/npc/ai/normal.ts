@@ -523,7 +523,7 @@ export class NormalAI extends NPCBattleAI {
 		if (attacker.status === 'frz' && !move.flags.defrost) return false;
 		// These attacks do not deal their calculated damage before the opponent acts this turn.
 		if (['counter', 'mirrorcoat', 'metalburst', 'focuspunch', 'beakblast', 'shelltrap',
-			'futuresight', 'doomdesire'].includes(move.id)) return false;
+			'futuresight', 'doomdesire', 'suckerpunch'].includes(move.id)) return false;
 		if (move.flags.charge && !attacker.volatiles.has(move.id) && !attacker.volatiles.has('twoturnmove') &&
 			toID(attacker.item) !== 'powerherb' &&
 			!(['solarbeam', 'solarblade'].includes(move.id) && state.field.weather === 'sun')) return false;
@@ -531,7 +531,9 @@ export class NormalAI extends NPCBattleAI {
 		const numAliveTargets = this.battleState!.opponent.active.filter(p => !p.fainted).length +
 			(move.target === 'allAdjacent' ? state.self.active.filter(p => !p.fainted && p !== attacker).length : 0);
 		return calculateDamage(attacker, target, move, state.field, undefined,
-			{ isDoubles: state.isDoubles, numAliveTargets, defenderAllies: state.opponent.active }).average >= target.hp;
+			{ isDoubles: state.isDoubles, numAliveTargets, defenderAllies: state.opponent.active,
+				attackerSideConditions: state.self.conditions,
+				defenderSideConditions: state.opponent.conditions }).average >= target.hp;
 	}
 
 	/** A likely KO before the sole opponent acts takes precedence over incoming damage. */
@@ -605,6 +607,7 @@ export class NormalAI extends NPCBattleAI {
 				const damage = calculateDamage(model.pokemon, defender, move, state.field, undefined, {
 					isDoubles: state.isDoubles, numAliveTargets,
 					defenderAllies: state.self.active.filter(p => p !== replacing),
+					attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
 				});
 				threat = Math.max(threat, damage.average / defender.hp);
 			}

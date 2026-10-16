@@ -77,11 +77,7 @@ export function getEffectiveSpeed(
 		speed = Math.floor(speed * 1.5);
 	}
 
-	// Slow Start (0.5x for first 5 turns)
-	// Note: Requires turn tracking, simplified
-	if (abilityId === 'slowstart') {
-		// Assume it's active
-	}
+	if (abilityId === 'slowstart' && pokemon.volatiles.has('slowstart')) speed *= 0.5;
 
 	// Item modifiers
 	// Choice Scarf (1.5x)

@@ -10,6 +10,7 @@
  */
 
 import { Dex, toID } from '../../../../../sim/dex';
+import { abilityStatModifier } from './mechanics';
 import { defaultBoosts, type AIPokemon } from '../types';
 
 /** Only facts available in our request; never store inferred models or scoring state here. */
@@ -38,6 +39,7 @@ export function normalizeWeather(weather: string): string {
  * Tracked Pokemon information
  */
 export interface TrackedPokemon {
+	sleepSelfInflicted?: boolean;
 	transformation?: TrackedTransformation;
 	/** Public identity scoped to a player, not the active position. */
 	ident?: string;
@@ -136,11 +138,17 @@ export class BattleTracker {
 	private activeIdentities = new Map<string, string>();
 	/** Successful Rest followed by public cant|slp actions; random sleep stays unknown. */
 	private restSleep = new Map<string, number>();
+	private sleepSources = new Map<string, boolean>();
+	private yawnSources = new Map<string, string>();
+	private lastMoveSource = '';
 	private transformations = new Map<string, TrackedTransformation>();
 	private ourPokemon = new Map<string, { ident: string, pokemon: RequestPokemonFacts }>();
 
 	/** All known opponent Pokemon (keyed by player and public nickname for team tracking) */
 	private opponentTeam: Map<string, TrackedPokemon> = new Map();
+
+	/** Temporary types revealed by battle protocol, shared by both teams. */
+	private activeTypes = new Map<string, { types?: string[], added?: string }>();
 
 	/** Field conditions */
 	private fieldConditions: {
@@ -162,6 +170,7 @@ export class BattleTracker {
 		lightscreen: number;
 		auroraveil: number;
 		tailwind: number;
+		safeguard: number,
 	} = {
 		stealthrock: false,
 		spikes: 0,
@@ -170,7 +179,7 @@ export class BattleTracker {
 		reflect: 0,
 		lightscreen: 0,
 		auroraveil: 0,
-		tailwind: 0,
+		tailwind: 0, safeguard: 0,
 	};
 
 	/** Our side conditions (for tracking hazards on our side) */
@@ -183,6 +192,7 @@ export class BattleTracker {
 		lightscreen: number,
 		auroraveil: number,
 		tailwind: number,
+		safeguard: number,
 	} = {
 		stealthrock: false,
 		spikes: 0,
@@ -191,7 +201,7 @@ export class BattleTracker {
 		reflect: 0,
 		lightscreen: 0,
 		auroraveil: 0,
-		tailwind: 0,
+		tailwind: 0, safeguard: 0,
 	};
 
 	/**
@@ -206,16 +216,6 @@ export class BattleTracker {
 		spe: number,
 		accuracy: number,
 		evasion: number,
-	}> = new Map();
-
-	/**
-	 * Our active Pokemon ability stat modifiers (Quark Drive, Protosynthesis, etc.)
-	 * These are multipliers (1.3 for non-speed, 1.5 for speed), not stage boosts
-	 * Keyed by position slot ('a', 'b' for doubles)
-	 */
-	private ourAbilityStatMods: Map<string, {
-		stat: 'atk' | 'def' | 'spa' | 'spd' | 'spe' | null,
-		multiplier: number,
 	}> = new Map();
 
 	/**
@@ -316,6 +316,7 @@ export class BattleTracker {
 			this.teamSizes.set(parts[1], Number(parts[2]));
 			break;
 		case 'turn':
+			this.lastMoveSource = '';
 			this.turn = Number(parts[1]) || this.turn;
 			break;
 		case 'switch':
@@ -331,7 +332,9 @@ export class BattleTracker {
 			break;
 		case 'detailschange':
 		case '-formechange': {
-			const tracked = this.opponentPokemon.get(parts[1]?.split(':')[0].trim());
+			const position = parts[1]?.split(':')[0].trim();
+			this.activeTypes.delete(position);
+			const tracked = this.opponentPokemon.get(position);
 			if (tracked) {
 				const species = (this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(parts[2].split(',')[0]);
 				tracked.species = species.name;
@@ -435,9 +438,11 @@ export class BattleTracker {
 		const slot = position.slice(2); // "a" or "b"
 
 		const sleepIdent = this.sleepIdentity(positionPart);
+		this.yawnSources.delete(this.activeIdentities.get(position) || '');
 		this.activeIdentities.set(position, sleepIdent);
 		if (!parts[3]?.split(' ').includes('slp')) {
 			this.restSleep.delete(sleepIdent);
+			this.sleepSources.delete(sleepIdent);
 		} else if (this.formatId && this.restSleep.has(sleepIdent)) {
 			const dex = Dex.forFormat(this.formatId);
 			// Gen 5 resets sleep on re-entry; MMO explicitly removes that reset.
@@ -447,10 +452,14 @@ export class BattleTracker {
 		}
 
 		this.activeVolatiles.set(position, new Set());
+		this.activeTypes.delete(position);
 		this.acted.delete(position);
 		this.transformations.delete(position);
 		this.ourPokemon.delete(position);
 		const outgoing = this.opponentPokemon.get(position);
+		if (outgoing) {
+			outgoing.types = [...(this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(outgoing.species).types];
+		}
 		if (outgoing?.transformation) {
 			delete outgoing.transformation;
 			outgoing.ability = outgoing.baseAbility || '';
@@ -465,8 +474,6 @@ export class BattleTracker {
 		if (this.isOurTeamSide(side)) {
 			const boostKey = `${side}${slot}`;
 			this.ourActiveBoosts.set(boostKey, defaultBoosts());
-			// Also clear ability stat mods (Quark Drive/Protosynthesis)
-			this.ourAbilityStatMods.delete(boostKey);
 			// Reset lastMove (CFRU: switching resets gDisableStructs)
 			this.ourLastMove.set(boostKey, '');
 			return; // Don't need to track our own Pokemon details
@@ -526,6 +533,7 @@ export class BattleTracker {
 		const ident = `${side}:${positionPart.split(':').slice(1).join(':').trim()}`;
 		const tracked: TrackedPokemon = {
 			ident,
+			sleepSelfInflicted: status === 'slp' ? this.sleepSources.get(ident) : undefined,
 			volatiles: this.activeVolatiles.get(position),
 			species,
 			types,
@@ -577,13 +585,15 @@ export class BattleTracker {
 			knownMoves: [],
 		};
 		if (target) {
-			transformation.target = { ...target, types: [...target.types], knownMoves: [...target.knownMoves],
+			transformation.target = { ...target, types: this.getTypes(targetPosition, target.types),
+				knownMoves: [...target.knownMoves],
 				boosts: { ...target.boosts }, volatiles: new Set(target.volatiles) };
 		} else if (own?.ident === transformation.targetIdent) {
-			transformation.pokemon = { ...own.pokemon, types: [...own.pokemon.types],
+			transformation.pokemon = { ...own.pokemon, types: this.getTypes(targetPosition, own.pokemon.types),
 				baseStats: { ...own.pokemon.baseStats }, moves: [...own.pokemon.moves] };
 		}
 		this.transformations.set(position, transformation);
+		this.activeTypes.delete(position);
 		const boosts = target ? { ...target.boosts } : this.getOurActiveBoosts(targetPosition);
 		if (this.isOurTeamSide(position.slice(0, 2))) {
 			this.ourActiveBoosts.set(position, boosts);
@@ -828,6 +838,16 @@ export class BattleTracker {
 		const side = position.slice(0, 2);
 
 		const ident = this.sleepIdentity(positionPart);
+		if (parts[2] === 'slp') {
+			const explicit = parts.find(p => p.startsWith('[of] '))?.slice(5, 7);
+			const source = parts.includes('[from] move: Rest') ? side :
+				explicit || this.yawnSources.get(ident) || this.lastMoveSource;
+			if (source) this.sleepSources.set(ident, this.isOurTeamSide(source) === this.isOurTeamSide(side));
+			this.yawnSources.delete(ident);
+		} else {
+			this.sleepSources.delete(ident);
+		}
+
 		if (parts[2] === 'slp' && parts.includes('[from] move: Rest')) this.restSleep.set(ident, 0);
 		else this.restSleep.delete(ident);
 
@@ -839,6 +859,7 @@ export class BattleTracker {
 		const tracked = this.opponentPokemon.get(position);
 		if (tracked) {
 			tracked.status = status;
+			tracked.sleepSelfInflicted = this.sleepSources.get(ident);
 		}
 	}
 
@@ -854,9 +875,12 @@ export class BattleTracker {
 		const side = position.slice(0, 2);
 
 		if (parts[0] === '-cureteam') {
-			for (const ident of this.restSleep.keys()) if (ident.startsWith(`${side}:`)) this.restSleep.delete(ident);
+			for (const map of [this.restSleep, this.sleepSources]) {
+				for (const ident of map.keys()) if (ident.startsWith(`${side}:`)) map.delete(ident);
+			}
 		} else {
 			this.restSleep.delete(this.sleepIdentity(positionPart));
+			this.sleepSources.delete(this.sleepIdentity(positionPart));
 		}
 
 		if (!this.isOpponentSide(side)) return;
@@ -884,6 +908,7 @@ export class BattleTracker {
 
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
+		this.lastMoveSource = side;
 		const slot = position.slice(2); // 'a' or 'b'
 
 		const move = parts[2];
@@ -1023,7 +1048,9 @@ export class BattleTracker {
 			conditions.auroraveil = isStart ? 5 : 0;
 		}
 		// Tailwind
-		else if (conditionId === 'tailwind') {
+		else if (conditionId === 'safeguard') {
+			conditions.safeguard = isStart ? 5 : 0;
+		} else if (conditionId === 'tailwind') {
 			conditions.tailwind = isStart ? 4 : 0; // Default 4 turns
 		}
 	}
@@ -1043,57 +1070,46 @@ export class BattleTracker {
 		if (!positionPart) return;
 
 		const position = positionPart.split(':')[0].trim();
-		const side = position.slice(0, 2);
-		const slot = position.slice(2);
-
-		const volatile = parts[2]?.toLowerCase() || '';
 		// Record protocol facts for both teams, without adding any inferred effects.
-		const effect = toID((parts[2] || '').replace(/^move: /, ''));
+		const effect = toID((parts[2] || '').replace(/^(?:move|ability): /, ''));
+		if (effect === 'typechange' || effect === 'typeadd') {
+			const current = this.activeTypes.get(position) || {};
+			if (command === '-end') {
+				if (effect === 'typechange') delete current.types;
+				else delete current.added;
+			} else if (effect === 'typeadd') {
+				current.added = parts[3];
+			} else {
+				const copiedPosition = parts.find(p => p.startsWith('[of] '))?.slice(5).split(':')[0];
+				const copied = copiedPosition &&
+					(this.opponentPokemon.get(copiedPosition) || this.ourPokemon.get(copiedPosition)?.pokemon);
+				const types = parts[3]?.startsWith('[') ?
+					(copied ? this.getTypes(copiedPosition, copied.types) : undefined) : parts[3]?.split('/');
+				if (types?.length) current.types = [...types];
+				delete current.added;
+			}
+			this.activeTypes.set(position, current);
+			return;
+		}
+		if (effect === 'yawn' && command === '-start') {
+			const source = parts.find(p => p.startsWith('[of] '))?.slice(5, 7) || this.lastMoveSource;
+			if (source) this.yawnSources.set(this.sleepIdentity(positionPart), source);
+		}
 		let effects = this.activeVolatiles.get(position);
 		if (!effects) this.activeVolatiles.set(position, effects = new Set());
 		if (/^perish[0-3]$/.test(effect)) {
 			for (const old of effects) if (/^perish[0-3]$/.test(old)) effects.delete(old);
 		}
-		if (effect && !effect.startsWith('ability')) {
+		if (command === '-end' && ['quarkdrive', 'protosynthesis'].includes(effect)) {
+			for (const old of effects) if (old.startsWith(effect)) effects.delete(old);
+		}
+		if (effect) {
 			if (command === '-start') effects.add(effect);
 			else effects.delete(effect);
 		}
 		const tracked = this.opponentPokemon.get(position);
 		if (tracked) tracked.volatiles = effects;
 
-		// Handle Quark Drive and Protosynthesis stat boosts
-		// Format: "quarkdriveatk", "quarkdrivespe", "protosynthesisdef", etc.
-		const abilityStatMatch = volatile.match(/^(quarkdrive|protosynthesis)(atk|def|spa|spd|spe)$/);
-
-		if (abilityStatMatch) {
-			const [, , stat] = abilityStatMatch;
-			const isStart = command === '-start';
-
-			// Track our team (in multi battles: both p2 and p4)
-			if (this.isOurTeamSide(side)) {
-				const boostKey = `${side}${slot}`;
-				if (isStart) {
-					// Speed gets 1.5x, other stats get ~1.3x (5325/4096)
-					const multiplier = stat === 'spe' ? 1.5 : 5325 / 4096;
-					this.ourAbilityStatMods.set(boostKey, {
-						stat: stat as 'atk' | 'def' | 'spa' | 'spd' | 'spe',
-						multiplier,
-					});
-				}
-			}
-			return;
-		}
-
-		// Handle end of Quark Drive / Protosynthesis
-		// Format: |-end|p1a: Pokemon|Quark Drive
-		if (command === '-end') {
-			const endMatch = volatile.match(/^(quark drive|protosynthesis)$/i) ||
-			                 parts[2]?.match(/^(Quark Drive|Protosynthesis)$/i);
-			if (endMatch && this.isOurTeamSide(side)) {
-				const boostKey = `${side}${slot}`;
-				this.ourAbilityStatMods.delete(boostKey);
-			}
-		}
 	}
 
 	/**
@@ -1286,7 +1302,7 @@ export class BattleTracker {
 	getActiveOpponent(): TrackedPokemon | null {
 		for (const [position, mon] of this.opponentPokemon) {
 			if (mon.active && position.startsWith(this.opponentSide)) {
-				return mon;
+				return { ...mon, types: this.getTypes(position, mon.types) };
 			}
 		}
 		return null;
@@ -1301,7 +1317,7 @@ export class BattleTracker {
 		for (const [position, mon] of this.opponentPokemon) {
 			const side = position.slice(0, 2);
 			if (mon.active && this.isOpponentSide(side)) {
-				active.push({ position, pokemon: mon });
+				active.push({ position, pokemon: { ...mon, types: this.getTypes(position, mon.types) } });
 			}
 		}
 		// Sort by position: p1a < p1b < p3a < p3b
@@ -1406,18 +1422,12 @@ export class BattleTracker {
 	 *
 	 * @param slot - Position slot ('a' for singles/doubles) or full position ('p2a' for multi)
 	 */
-	getOurAbilityStatMod(slot: string = 'a'): {
-		stat: 'atk' | 'def' | 'spa' | 'spd' | 'spe' | null,
-		multiplier: number,
-	} {
-		// If slot is a full position (e.g., 'p2a', 'p4a'), use it directly
-		// Otherwise, prepend ourSide for backward compatibility
-		const modKey = slot.length > 1 ? slot : `${this.ourSide}${slot}`;
-		const mod = this.ourAbilityStatMods.get(modKey);
-		if (mod) {
-			return { ...mod };
-		}
-		return { stat: null, multiplier: 1 };
+	getOurAbilityStatMod(slot = 'a'): AIPokemon['abilityStatMod'] {
+		return abilityStatModifier(this.getVolatiles(slot));
+	}
+
+	getSelfInflictedSleep(ident: string): boolean | undefined {
+		return this.sleepSources.get(this.sleepIdentity(ident));
 	}
 
 	/**
@@ -1686,6 +1696,14 @@ export class BattleTracker {
 		return new Set(this.activeVolatiles.get(key));
 	}
 
+	/** Public type changes apply to either team and last until switching. */
+	getTypes(position: string, fallback: readonly string[]): string[] {
+		const current = this.activeTypes.get(position);
+		const transformation = this.transformations.get(position);
+		const copied = transformation?.target?.types || transformation?.pokemon?.types;
+		return [...new Set([...(current?.types || copied || fallback), ...(current?.added ? [current.added] : [])])];
+	}
+
 	/** Reset tracker state for a new battle. */
 	reset(): void {
 		this.turn = 0;
@@ -1695,13 +1713,16 @@ export class BattleTracker {
 		this.teamSizes.clear();
 		this.activeIdentities.clear();
 		this.restSleep.clear();
+		this.sleepSources.clear();
+		this.yawnSources.clear();
+		this.lastMoveSource = '';
 		this.transformations.clear();
 		this.ourPokemon.clear();
 		this.activeVolatiles.clear();
+		this.activeTypes.clear();
 		this.opponentPokemon.clear();
 		this.opponentTeam.clear();
 		this.ourActiveBoosts.clear();
-		this.ourAbilityStatMods.clear();
 		this.ourLastMove.clear();
 		this.fieldConditions = {
 			weather: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false,
@@ -1714,7 +1735,7 @@ export class BattleTracker {
 			reflect: 0,
 			lightscreen: 0,
 			auroraveil: 0,
-			tailwind: 0,
+			tailwind: 0, safeguard: 0,
 		};
 		this.ourSideConditions = {
 			stealthrock: false,
@@ -1724,7 +1745,7 @@ export class BattleTracker {
 			reflect: 0,
 			lightscreen: 0,
 			auroraveil: 0,
-			tailwind: 0,
+			tailwind: 0, safeguard: 0,
 		};
 	}
 }

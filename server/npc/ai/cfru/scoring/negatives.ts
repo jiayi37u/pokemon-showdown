@@ -11,7 +11,8 @@
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, NegativeScoringFunction } from './index';
 import { getTypeEffectiveness, getMoveInteraction } from '../util/type-calc';
-import { grounded } from '../util/mechanics';
+import { defensiveAbility, effectiveItem, rulesDex } from '../util/mechanics';
+import { fieldEffectFailure, inflictedStatus, statusFailure } from '../util/move-effects';
 import { calculateDamage } from '../util/damage-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
 
@@ -29,6 +30,14 @@ export const checkMoveImmunity: NegativeScoringFunction = ctx => {
 	ctx.flags.isImmune = true;
 	ctx.flags.hasNoEffect = true;
 	ctx.adjustments.push({ reason: result.blockedBy, amount: -100, category: 'negative' });
+	return -100;
+};
+
+export const checkFieldEffect: NegativeScoringFunction = ctx => {
+	const failure = fieldEffectFailure(ctx.state, ctx.attacker, ctx.move);
+	if (!failure) return 0;
+	ctx.flags.hasNoEffect = true;
+	ctx.adjustments.push({ reason: failure, amount: -100, category: 'negative' });
 	return -100;
 };
 
@@ -131,7 +140,7 @@ export const checkLowDamage: NegativeScoringFunction = (ctx) => {
 export const checkCovertCloak: NegativeScoringFunction = (ctx) => {
 	if (ctx.move.category === 'Status') return 0;
 
-	const itemId = toID(ctx.target.item);
+	const itemId = effectiveItem(ctx.target, ctx.state.field);
 	if (itemId !== 'covertcloak') return 0;
 
 	// Check if move has secondary effect
@@ -219,7 +228,7 @@ export const checkStatBoostOnHit: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 394-401
  */
 export const checkMirrorArmor: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	if (abilityId !== 'mirrorarmor') return 0;
 
@@ -241,7 +250,7 @@ export const checkMirrorArmor: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 403-415
  */
 export const checkClearBody: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	if (!['clearbody', 'fullmetalbody', 'whitesmoke'].includes(abilityId)) {
 		return 0;
@@ -265,7 +274,7 @@ export const checkClearBody: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 418-424
  */
 export const checkHyperCutter: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	if (abilityId !== 'hypercutter') return 0;
 
@@ -291,7 +300,7 @@ export const checkHyperCutter: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 426-432
  */
 export const checkKeenEye: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	if (abilityId !== 'keeneye') return 0;
 
@@ -317,7 +326,7 @@ export const checkKeenEye: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 435-441
  */
 export const checkBigPecks: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	if (abilityId !== 'bigpecks') return 0;
 
@@ -397,7 +406,7 @@ export const checkCompetitive: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 366-372
  */
 export const checkFlowerVeil: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	if (abilityId !== 'flowerveil') return 0;
 
@@ -440,102 +449,23 @@ export const checkContraryStatLower: NegativeScoringFunction = (ctx) => {
 };
 
 /**
- * Check for Aroma Veil blocking mental moves
- * CFRU: ai_negatives.c lines 350-356
- * Protected moves: Disable, Attract, Encore, Torment, Taunt, Heal Block
- */
-export const checkAromaVeil: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
-
-	if (abilityId !== 'aromaveil') return 0;
-
-	const moveId = toID(ctx.move.id);
-	// Moves blocked by Aroma Veil (from gAromaVeilProtectedMoves)
-	const aromaVeilBlockedMoves = ['disable', 'attract', 'encore', 'torment', 'taunt', 'healblock'];
-
-	if (aromaVeilBlockedMoves.includes(moveId)) {
-		ctx.adjustments.push({
-			reason: 'Aroma Veil blocks this move',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	return 0;
-};
-
-/**
- * Check for Shields Down blocking status when HP > 50%
- * CFRU: ai_negatives.c lines 478-485
- */
-export const checkShieldsDown: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
-
-	if (abilityId !== 'shieldsdown') return 0;
-
-	// Shields Down only blocks status when Minior is in shield form (HP > 50%)
-	// Check if the target is Minior and has > 50% HP
-	const speciesId = toID(ctx.target.species);
-	if (!speciesId.startsWith('minior')) return 0;
-
-	if (ctx.target.hpPercent > 50 && ctx.move.status) {
-		ctx.adjustments.push({
-			reason: 'Shields Down blocks status at >50% HP',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	return 0;
-};
-
-/**
  * Check for Wonder Skin reducing status move accuracy
  * CFRU: ai_negatives.c lines 487-490
  * Note: This doesn't fully block but makes status less reliable
  */
 export const checkWonderSkin: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
+	const abilityId = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	if (abilityId !== 'wonderskin') return 0;
 
-	// Wonder Skin halves accuracy of status moves
-	if (ctx.move.category === 'Status' && ctx.move.accuracy !== true) {
+	// Wonder Skin caps status move accuracy at 50%.
+	if (ctx.move.category === 'Status' && ctx.move.accuracy !== true && ctx.move.accuracy > 50) {
 		ctx.adjustments.push({
-			reason: 'Wonder Skin halves status move accuracy',
+			reason: 'Wonder Skin caps status move accuracy at 50%',
 			amount: -5,
 			category: 'negative',
 		});
 		return -5;
-	}
-
-	return 0;
-};
-
-/**
- * Check for Leaf Guard blocking status in sun
- * CFRU: ai_negatives.c lines 492-500
- */
-export const checkLeafGuard: NegativeScoringFunction = (ctx) => {
-	const abilityId = toID(ctx.target.ability);
-
-	if (abilityId !== 'leafguard') return 0;
-
-	// Only works in sun
-	if (ctx.state.field.weather !== 'sun' && ctx.state.field.weather !== 'desolateland') {
-		return 0;
-	}
-
-	// Blocks status moves
-	if (ctx.move.status) {
-		ctx.adjustments.push({
-			reason: 'Leaf Guard blocks status in sun',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
 	}
 
 	return 0;
@@ -576,6 +506,33 @@ function isStatLoweringMove(move: { id: string; category: string }): boolean {
 // Status Move Checks
 // =============================================================================
 
+/** Only pure status moves can be wholly invalidated by failure to inflict status. */
+function scoreStatus(ctx: ScoringContext, expected: string): number {
+	if (ctx.move.category !== 'Status') return 0;
+	const status = inflictedStatus(ctx.move, ctx.state);
+	if (expected === 'poison' ? !['psn', 'tox'].includes(status) : status !== expected) return 0;
+	const failure = statusFailure(ctx.state, ctx.attacker, ctx.target, ctx.move, status);
+	if (failure) {
+		const boosts = rulesDex(ctx.state.field).moves.get(ctx.move.id).boosts;
+		if (boosts && Object.entries(boosts).some(([stat, value]) =>
+			(value || 0) > 0 && ctx.target.boosts[stat as keyof typeof ctx.target.boosts] < 6)) {
+			ctx.adjustments.push({ reason: `${failure}; stat boost can still apply`, amount: -10, category: 'negative' });
+			return -10;
+		}
+		ctx.flags.hasNoEffect = true;
+		ctx.adjustments.push({ reason: failure, amount: -100, category: 'negative' });
+		return -100;
+	}
+	if (['brn', 'psn', 'tox'].includes(status) && toID(ctx.target.ability) === 'magicguard' &&
+		!(status !== 'brn' && ctx.attacker.moves.some(m => toID(m) === 'venoshock'))) {
+		ctx.adjustments.push({
+			reason: `Magic Guard prevents ${status === 'brn' ? 'burn' : 'poison'} damage`, amount: -10, category: 'negative',
+		});
+		return -10;
+	}
+	return 0;
+}
+
 /** Team status cures fail when no living teammate has a status condition. */
 export const checkTeamStatusCure: NegativeScoringFunction = ctx => {
 	if (!['aromatherapy', 'healbell'].includes(toID(ctx.move.id))) return 0;
@@ -594,359 +551,29 @@ export const checkTeamStatusCure: NegativeScoringFunction = ctx => {
  * Check if sleep move will fail
  * CFRU: battle_util.c lines 2018-2037 (DoesSleepClausePrevent)
  */
-export const checkSleepMove: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	const sleepMoves = ['spore', 'sleeppowder', 'hypnosis', 'sing', 'grasswhistle',
-		'lovelykiss', 'darkvoid', 'yawn', 'relicsong'];
-
-	if (!sleepMoves.includes(moveId)) return 0;
-
-	if (moveId === 'yawn' && ctx.target.volatiles.has('yawn')) {
-		ctx.adjustments.push({
-			reason: 'Yawn fails: target is already drowsy',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Already has status
-	if (ctx.target.status) {
-		ctx.adjustments.push({
-			reason: 'Target already has status condition',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Sleep Clause: Check if opponent already has a sleeping Pokemon
-	// Based on CFRU DoesSleepClausePrevent (battle_util.c:2018-2037)
-	// In standard PS singles, only one Pokemon per team can be asleep at a time
-	const opponentHasSleeping = ctx.state.opponent.team.some(mon =>
-		!mon.fainted && mon.status === 'slp'
-	);
-
-	if (opponentHasSleeping) {
-		ctx.adjustments.push({
-			reason: 'Sleep Clause: opponent already has sleeping Pokemon',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Electric Terrain blocks sleep
-	if (ctx.state.field.terrain === 'electric') {
-		// Check if target is grounded
-		const isGrounded = grounded(ctx.target, ctx.state.field);
-
-		if (isGrounded) {
-			ctx.adjustments.push({
-				reason: 'Electric Terrain blocks sleep',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	// Vital Spirit, Insomnia, Sweet Veil block sleep
-	const abilityId = toID(ctx.target.ability);
-	if (['vitalspirit', 'insomnia', 'sweetveil', 'comatose'].includes(abilityId)) {
-		ctx.adjustments.push({
-			reason: `${ctx.target.ability} prevents sleep`,
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Grass types immune to powder moves
-	if (ctx.move.flags['powder'] && ctx.target.types.includes('Grass')) {
-		ctx.adjustments.push({
-			reason: 'Grass type immune to powder',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Safety Goggles blocks powder moves
-	if (ctx.move.flags['powder'] && toID(ctx.target.item) === 'safetygoggles') {
-		ctx.adjustments.push({
-			reason: 'Safety Goggles blocks powder',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	return 0;
-};
+export const checkSleepMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'slp');
 
 /**
  * Check if paralysis move will fail
  */
-export const checkParalysisMove: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	const paralysisMoves = ['thunderwave', 'stunspore', 'glare', 'nuzzle', 'zapcannon'];
-
-	if (!paralysisMoves.includes(moveId)) return 0;
-
-	// Already paralyzed
-	if (ctx.target.status === 'par') {
-		ctx.adjustments.push({
-			reason: 'Target already paralyzed',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Has other status
-	if (ctx.target.status) {
-		ctx.adjustments.push({
-			reason: 'Target already has status',
-			amount: -15,
-			category: 'negative',
-		});
-		return -15;
-	}
-
-	// Electric types immune to Thunder Wave
-	if (moveId === 'thunderwave' && ctx.target.types.includes('Electric')) {
-		ctx.adjustments.push({
-			reason: 'Electric type immune to Thunder Wave',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Ground types immune to Thunder Wave
-	if (moveId === 'thunderwave' && ctx.target.types.includes('Ground')) {
-		ctx.adjustments.push({
-			reason: 'Ground type immune to Thunder Wave',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Limber prevents paralysis
-	if (toID(ctx.target.ability) === 'limber') {
-		ctx.adjustments.push({
-			reason: 'Limber prevents paralysis',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	return 0;
-};
+export const checkParalysisMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'par');
 
 /**
  * Check if burn move will fail
  * CFRU: ai_util.c BadIdeaToBurn lines 2951-2971
  */
-export const checkBurnMove: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	const burnMoves = ['willowisp', 'inferno', 'sacredfire'];
-
-	if (!burnMoves.includes(moveId)) return 0;
-
-	// Already burned
-	if (ctx.target.status === 'brn') {
-		ctx.adjustments.push({
-			reason: 'Target already burned',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Has other status
-	if (ctx.target.status) {
-		ctx.adjustments.push({
-			reason: 'Target already has status',
-			amount: -15,
-			category: 'negative',
-		});
-		return -15;
-	}
-
-	// Fire types immune to burn
-	if (ctx.target.types.includes('Fire')) {
-		ctx.adjustments.push({
-			reason: 'Fire type immune to burn',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Water Veil, Water Bubble prevent burn
-	const abilityId = toID(ctx.target.ability);
-	if (['waterveil', 'waterbubble'].includes(abilityId)) {
-		ctx.adjustments.push({
-			reason: `${ctx.target.ability} prevents burn`,
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Magic Guard: burn deals no damage, so it's less useful
-	// CFRU: ai_util.c line 2960
-	if (abilityId === 'magicguard') {
-		ctx.adjustments.push({
-			reason: 'Magic Guard prevents burn damage',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	return 0;
-};
+export const checkBurnMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'brn');
 
 /**
  * Check if poison move will fail
  * CFRU: ai_util.c BadIdeaToPoison lines 2876-2901
  */
-export const checkPoisonMove: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	const poisonMoves = ['toxic', 'poisonpowder', 'poisongas', 'poisonfang'];
-
-	if (!poisonMoves.includes(moveId)) return 0;
-
-	// Already poisoned
-	if (ctx.target.status === 'psn' || ctx.target.status === 'tox') {
-		ctx.adjustments.push({
-			reason: 'Target already poisoned',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Has other status
-	if (ctx.target.status) {
-		ctx.adjustments.push({
-			reason: 'Target already has status',
-			amount: -15,
-			category: 'negative',
-		});
-		return -15;
-	}
-
-	// Poison/Steel types immune to poison
-	if (ctx.target.types.includes('Poison') || ctx.target.types.includes('Steel')) {
-		ctx.adjustments.push({
-			reason: 'Type immune to poison',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Immunity prevents poison
-	const abilityId = toID(ctx.target.ability);
-	if (abilityId === 'immunity') {
-		ctx.adjustments.push({
-			reason: 'Immunity prevents poison',
-			amount: -20,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -20;
-	}
-
-	// Magic Guard: poison deals no damage, so it's less useful
-	// CFRU: ai_util.c line 2889 - exception for Venoshock
-	if (abilityId === 'magicguard') {
-		// Check if attacker has Venoshock - poisoning still has value
-		const hasVenoshock = ctx.attacker.moves?.some(m => toID(m) === 'venoshock');
-		if (!hasVenoshock) {
-			ctx.adjustments.push({
-				reason: 'Magic Guard prevents poison damage',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	return 0;
-};
+export const checkPoisonMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'poison');
 
 /**
  * Check if confusion move will fail
  */
-export const checkConfusionMove: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	const confusionMoves = ['confuseray', 'supersonic', 'sweetkiss', 'teeterdance', 'flatter', 'swagger'];
-
-	if (!confusionMoves.includes(moveId)) return 0;
-
-	// Already confused
-	if (ctx.target.volatiles.has('confusion')) {
-		ctx.adjustments.push({
-			reason: 'Target already confused',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	// Own Tempo prevents confusion
-	if (toID(ctx.target.ability) === 'owntempo') {
-		ctx.adjustments.push({
-			reason: 'Own Tempo prevents confusion',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	// Misty Terrain blocks confusion
-	if (ctx.state.field.terrain === 'misty') {
-		const isGrounded = grounded(ctx.target, ctx.state.field);
-
-		if (isGrounded) {
-			ctx.adjustments.push({
-				reason: 'Misty Terrain blocks confusion',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	return 0;
-};
+export const checkConfusionMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'confusion');
 
 // =============================================================================
 // Setup Move Checks
@@ -1098,111 +725,6 @@ export const checkStatBoostWasted: NegativeScoringFunction = (ctx) => {
 };
 
 // =============================================================================
-// Terrain and Weather Checks
-// =============================================================================
-
-/**
- * Check if terrain blocks the move
- */
-export const checkTerrainBlock: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-	const terrain = ctx.state.field.terrain;
-
-	// Check if target is grounded
-	const isGrounded = grounded(ctx.target, ctx.state.field);
-
-	if (!isGrounded) return 0;
-
-	// Electric Terrain blocks sleep
-	if (terrain === 'electric') {
-		const sleepMoves = ['spore', 'sleeppowder', 'hypnosis', 'sing', 'yawn', 'darkvoid', 'grasswhistle'];
-		if (sleepMoves.includes(moveId)) {
-			ctx.adjustments.push({
-				reason: 'Electric Terrain blocks sleep on grounded Pokemon',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	// Misty Terrain blocks status
-	if (terrain === 'misty') {
-		const statusMoves = ['thunderwave', 'toxic', 'willowisp', 'spore', 'sleeppowder',
-			'confuseray', 'swagger', 'flatter'];
-		if (statusMoves.includes(moveId)) {
-			ctx.adjustments.push({
-				reason: 'Misty Terrain blocks status on grounded Pokemon',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	return 0;
-};
-
-/**
- * Check if weather move is redundant
- */
-export const checkWeatherRedundant: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-	const weather = ctx.state.field.weather;
-
-	const weatherMoves: { [key: string]: string } = {
-		'sunnyday': 'sun',
-		'raindance': 'rain',
-		'sandstorm': 'sand',
-		'hail': 'hail',
-		'snowscape': 'snow',
-	};
-
-	const moveWeather = weatherMoves[moveId];
-	if (!moveWeather) return 0;
-
-	if (weather === moveWeather) {
-		ctx.adjustments.push({
-			reason: `${moveWeather} weather already active`,
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	return 0;
-};
-
-/**
- * Check if terrain move is redundant
- */
-export const checkTerrainRedundant: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-	const terrain = ctx.state.field.terrain;
-
-	const terrainMoves: { [key: string]: string } = {
-		'electricterrain': 'electric',
-		'grassyterrain': 'grassy',
-		'mistyterrain': 'misty',
-		'psychicterrain': 'psychic',
-	};
-
-	const moveTerrain = terrainMoves[moveId];
-	if (!moveTerrain) return 0;
-
-	if (terrain === moveTerrain) {
-		ctx.adjustments.push({
-			reason: `${moveTerrain} terrain already active`,
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	return 0;
-};
-
-// =============================================================================
 // Magic Bounce / Magic Coat Check
 // =============================================================================
 
@@ -1212,7 +734,7 @@ export const checkTerrainRedundant: NegativeScoringFunction = (ctx) => {
  * This matches CFRU's FLAG_MAGIC_COAT_AFFECTED check
  */
 export const checkMagicBounce: NegativeScoringFunction = (ctx) => {
-	const targetAbility = toID(ctx.target.ability);
+	const targetAbility = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	// Only check if opponent's ability is revealed as Magic Bounce
 	if (targetAbility !== 'magicbounce') {
@@ -1234,180 +756,8 @@ export const checkMagicBounce: NegativeScoringFunction = (ctx) => {
 };
 
 // =============================================================================
-// Entry Hazard Checks
-// =============================================================================
-
-/**
- * Check if entry hazards are already set
- */
-export const checkHazardsRedundant: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-	const opponentConditions = ctx.state.opponent.conditions;
-
-	// Stealth Rock
-	if (moveId === 'stealthrock') {
-		if (opponentConditions.stealthrock) {
-			ctx.adjustments.push({
-				reason: 'Stealth Rock already set',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	// Spikes (max 3 layers)
-	if (moveId === 'spikes') {
-		if (opponentConditions.spikes >= 3) {
-			ctx.adjustments.push({
-				reason: 'Spikes at max layers',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	// Toxic Spikes (max 2 layers)
-	if (moveId === 'toxicspikes') {
-		if (opponentConditions.toxicspikes >= 2) {
-			ctx.adjustments.push({
-				reason: 'Toxic Spikes at max layers',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	// Sticky Web
-	if (moveId === 'stickyweb') {
-		if (opponentConditions.stickyweb) {
-			ctx.adjustments.push({
-				reason: 'Sticky Web already set',
-				amount: -10,
-				category: 'negative',
-			});
-			return -10;
-		}
-	}
-
-	return 0;
-};
-
-// =============================================================================
-// Screens Redundancy Checks
-// CFRU: ai_negatives.c lines 1528-1631
-// =============================================================================
-
-/**
- * Check if Light Screen is already active
- * CFRU: ai_negatives.c lines 1528-1534
- */
-export const checkLightScreenRedundant: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'lightscreen') return 0;
-
-	// Check our side conditions
-	if (ctx.state.self.conditions.lightscreen > 0) {
-		ctx.adjustments.push({
-			reason: 'Light Screen already active',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	return 0;
-};
-
-/**
- * Check if Reflect is already active
- * CFRU: ai_negatives.c lines 1616-1631
- */
-export const checkReflectRedundant: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'reflect') return 0;
-
-	// Check our side conditions
-	if (ctx.state.self.conditions.reflect > 0) {
-		ctx.adjustments.push({
-			reason: 'Reflect already active',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	return 0;
-};
-
-/**
- * Check if Aurora Veil is already active or conditions not met
- * CFRU: ai_negatives.c lines 1619-1625
- */
-export const checkAuroraVeilRedundant: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'auroraveil') return 0;
-
-	// Aurora Veil already active
-	if (ctx.state.self.conditions.auroraveil > 0) {
-		ctx.adjustments.push({
-			reason: 'Aurora Veil already active',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	// Aurora Veil only works in Hail/Snow
-	const weather = ctx.state.field.weather;
-	if (weather !== 'hail' && weather !== 'snow') {
-		ctx.adjustments.push({
-			reason: 'Aurora Veil requires Hail/Snow',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	return 0;
-};
-
-// =============================================================================
 // Special Move Checks
 // =============================================================================
-
-/**
- * Check if Dream Eater will fail (target not asleep)
- * CFRU: ai_negatives.c lines 838-843
- */
-export const checkDreamEater: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'dreameater') return 0;
-
-	// Dream Eater only works on sleeping targets (or Comatose)
-	const targetAbility = toID(ctx.target.ability);
-	if (ctx.target.status !== 'slp' && targetAbility !== 'comatose') {
-		ctx.adjustments.push({
-			reason: 'Dream Eater fails on non-sleeping target',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	return 0;
-};
 
 /**
  * Check if absorb/drain moves will hurt due to Liquid Ooze
@@ -1446,7 +796,7 @@ export const checkRoar: NegativeScoringFunction = (ctx) => {
 	const phazingMoves = ['roar', 'whirlwind', 'dragontail', 'circlethrow'];
 	if (!phazingMoves.includes(moveId)) return 0;
 
-	const targetAbility = toID(ctx.target.ability);
+	const targetAbility = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	// Suction Cups prevents phazing
 	if (targetAbility === 'suctioncups') {
@@ -1455,7 +805,7 @@ export const checkRoar: NegativeScoringFunction = (ctx) => {
 			amount: -10,
 			category: 'negative',
 		});
-		ctx.flags.hasNoEffect = true;
+		ctx.flags.hasNoEffect = ctx.move.category === 'Status';
 		return -10;
 	}
 
@@ -1466,7 +816,7 @@ export const checkRoar: NegativeScoringFunction = (ctx) => {
 			amount: -10,
 			category: 'negative',
 		});
-		ctx.flags.hasNoEffect = true;
+		ctx.flags.hasNoEffect = ctx.move.category === 'Status';
 		return -10;
 	}
 
@@ -1577,7 +927,6 @@ export const checkSaltCure: NegativeScoringFunction = (ctx) => {
 			amount: -10,
 			category: 'negative',
 		});
-		ctx.flags.hasNoEffect = true;
 		return -10;
 	}
 
@@ -2147,6 +1496,7 @@ export const checkSpreadMoveHitsPartner: NegativeScoringFunction = (ctx) => {
 	const partnerDamage = calculateDamage(ctx.attacker, ctx.partner, ctx.move, ctx.state.field, ctx.cache, {
 		isDoubles: true, numAliveTargets: numAliveOpponents + numAlivePartners,
 		isAllyTarget: true, defenderAllies: ctx.state.self.active,
+		attackerSideConditions: ctx.state.self.conditions, defenderSideConditions: ctx.state.self.conditions,
 	});
 
 	const damagePercent = partnerDamage.averagePercent;
@@ -2844,6 +2194,7 @@ export const checkKnockOff: NegativeScoringFunction = (ctx) => {
 
 export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkMoveImmunity,
+	checkFieldEffect,
 	// Partner effects after confirmed immunities
 	checkTargetingPartnerDamage,
 	checkTargetingPartnerStatus,
@@ -2868,13 +2219,8 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkFlowerVeil,
 	checkContraryStatLower,
 
-	// Mental move blocking (CFRU: ai_negatives.c 350-356)
-	checkAromaVeil,
-
 	// Status immunity abilities (CFRU: ai_negatives.c 478-500)
-	checkShieldsDown,
 	checkWonderSkin,
-	checkLeafGuard,
 
 	// Status moves
 	checkTeamStatusCure,
@@ -2888,24 +2234,10 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkStatBoostWasted,
 	checkHaze,
 
-	// Terrain and weather
-	checkTerrainBlock,
-	checkWeatherRedundant,
-	checkTerrainRedundant,
-
 	// Magic Bounce
 	checkMagicBounce,
 
-	// Entry hazards
-	checkHazardsRedundant,
-
-	// Screens redundancy (CFRU: ai_negatives.c 1528-1631)
-	checkLightScreenRedundant,
-	checkReflectRedundant,
-	checkAuroraVeilRedundant,
-
 	// Special move effects (CFRU: ai_negatives.c 784-843, 1371-1711)
-	checkDreamEater,
 	checkLiquidOoze,
 	checkRoar,
 	checkSubstitute,

@@ -344,6 +344,12 @@ export function getMoveInteraction(
 	const data = dex.moves.get(move.id);
 	const ability = defensiveAbility(attacker, defender, move, field);
 	const block = (blockedBy: string) => ({ effectiveness: 0, blockedBy });
+	if (move.id === 'dreameater' && defender.status !== 'slp' && ability !== 'comatose') {
+		return block('Dream Eater fails on non-sleeping target');
+	}
+	if (move.id === 'suckerpunch' && defender.volatiles.has('mustrecharge')) {
+		return block('Sucker Punch fails against a recharging target');
+	}
 	const direct = ['normal', 'any', 'allAdjacent', 'allAdjacentFoes', 'adjacentAlly', 'adjacentAllyOrSelf']
 		.includes(move.target) &&
 		!(move.id === 'curse' && !attacker.types.includes('Ghost'));
@@ -368,7 +374,29 @@ export function getMoveInteraction(
 		return block('Soundproof blocks sound move');
 	}
 	if (ability === 'bulletproof' && move.flags.bullet) return block('Bulletproof blocks ball/bomb move');
-	if (move.category === 'Status') return { effectiveness: 1 };
+	if (direct && move.category === 'Status' && attacker !== defender) {
+		if (ability === 'goodasgold') return block('Good as Gold blocks status move');
+		if (['disable', 'attract', 'encore', 'torment', 'taunt', 'healblock'].includes(move.id)) {
+			for (const holder of [defender, ...(context.defenderAllies || [])]) {
+				if (!holder.fainted && defensiveAbility(attacker, holder, move, field) === 'aromaveil') {
+					return block('Aroma Veil blocks this move');
+				}
+			}
+		}
+	}
+	if (direct && move.flags.powder) {
+		if (!dex.getImmunity('powder', defender.types)) return block('Grass type immune to powder');
+		if (ability === 'overcoat') return block('Overcoat blocks powder');
+		if (effectiveItem(defender, field) === 'safetygoggles') return block('Safety Goggles blocks powder');
+	}
+	if (move.category === 'Status') {
+		if (direct && data.ignoreImmunity === false && !dex.getImmunity(move.type, defender.types) &&
+			effectiveItem(defender, field) !== 'ringtarget') return block('Type immunity to status move');
+		if (direct && getEffectiveAbilityTypeImmunity(attacker, defender, move, field).immune) {
+			return block(`Ability immunity: ${defender.ability}`);
+		}
+		return { effectiveness: 1 };
+	}
 
 	let types = defender.volatiles.has('roost') ? defender.types.filter(t => t !== 'Flying') : defender.types;
 	if (!types.length) types = [dex.gen >= 5 ? 'Normal' : '???'];

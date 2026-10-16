@@ -196,7 +196,9 @@ export class ScoringEngine {
 				}
 			}
 			damageResult = calculateDamage(attacker, target, move, state.field, this.cache, {
-				isDoubles: false, numAliveTargets: 1, ...spreadInfo,
+				isDoubles: state.isDoubles, numAliveTargets: 1, ...spreadInfo,
+				attackerSideConditions: state.self.conditions,
+				defenderSideConditions: (isTargetingPartner ? state.self : state.opponent).conditions,
 				isAllyTarget: isTargetingPartner,
 				defenderAllies: (isTargetingPartner ? state.self : state.opponent).active,
 			});
@@ -259,7 +261,7 @@ export class ScoringEngine {
 
 		// Run positive scorers (only if score > 0)
 		let totalPositives = 0;
-		if (ctx.score > 0) {
+		if (ctx.score > 0 && !ctx.flags.hasNoEffect && !ctx.flags.isImmune) {
 			for (const scorer of this.positiveScorers) {
 				const adjustment = scorer(ctx);
 				if (adjustment !== 0) {

@@ -298,20 +298,20 @@ function runAIDamageCalcTests() {
 	// =============================================================================
 	section('AI 伤害计算：Sucker Punch');
 
-	test('Sucker Punch 没有 lastMove → 返回 0', () => {
+	test('Sucker Punch 没有 lastMove → 仍有命中伤害', () => {
 		const atk = megaCharX();
 		const def = garchomp();
 		def.lastMove = '';
 		const r = calculateDamage(atk, def, makeMove('suckerpunch'), emptyField());
-		assertEqual(r.min, 0, 'Sucker Punch without lastMove');
+		assert(r.min > 0, 'Unknown prior move does not imply Sucker Punch failure');
 	});
 
-	test('Sucker Punch 对手上回合用 Status（Swords Dance）→ 返回 0', () => {
+	test('Sucker Punch 对手上回合用 Status（Swords Dance）→ 仍有命中伤害', () => {
 		const atk = megaCharX();
 		const def = garchomp();
 		def.lastMove = 'swordsdance';
 		const r = calculateDamage(atk, def, makeMove('suckerpunch'), emptyField());
-		assertEqual(r.min, 0, 'Sucker Punch vs Status user');
+		assert(r.min > 0, 'A prior status move does not determine the next action');
 	});
 
 	test('Sucker Punch 对手上回合用攻击招 → 走常规公式（> 0）', () => {

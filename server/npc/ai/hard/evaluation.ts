@@ -97,16 +97,13 @@ export class HardEvaluation {
 		const targets = foes.filter(p => !p.fainted).length +
 			(move.target === 'allAdjacent' ? allies.filter(p => p !== actor && !p.fainted).length : 0);
 		const result = calculateDamage(actor, target, move, this.state.field, undefined,
-			{ isDoubles: this.state.isDoubles && spread, numAliveTargets: targets,
+			{ isDoubles: this.state.isDoubles, numAliveTargets: spread ? targets : 1,
+				attackerSideConditions: this.state[this.opposing.has(actor) ? 'opponent' : 'self'].conditions,
+				defenderSideConditions: this.state[this.opposing.has(target) ? 'opponent' : 'self'].conditions,
 				defenderAllies: defenderAllies || (this.opposing.has(target) ? this.state.opponent.active : this.state.self.active),
 				isAllyTarget: this.opposing.has(actor) === this.opposing.has(target),
 			});
-		const conditions = this.state[this.opposing.has(target) ? 'opponent' : 'self'].conditions;
-		const screen = conditions.auroraveil || (move.category === 'Physical' ? conditions.reflect : conditions.lightscreen);
-		if (!screen || toID(actor.ability) === 'infiltrator' ||
-			['brickbreak', 'psychicfangs'].includes(move.id)) return result;
-		const factor = this.state.isDoubles ? 2 / 3 : 0.5;
-		return { ...result, min: result.min * factor, max: result.max * factor, average: result.average * factor };
+		return result;
 	}
 
 	incoming(

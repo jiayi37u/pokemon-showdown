@@ -10,6 +10,7 @@ const { inferOpponent } = require('../../../dist/server/npc/ai/hard/opponent-mod
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
 const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
 const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
+const { getAttackStat } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { getEffectiveSpeed, isFaster } = require('../../../dist/server/npc/ai/cfru/util/speed');
 const { analyzeKnockout } = require('../../../dist/server/npc/ai/cfru/util/knockout');
 
@@ -240,13 +241,13 @@ describe('NPC public Transform state', () => {
 });
 
 describe('Shared public state pipeline across game types', () => {
-	function fixture(gameType, team1, team2, partner1, partner2) {
+	function fixture(gameType, team1, team2, partner1, partner2, reserve) {
 		const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
 		const multi = gameType === 'multi';
 		const battle = new Battle({
 			format: { ...Dex.formats.get('gen9customgame'), gameType, playerCount: multi ? 4 : 2 }, seed: [1, 2, 3, 4],
-			p1: { name: 'Player', team: gameType === 'doubles' ? [team1, partner1 || passive] : [team1] },
-			p2: { name: 'NPC', team: gameType === 'doubles' ? [team2, partner2 || passive] : [team2] },
+			p1: { name: 'Player', team: [...(gameType === 'doubles' ? [team1, partner1 || passive] : [team1]), ...(reserve ? [reserve] : [])] },
+			p2: { name: 'NPC', team: [...(gameType === 'doubles' ? [team2, partner2 || passive] : [team2]), ...(reserve ? [reserve] : [])] },
 			...(multi ? { p3: { name: 'Player2', team: [partner1 || passive] },
 				p4: { name: 'NPC2', team: [partner2 || passive] } } : {}),
 		});
@@ -273,6 +274,152 @@ describe('Shared public state pipeline across game types', () => {
 	}
 
 	for (const gameType of ['singles', 'doubles', 'multi']) {
+		for (const moveId of ['sunnyday', 'electricterrain', 'spikes', 'toxicspikes', 'stealthrock',
+			'stickyweb', 'reflect', 'lightscreen', 'tailwind', 'safeguard', 'wish']) {
+			it(`${gameType}: an existing ${moveId} effect cannot earn repeat-use rewards`, () => {
+				const player = { species: 'Smeargle', ability: 'Own Tempo', moves: ['splash'] };
+				const npc = { species: 'Blissey', ability: 'Natural Cure', moves: [moveId, 'seismictoss'] };
+				const game = fixture(gameType, player, npc);
+				try {
+					game.build();
+					const layers = moveId === 'spikes' ? 3 : moveId === 'toxicspikes' ? 2 : 1;
+					for (let i = 0; i < layers; i++) {
+						game.play('move 1', 'move 1');
+						game.build();
+					}
+					const state = game.build();
+					const score = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: 'gen9customgame' }, createAICache(state.turn))
+						.scoreMove(state, state.self.active[0], buildAIMove({ id: moveId }, 1), state.opponent.active[0]);
+					assert.equal(score.score, 0, JSON.stringify(score.breakdown));
+					assert.equal(score.flags.hasNoEffect, true);
+					assert.equal(score.breakdown.positives, 0);
+					const cursor = game.battle.log.length;
+					game.play('move 1', 'move 1');
+					assert(game.battle.log.slice(cursor).some(line => line.startsWith('|-fail|p2')));
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		it(`${gameType}: Transform copies public changed types and subsequent type changes override the copy`, () => {
+			const player = { species: 'Smeargle', ability: 'Own Tempo', moves: ['soak', 'transform', 'splash'] };
+			const npc = { species: 'Charizard', ability: 'Blaze', moves: ['splash', 'forestscurse'] };
+			const game = fixture(gameType, player, npc);
+			try {
+				game.build();
+				game.play('move 1 1', 'move 1');
+				game.build();
+				game.play('move 2 1', 'move 1');
+				assert.deepEqual(game.build().opponent.active[0].types, ['Water']);
+				game.play('move 1', 'move 2 1');
+				assert.deepEqual(game.build().opponent.active[0].types, game.battle.p1.active[0].getTypes());
+				assert.deepEqual(game.build().opponent.active[0].types, ['Water', 'Grass']);
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: public type changes and added types agree with PS and reset on switching`, () => {
+			const mon = { species: 'Mew', ability: 'Pressure', moves: ['soak', 'trickortreat', 'forestscurse', 'reflecttype'] };
+			const partner = { name: 'Partner', species: 'Mew', ability: 'Pressure', moves: ['splash'] };
+			const game = fixture(gameType, mon, mon, partner, partner,
+				{ species: 'Snorlax', ability: 'Pressure', moves: ['splash'] });
+			try {
+				const inspect = () => {
+					const state = game.build();
+					assert.deepEqual(state.self.active[0].types, game.battle.p2.active[0].getTypes());
+					assert.deepEqual(state.opponent.active[0].types, game.battle.p1.active[0].getTypes());
+				};
+				inspect();
+				for (const move of [1, 2, 3, 4]) {
+					game.play(`move ${move} 1`, `move ${move} 1`);
+					inspect();
+				}
+				game.play(`switch ${gameType === 'doubles' ? 3 : 2}`, `switch ${gameType === 'doubles' ? 3 : 2}`);
+				inspect();
+				const state = game.build();
+				assert.deepEqual(state.opponent.reserve[0].types, ['Psychic']);
+				game.play(`switch ${gameType === 'doubles' ? 3 : 2}`, `switch ${gameType === 'doubles' ? 3 : 2}`);
+				inspect();
+				assert.deepEqual(game.build().opponent.active[0].types, ['Psychic']);
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: Slow Start public start/end controls speed and Attack`, () => {
+			const mon = { species: 'Regigigas', ability: 'Slow Start', moves: ['splash'] };
+			const game = fixture(gameType, mon, mon);
+			try {
+				const inspect = active => {
+					const state = game.build();
+					for (const side of ['self', 'opponent']) {
+						const actor = state[side].active[0];
+						assert.equal(actor.volatiles.has('slowstart'), active);
+						assert.equal(getEffectiveSpeed(actor, state.field), Math.floor(actor.baseStats.spe * (active ? 0.5 : 1)));
+					}
+					const actor = state.self.active[0];
+					assert.equal(getAttackStat(actor, buildAIMove({ id: 'tackle' }, 1), state.field), game.battle.p2.active[0].getStat('atk'));
+				};
+				inspect(true);
+				for (let turn = 0; turn < 5; turn++) game.play('move 1', 'move 1');
+				inspect(false);
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: both teams expose Quark Drive activation and expiry`, () => {
+			const mon = { species: 'Iron Bundle', ability: 'Quark Drive', moves: ['electricterrain', 'splash'] };
+			const game = fixture(gameType, mon, mon);
+			try {
+				game.play('move 1', 'move 1');
+				const active = game.build();
+				for (const side of ['self', 'opponent']) assert.equal(active[side].active[0].abilityStatMod.stat, 'spe');
+				for (let turn = 0; turn < 5; turn++) game.play('move 2', 'move 2');
+				const expired = game.build();
+				for (const side of ['self', 'opponent']) assert.equal(expired[side].active[0].abilityStatMod.stat, null);
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: public screens affect Normal KO checks and Hard damage consistently`, () => {
+			const game = fixture(gameType, { species: 'Mew', ability: 'Pressure', moves: ['reflect', 'safeguard'] },
+				{ species: 'Mew', ability: 'Pressure', moves: ['splash', 'tackle', 'toxic'] });
+			try {
+				game.play('move 1', 'move 1');
+				game.play('move 2', 'move 1');
+				const state = game.build();
+				const actor = state.self.active[0];
+				const target = state.opponent.active[0];
+				assert(state.opponent.conditions.safeguard);
+				const move = buildAIMove({ id: 'tackle' }, 1, state.field.formatId);
+				const context = { isDoubles: state.isDoubles, numAliveTargets: 1,
+					defenderSideConditions: state.opponent.conditions };
+				const cache = createAICache(state.turn);
+				const plain = calculateDamage(actor, target, move, state.field, cache);
+				const screened = calculateDamage(actor, target, move, state.field, cache, context);
+				assert(screened.average < plain.average);
+				const hard = new HardEvaluation(state, state.field.formatId);
+				assert.equal(hard.damage(actor, target, move).average, screened.average);
+				const wounded = { ...target, hp: Math.ceil((plain.average + screened.average) / 2) };
+				const ai = new NormalAI({ write() {} });
+				ai.battleState = state;
+				assert.equal(ai.canKOWithAverageDamage(actor, wounded, move), false);
+				const engine = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: state.field.formatId }, createAICache(state.turn));
+				assert.equal(engine.scoreMove(state, actor, buildAIMove({ id: 'toxic' }, 1), target).score, 0);
+			} finally { game.battle.destroy(); }
+		});
+
+		if (gameType !== 'singles') for (const [ability, moveId, species] of [
+			['Sweet Veil', 'hypnosis', 'Mew'], ['Flower Veil', 'toxic', 'Tangela'], ['Aroma Veil', 'taunt', 'Mew'],
+		]) it(`${gameType}: public ${ability} protects an ally`, () => {
+			const game = fixture(gameType, { species, ability: 'Pressure', moves: ['splash'] },
+				{ species: 'Mew', ability: 'Pressure', moves: [moveId] },
+				{ species: 'Mew', ability, moves: ['splash'] });
+			try {
+				game.battle.p2.active[0].boosts.accuracy = 6;
+				game.play('move 1', 'move 1 1');
+				const state = game.build();
+				assert.equal(toID(state.opponent.active[1].ability), toID(ability));
+				const result = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: state.field.formatId }, createAICache(state.turn))
+					.scoreMove(state, state.self.active[0], buildAIMove({ id: moveId }, 1), state.opponent.active[0]);
+				assert.equal(result.score, 0);
+			} finally { game.battle.destroy(); }
+		});
+
 		it(`${gameType}: gravity removes Flying immunity consistently in public state, damage and scoring`, () => {
 			const game = fixture(gameType,
 				{ species: 'Charizard', ability: 'Blaze', moves: ['splash'] },

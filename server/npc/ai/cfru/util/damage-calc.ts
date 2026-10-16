@@ -9,12 +9,19 @@
  */
 
 import { Dex, toID } from '../../../../../sim/dex';
-import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions } from '../types';
+import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions, SideConditions } from '../types';
 import { getSTABMultiplier, getMoveInteraction, resolveItemMoveType, type MoveInteractionContext } from './type-calc';
-import { isFaster } from './speed';
-import { getEffectiveStat, effectiveItem, grounded, rulesDex } from './mechanics';
+import { isFaster, getEffectiveSpeed } from './speed';
+import { getEffectiveStat, effectiveItem, grounded, rulesDex, defensiveAbility } from './mechanics';
 import { pokemonCacheId } from './cache';
 import { canHaveOpponentMoves } from './opponent-presets';
+
+export interface DamageContext extends MoveInteractionContext {
+	isDoubles: boolean;
+	numAliveTargets: number;
+	attackerSideConditions?: SideConditions;
+	defenderSideConditions?: SideConditions;
+}
 
 /** Damage roll range (0.85 to 1.0) */
 const MIN_ROLL = 0.85;
@@ -326,6 +333,8 @@ export function getAttackStat(
 		stat *= 2;
 	}
 
+	if (abilityId === 'slowstart' && isPhysical && attacker.volatiles.has('slowstart')) stat *= 0.5;
+	if (attacker.abilityStatMod?.stat === (isPhysical ? 'atk' : 'spa')) stat *= attacker.abilityStatMod.multiplier;
 	return Math.floor(stat);
 }
 
@@ -339,20 +348,22 @@ export function getAttackStat(
 export function getDefenseStat(
 	defender: AIPokemon,
 	move: AIMove,
-	field: FieldConditions
+	field: FieldConditions,
+	ability: string = toID(defender.ability)
 ): number {
 	// Special case: Psyshock, Psystrike, Secret Sword use physical defense
 	const moveId = toID(move.id);
 	const usesPhysicalDef = move.category === 'Physical' ||
 		moveId === 'psyshock' || moveId === 'psystrike' || moveId === 'secretsword';
 
-	const baseStat = usesPhysicalDef ? defender.baseStats.def : defender.baseStats.spd;
+	const physicalBase = usesPhysicalDef !== !!field.wonderroom;
+	const baseStat = physicalBase ? defender.baseStats.def : defender.baseStats.spd;
 	const boost = usesPhysicalDef ? defender.boosts.def : defender.boosts.spd;
 
 	let stat = getEffectiveStat(baseStat, boost);
 
 	// Ability modifiers
-	const abilityId = toID(defender.ability);
+	const abilityId = ability;
 
 	// Marvel Scale (1.5x Defense when statused)
 	if (abilityId === 'marvelscale' && usesPhysicalDef && defender.status) {
@@ -370,7 +381,7 @@ export function getDefenseStat(
 	}
 
 	// Item modifiers
-	const itemId = toID(defender.item);
+	const itemId = effectiveItem(defender, field);
 
 	// Eviolite (1.5x both defenses for NFE Pokemon)
 	if (itemId === 'eviolite') {
@@ -386,10 +397,14 @@ export function getDefenseStat(
 	}
 
 	// Sandstorm SpD boost for Rock types
-	if (field.weather === 'sand' && !usesPhysicalDef && defender.types.includes('Rock')) {
+	if (rulesDex(field).gen >= 4 && field.weather === 'sand' && !usesPhysicalDef && defender.types.includes('Rock')) {
 		stat = Math.floor(stat * 1.5);
 	}
 
+	if (field.weather === 'snow' && usesPhysicalDef && defender.types.includes('Ice')) stat = Math.floor(stat * 1.5);
+	if (defender.abilityStatMod?.stat === (usesPhysicalDef ? 'def' : 'spd') && ability === toID(defender.ability)) {
+		stat *= defender.abilityStatMod.multiplier;
+	}
 	return Math.floor(stat);
 }
 
@@ -405,15 +420,16 @@ export function getModifiedBasePower(
 	attacker: AIPokemon,
 	defender: AIPokemon,
 	move: AIMove,
-	field: FieldConditions
+	field: FieldConditions,
+	context?: DamageContext
 ): number {
 	// Dynamic-power moves can have a static Dex power of 0 (e.g. Flail and Crush Grip).
-	let basePower = getVariableBasePower(attacker, defender, move, move.basePower);
+	let basePower = getVariableBasePower(attacker, defender, move, move.basePower, field, context);
 	if (basePower === 0) return 0;
 
 	const moveId = toID(move.id);
 	const attackerAbility = toID(attacker.ability);
-	const defenderAbility = toID(defender.ability);
+	const defenderAbility = defensiveAbility(attacker, defender, move, field);
 
 	// Ability-based power boosts
 	// Technician
@@ -552,7 +568,9 @@ function getVariableBasePower(
 	attacker: AIPokemon,
 	defender: AIPokemon,
 	move: AIMove,
-	basePower: number
+	basePower: number,
+	field: FieldConditions,
+	context?: DamageContext
 ): number {
 	const moveId = toID(move.id);
 	const attackerHp = attacker.maxHp > 0 ? attacker.hp : attacker.hpPercent;
@@ -605,28 +623,31 @@ function getVariableBasePower(
 	// Low Kick / Grass Knot: based on target's weight
 	// CFRU damage_calc.c lines 3521-3539
 	if (moveId === 'lowkick' || moveId === 'grassknot') {
-		return getWeightBasedPower(defender.species, defender.ability, defender.item);
+		return getWeightBasedPower(
+			defender.species, defensiveAbility(attacker, defender, move, field), effectiveItem(defender, field)
+		);
 	}
 
 	// Heavy Slam / Heat Crash: based on weight ratio (attacker / defender)
 	// CFRU damage_calc.c lines 3542-3569
 	if (moveId === 'heavyslam' || moveId === 'heatcrash') {
 		return getWeightRatioPower(
-			attacker.species, attacker.ability, attacker.item,
-			defender.species, defender.ability, defender.item
+			attacker.species, attacker.ability, effectiveItem(attacker, field),
+			defender.species, defensiveAbility(attacker, defender, move, field), effectiveItem(defender, field)
 		);
 	}
 
-	// Gyro Ball: based on speed ratio (simplified)
+	// Gyro Ball uses effective speed, not action order (Trick Room does not invert the ratio).
 	if (moveId === 'gyroball') {
-		// Would need actual speed calc, estimate based on base stats
-		const speedRatio = defender.baseStats.spe / Math.max(attacker.baseStats.spe, 1);
-		return Math.min(150, Math.floor(25 * speedRatio));
+		const speedRatio = getEffectiveSpeed(defender, field, context?.defenderSideConditions) /
+			getEffectiveSpeed(attacker, field, context?.attackerSideConditions);
+		return Math.min(150, Math.floor(25 * speedRatio) + 1);
 	}
 
-	// Electro Ball: based on speed ratio (simplified)
+	// Electro Ball uses the same effective speed as action ordering.
 	if (moveId === 'electroball') {
-		const speedRatio = attacker.baseStats.spe / Math.max(defender.baseStats.spe, 1);
+		const speedRatio = getEffectiveSpeed(attacker, field, context?.attackerSideConditions) /
+			getEffectiveSpeed(defender, field, context?.defenderSideConditions);
 		if (speedRatio >= 4) return 150;
 		if (speedRatio >= 3) return 120;
 		if (speedRatio >= 2) return 80;
@@ -809,7 +830,7 @@ export function calculateDamage(
 	move: AIMove,
 	field: FieldConditions,
 	cache?: AICache,
-	spreadInfo?: { isDoubles: boolean, numAliveTargets: number } & MoveInteractionContext
+	spreadInfo?: DamageContext
 ): DamageResult {
 	move = resolveItemMoveType(attacker, move, field);
 	// HP-dependent power, fixed damage and KO flags must reflect the current snapshot.
@@ -817,7 +838,8 @@ export function calculateDamage(
 	const protectionKey = `${spreadInfo?.isAllyTarget}-${spreadInfo?.defenderAllies?.map(pokemonCacheId).join(',')}`;
 	const hpKey = `${attacker.hp}/${attacker.maxHp}-${defender.hp}/${defender.maxHp}`;
 	const cacheKey = `${pokemonCacheId(attacker)}-${pokemonCacheId(defender)}-${move.id}-${move.type}-${move.basePower}` +
-		`-${hpKey}${spreadKey}-${protectionKey}-${JSON.stringify(field)}`;
+		`-${hpKey}${spreadKey}-${protectionKey}-${JSON.stringify(field)}` +
+		JSON.stringify([spreadInfo?.attackerSideConditions, spreadInfo?.defenderSideConditions]);
 	if (cache?.damageCalc.has(cacheKey)) {
 		return cache.damageCalc.get(cacheKey)!;
 	}
@@ -851,26 +873,8 @@ export function calculateDamage(
 		return result;
 	}
 
-	// Sucker Punch 失败判定（CFRU: ai_negatives.c SUCKER_PUNCH 分支）：
-	// 仅当对手本回合会出攻击招时才成功。我们没有真的预测，用 lastMove 近似：
-	//   - lastMove 为空（刚上场 / 首回合）→ 按失败考虑，伤害估成 0
-	//   - lastMove 是 Status 招 → 按失败考虑
-	//   - 其他情况 → 走常规公式（可能偏乐观，但对称于 CFRU 的简化）
-	if (toID(move.id) === 'suckerpunch') {
-		const defLast = defender.lastMove;
-		const defLastDex = defLast ? Dex.moves.get(defLast) : null;
-		if (!defLast || !defLastDex?.exists || defLastDex.category === 'Status') {
-			const defenderMaxHp = defender.maxHp || 1;
-			const result: DamageResult = {
-				min: 0, max: 0, average: 0,
-				minPercent: 0, maxPercent: 0, averagePercent: 0,
-				effectiveness,
-				canKO: false, guaranteedKO: false, hitsToKO: Infinity,
-			};
-			if (cache) cache.damageCalc.set(cacheKey, result);
-			return result;
-		}
-	}
+	// Damage describes a successful hit. A previous move does not determine the next
+	// action, so conditional attacks such as Sucker Punch must not fabricate failure.
 
 	// 固定伤害招式（Seismic Toss / Super Fang / Counter 等）在走常规公式前直接出结果
 	const fixed = computeFixedDamage(attacker, defender, move, cache, field);
@@ -896,8 +900,8 @@ export function calculateDamage(
 
 	// Get stats
 	const attack = getAttackStat(attacker, move, field);
-	const defense = getDefenseStat(defender, move, field);
-	const basePower = getModifiedBasePower(attacker, defender, move, field);
+	const defense = getDefenseStat(defender, move, field, defensiveAbility(attacker, defender, move, field));
+	const basePower = getModifiedBasePower(attacker, defender, move, field, spreadInfo);
 
 	// DEBUG: Uncomment to debug damage calculation inputs
 	// const isPhysical = move.category === 'Physical';
@@ -940,7 +944,7 @@ export function calculateDamage(
 
 	// 以下这些乘数依赖 "是否超效 / 是否被抵抗" 的判断，必须在 effectiveness 相乘之后
 	const atkAbilityId = toID(attacker.ability);
-	const defAbilityId = toID(defender.ability);
+	const defAbilityId = defensiveAbility(attacker, defender, move, field);
 
 	// Tinted Lens (attacker)：抵抗招式伤害 ×2（CFRU damage_calc.c:3107）
 	if (atkAbilityId === 'tintedlens' && effectiveness < 1 && effectiveness > 0) {
@@ -976,13 +980,13 @@ export function calculateDamage(
 	// 半减果 / 抵抗果：对应属性超效时 ×0.5（CFRU damage_calc.c:3188）。
 	// 只有一发消耗型；defender.itemLost 为真说明道具已被打掉。
 	if (effectiveness > 1 && !defender.itemLost) {
-		const berry = toID(defender.item);
+		const berry = effectiveItem(defender, field);
 		if (RESIST_BERRY_TYPES[berry] === move.type) {
 			baseDamage = Math.floor(baseDamage * 0.5);
 		}
 	}
 	// Chilan Berry 特殊：Normal 招式无条件 ×0.5（不要求超效）
-	if (!defender.itemLost && toID(defender.item) === 'chilanberry' && move.type === 'Normal') {
+	if (!defender.itemLost && effectiveItem(defender, field) === 'chilanberry' && move.type === 'Normal') {
 		baseDamage = Math.floor(baseDamage * 0.5);
 	}
 
@@ -993,21 +997,21 @@ export function calculateDamage(
 	}
 
 	// Life Orb
-	if (toID(attacker.item) === 'lifeorb') {
+	if (effectiveItem(attacker, field) === 'lifeorb') {
 		baseDamage = Math.floor(baseDamage * 1.3);
 	}
 
 	// Expert Belt
-	if (toID(attacker.item) === 'expertbelt' && effectiveness > 1) {
+	if (effectiveItem(attacker, field) === 'expertbelt' && effectiveness > 1) {
 		baseDamage = Math.floor(baseDamage * 1.2);
 	}
 
-	// Screens
-	if (move.category === 'Physical' && defender.volatiles.has('reflect')) {
-		baseDamage = Math.floor(baseDamage * 0.5);
-	}
-	if (move.category === 'Special' && defender.volatiles.has('lightscreen')) {
-		baseDamage = Math.floor(baseDamage * 0.5);
+	const conditions = spreadInfo?.defenderSideConditions;
+	const screen = conditions?.auroraveil || (move.category === 'Physical' ?
+		conditions?.reflect || defender.volatiles.has('reflect') :
+		conditions?.lightscreen || defender.volatiles.has('lightscreen'));
+	if (screen && toID(attacker.ability) !== 'infiltrator' && !['brickbreak', 'psychicfangs'].includes(move.id)) {
+		baseDamage = Math.floor(baseDamage * (spreadInfo?.isDoubles ? 2 / 3 : 0.5));
 	}
 
 	// Spread Move Cut (CFRU: damage_calc.c:3239-3247)
@@ -1022,7 +1026,7 @@ export function calculateDamage(
 	}
 
 	// Get multi-hit count
-	const hitCount = getExpectedHitCount(move, attacker.ability, attacker.item, attacker.species);
+	const hitCount = getExpectedHitCount(move, attacker.ability, effectiveItem(attacker, field), attacker.species);
 
 	// Calculate single hit damage with rolls
 	const singleMinDamage = Math.floor(baseDamage * MIN_ROLL);
@@ -1035,7 +1039,7 @@ export function calculateDamage(
 
 	if (hitCount > 1) {
 		// Check if first hit damage is halved (Multiscale/Shadow Shield at full HP)
-		const defenderAbility = toID(defender.ability);
+		const defenderAbility = defensiveAbility(attacker, defender, move, field);
 		const firstHitHalved = defender.hpPercent >= 100 &&
 			(defenderAbility === 'multiscale' || defenderAbility === 'shadowshield');
 

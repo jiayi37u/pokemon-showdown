@@ -7,9 +7,12 @@ export function rulesDex(field: Pick<FieldConditions, 'formatId'>) {
 }
 
 export function effectiveItem(pokemon: AIPokemon, field: FieldConditions): string {
-	if (pokemon.itemLost || field.magicroom || toID(pokemon.ability) === 'klutz' ||
-		pokemon.volatiles.has('embargo')) return '';
-	return toID(pokemon.item);
+	const item = rulesDex(field).items.get(pokemon.item);
+	if (pokemon.itemLost) return '';
+	if (item.isPrimalOrb) return item.id;
+	if (field.magicroom || pokemon.volatiles.has('embargo') ||
+		(toID(pokemon.ability) === 'klutz' && !item.ignoreKlutz)) return '';
+	return item.id;
 }
 
 /** Ability Shield protects its holder; Mold Breaker only suppresses breakable defending abilities. */
@@ -47,4 +50,14 @@ export function effectivePriority(pokemon: AIPokemon, move: AIMove, field: Pick<
 
 export function getEffectiveStat(base: number, boost: number): number {
 	return Math.floor(boost >= 0 ? base * (2 + boost) / 2 : base * 2 / (2 - boost));
+}
+
+/** Public start/end events are the authority for active Protosynthesis / Quark Drive boosts. */
+export function abilityStatModifier(volatiles: ReadonlySet<string>): AIPokemon['abilityStatMod'] {
+	for (const effect of volatiles) {
+		const match = /^(?:quarkdrive|protosynthesis)(atk|def|spa|spd|spe)$/.exec(effect);
+		if (match) return { stat: match[1] as AIPokemon['abilityStatMod']['stat'],
+			multiplier: match[1] === 'spe' ? 1.5 : 5325 / 4096 };
+	}
+	return { stat: null, multiplier: 1 };
 }

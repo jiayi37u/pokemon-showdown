@@ -8,6 +8,7 @@
  */
 
 import { Dex, toID } from '../../../../sim/dex';
+import { abilityStatModifier } from './util/mechanics';
 import {
 	DEFAULT_AI_CONFIG,
 	type BattleState,
@@ -146,6 +147,8 @@ export function buildBattleStateFromRequests(
 			const active = mon.active ?? i < (request.active || request.forceSwitch || []).length;
 			const position = tracker.getPosition(side, i);
 			const pokemon = buildPokemonFromRequest(mon, active ? tracker.getFieldSlot(position) : i + 1, active, formatId);
+			pokemon.ownerSide = side;
+			pokemon.sleepSelfInflicted = tracker.getSelfInflictedSleep(mon.ident);
 			// Register only request facts. Transform may have occurred before the first request.
 			if (active) tracker.rememberOurPokemon(position, mon.ident, pokemon);
 			return { mon, pokemon, position, active };
@@ -162,15 +165,19 @@ export function buildBattleStateFromRequests(
 			pokemon.volatiles = tracker.getVolatiles(position);
 			pokemon.activeMoveActions = tracker.hasActed(position) ? 1 : 0;
 			const transformed = applyTransformation(pokemon, tracker.getTransformation(position), formatId, true);
+			transformed.types = tracker.getTypes(position, transformed.types);
 			// Newer requests expose the current ability, including changes after Transform.
 			if (mon.ability !== undefined) transformed.ability = mon.ability;
 			transformed.sleepTurns = transformed.status === 'slp' ? tracker.getSleepTurns(position, transformed.ability) : 0;
 			selfActive.push(transformed);
 		}
 	}
-	const opponentActive = tracker.getActiveOpponents().map(({ position, pokemon }) =>
-		trackedPokemonToAIPokemon(pokemon, tracker.getFieldSlot(position), true, formatId,
-			tracker.getSleepTurns(position, pokemon.ability)));
+	const opponentActive = tracker.getActiveOpponents().map(({ position, pokemon }) => {
+		const result = trackedPokemonToAIPokemon(pokemon, tracker.getFieldSlot(position), true, formatId,
+			tracker.getSleepTurns(position, pokemon.ability));
+		result.types = tracker.getTypes(position, result.types);
+		return result;
+	});
 	const opponentReserve = buildOpponentReserveFromTracker(tracker, opponentActive, formatId);
 	return {
 		turn, isDoubles,
@@ -280,6 +287,9 @@ export function trackedPokemonToAIPokemon(
 		gender: 'N',
 	});
 	pokemon.volatiles = new Set(tracked.volatiles);
+	pokemon.abilityStatMod = abilityStatModifier(pokemon.volatiles);
+	pokemon.ownerSide = (tracked.ident || tracked.position).slice(0, 2);
+	pokemon.sleepSelfInflicted = tracked.sleepSelfInflicted;
 	pokemon.sleepTurns = pokemon.status === 'slp' ? sleepTurns : 0;
 	pokemon.itemKnown = !!tracked.item || tracked.itemLost;
 	pokemon.observedAbility = tracked.baseAbility || '';
@@ -354,6 +364,7 @@ function buildOpponentConditionsFromTracker(tracker: BattleTracker): SideConditi
 		reflect: conditions.reflect,
 		auroraveil: conditions.auroraveil,
 		tailwind: conditions.tailwind,
+		safeguard: conditions.safeguard,
 		wishes: tracker.getWishes(false),
 		futuremove: 0, // Not tracked
 	};

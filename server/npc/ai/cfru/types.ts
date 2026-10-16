@@ -62,6 +62,9 @@ export interface OpponentModel {
 
 /** Simplified Pokemon data for AI evaluation */
 export interface AIPokemon {
+	/** Public owner and sleep source; Multi clauses apply to each player's party. */
+	ownerSide?: string;
+	sleepSelfInflicted?: boolean;
 	/** Slot position (1-indexed) */
 	slot: number;
 
@@ -177,6 +180,7 @@ export interface AIPokemon {
 
 /** Side conditions (entry hazards, screens, etc.) */
 export interface SideConditions {
+	safeguard?: number;
 	/** Stealth Rock */
 	stealthrock: boolean;
 

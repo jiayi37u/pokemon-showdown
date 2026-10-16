@@ -168,6 +168,8 @@ function createDoublesContext(overrides = {}) {
 	}
 	ctx.state.self.active = [ctx.attacker, ctx.partner];
 	ctx.state.opponent.active = [ctx.target];
+	ctx.state.self.team ||= [ctx.attacker, ctx.partner];
+	ctx.state.opponent.team ||= [ctx.target];
 	ctx.cache = createAICache(1);
 	return ctx;
 }

@@ -12,6 +12,7 @@ import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, PositiveScoringFunction } from './index';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
 import { isFaster, goesFirst } from '../util/speed';
+import { secondaryEffectFailure, statusFailure } from '../util/move-effects';
 import { getTypeEffectiveness } from '../util/type-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
 import { getHazeBenefit } from './negatives';
@@ -213,7 +214,8 @@ export const rewardSleepMove: PositiveScoringFunction = (ctx) => {
 	if (!sleepMoves.includes(moveId)) return 0;
 
 	// Don't reward if move has no effect (Sleep Clause, immunity, etc.)
-	if (ctx.target.status || ctx.flags.hasNoEffect || ctx.flags.isImmune) return 0;
+	if (ctx.flags.hasNoEffect || ctx.flags.isImmune ||
+		statusFailure(ctx.state, ctx.attacker, ctx.target, ctx.move)) return 0;
 
 	let bonus = 0;
 
@@ -255,7 +257,8 @@ export const rewardParalysisMove: PositiveScoringFunction = (ctx) => {
 	const paralysisMoves = ['thunderwave', 'stunspore', 'glare', 'nuzzle'];
 
 	if (!paralysisMoves.includes(moveId)) return 0;
-	if (ctx.target.status || ctx.flags.hasNoEffect || ctx.flags.isImmune) return 0;
+	if (ctx.flags.hasNoEffect || ctx.flags.isImmune ||
+		statusFailure(ctx.state, ctx.attacker, ctx.target, ctx.move)) return 0;
 
 	let bonus = 0;
 
@@ -294,7 +297,8 @@ export const rewardBurnMove: PositiveScoringFunction = (ctx) => {
 	const burnMoves = ['willowisp', 'inferno'];
 
 	if (!burnMoves.includes(moveId)) return 0;
-	if (ctx.target.status || ctx.flags.hasNoEffect || ctx.flags.isImmune) return 0;
+	if (ctx.flags.hasNoEffect || ctx.flags.isImmune ||
+		statusFailure(ctx.state, ctx.attacker, ctx.target, ctx.move)) return 0;
 
 	let bonus = 0;
 
@@ -334,7 +338,8 @@ export const rewardBurnMove: PositiveScoringFunction = (ctx) => {
  */
 export const rewardToxic: PositiveScoringFunction = (ctx) => {
 	if (toID(ctx.move.id) !== 'toxic') return 0;
-	if (ctx.target.status || ctx.flags.hasNoEffect || ctx.flags.isImmune) return 0;
+	if (ctx.flags.hasNoEffect || ctx.flags.isImmune ||
+		statusFailure(ctx.state, ctx.attacker, ctx.target, ctx.move)) return 0;
 
 	let bonus = 0;
 
@@ -1634,7 +1639,12 @@ export const rewardSpreadMove: PositiveScoringFunction = (ctx) => {
 	const numAliveTargets = ctx.move.target === 'allAdjacent'
 		? numAliveOpponents + numAlivePartners
 		: numAliveOpponents;
-	const spreadInfo = { isDoubles: true, numAliveTargets };
+	const spreadInfo = {
+		isDoubles: true, numAliveTargets,
+		defenderAllies: ctx.state.opponent.active,
+		attackerSideConditions: ctx.state.self.conditions,
+		defenderSideConditions: ctx.state.opponent.conditions,
+	};
 
 	// Calculate damage and KO potential for other opponents
 	for (const otherTarget of otherOpponents) {
@@ -2009,6 +2019,7 @@ export const rewardTailwind: PositiveScoringFunction = (ctx) => {
 export const rewardSaltCure: PositiveScoringFunction = (ctx) => {
 	const moveId = toID(ctx.move.id);
 	if (moveId !== 'saltcure') return 0;
+	if (secondaryEffectFailure(ctx.state, ctx.attacker, ctx.target, ctx.move)) return 0;
 
 	let bonus = 0;
 	const targetAbility = toID(ctx.target.ability);

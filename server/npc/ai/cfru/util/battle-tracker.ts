@@ -98,6 +98,28 @@ export interface TrackedPokemon {
 	};
 }
 
+/** Identity-bound facts; position-bound effects remain in the active maps. */
+interface IdentityMemory {
+	restSleep?: number;
+	sleepSource?: boolean;
+	consumedItem?: string;
+	knockedOff?: boolean;
+	/** Presence with an unknown item records an unconfirmed opponent Natural Gift. */
+	naturalGift?: { item?: string };
+}
+
+/** Bounded to one stay, so an Illusion reveal can reassign observations without replaying the battle. */
+interface EntryObservations {
+	ident: string;
+	previous?: TrackedPokemon;
+	memory: IdentityMemory;
+	memoryUpdates: IdentityMemory;
+	sleeping: boolean;
+	sleepChecks: number;
+	moves: Set<string>;
+	item?: { item: string, itemLost: boolean, originalItem?: string, itemChanged?: boolean };
+}
+
 /**
  * Battle Tracker - Monitors battle protocol messages to track opponent state
  *
@@ -126,6 +148,8 @@ export class BattleTracker {
 	/** Protocol-declared effects expire either at the end of this turn or the holder's next action. */
 	private transientEffects = new Map<string, Map<string, 'turn' | 'move'>>();
 	private turn = 0;
+	/** Raw PS logs can contain split private/public pairs; tracker consumes only their public branch. */
+	private skipPrivateLine = false;
 	private acted = new Set<string>();
 	private slotEffects = new Map<string, { wish?: number, futuremove?: number }>();
 	private pendingFutureMove?: { source: string, target: string };
@@ -133,18 +157,13 @@ export class BattleTracker {
 	private teamSizes = new Map<string, number>();
 	private formatId = '';
 	private activeIdentities = new Map<string, string>();
-	/** Successful Rest followed by public cant|slp actions; random sleep stays unknown. */
-	private restSleep = new Map<string, number>();
-	private sleepSources = new Map<string, boolean>();
+	private identityMemory = new Map<string, IdentityMemory>();
+	private entries = new Map<string, EntryObservations>();
 	private yawnSources = new Map<string, string>();
 	private lastMoveSource = '';
 	private transformations = new Map<string, TrackedTransformation>();
 	private ourPokemon = new Map<string, { ident: string, pokemon: RequestPokemonFacts }>();
 	private activeAbilities = new Map<string, string>();
-	private consumedItems = new Map<string, string>();
-	private knockedOffItems = new Set<string>();
-	/** Natural Gift has no enditem event; only our next request can confirm the consumed berry. */
-	private naturalGiftItems = new Map<string, string | undefined>();
 
 	/** All known opponent Pokemon (keyed by player and public nickname for team tracking) */
 	private opponentTeam: Map<string, TrackedPokemon> = new Map();
@@ -308,10 +327,19 @@ export class BattleTracker {
 	 * Parse a single protocol line
 	 */
 	private parseLine(line: string): void {
+		if (!line) return;
+		if (this.skipPrivateLine) {
+			this.skipPrivateLine = false;
+			return;
+		}
 		if (!line.startsWith('|')) return;
 
 		const parts = line.slice(1).split('|');
 		const command = parts[0];
+		if (command === 'split') {
+			this.skipPrivateLine = true;
+			return;
+		}
 		this.handleAbilityEvent(parts);
 
 		switch (command) {
@@ -325,8 +353,10 @@ export class BattleTracker {
 			break;
 		case 'switch':
 		case 'drag':
-		case 'replace':
 			this.handleSwitch(parts);
+			break;
+		case 'replace':
+			this.handleReplace(parts);
 			break;
 		case 'faint':
 			this.handleFaint(parts);
@@ -379,10 +409,13 @@ export class BattleTracker {
 			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
 			if (parts[2] === 'slp') {
-				const ident = this.sleepIdentity(parts[1]);
-				if (this.restSleep.has(ident)) {
-					const decrement = this.getEffectiveAbility(parts[1].split(':')[0]) === 'earlybird' ? 2 : 1;
-					this.restSleep.set(ident, this.restSleep.get(ident)! + decrement);
+				const position = parts[1].split(':')[0];
+				const decrement = this.getEffectiveAbility(position) === 'earlybird' ? 2 : 1;
+				const entry = this.entries.get(position);
+				if (entry) entry.sleepChecks += decrement;
+				if (entry?.memory.restSleep !== undefined) {
+					entry.memory.restSleep += decrement;
+					if ('restSleep' in entry.memoryUpdates) entry.memoryUpdates.restSleep = entry.memory.restSleep;
 				}
 			}
 			break;
@@ -453,7 +486,7 @@ export class BattleTracker {
 	}
 
 	/**
-	 * Handle switch/drag/replace
+	 * Handle switch/drag
 	 * Format: |switch|p1a: Nickname|Species, L50, M|100/100
 	 *
 	 * IMPORTANT: When our Pokemon switches out, its boosts are reset to 0.
@@ -467,27 +500,23 @@ export class BattleTracker {
 		const side = position.slice(0, 2); // "p1"
 		const slot = position.slice(2); // "a" or "b"
 
-		const sleepIdent = this.sleepIdentity(positionPart);
+		const sleepIdent = this.publicIdentity(positionPart);
 		const outgoingIdent = this.activeIdentities.get(position);
+		const outgoingEntry = this.entries.get(position);
+		if (outgoingEntry) this.identityMemory.set(outgoingEntry.ident, { ...outgoingEntry.memory });
+		const entry: EntryObservations = {
+			ident: sleepIdent, memory: { ...this.identityMemory.get(sleepIdent) }, memoryUpdates: {},
+			sleeping: !!parts[3]?.split(' ').includes('slp'), sleepChecks: 0, moves: new Set(),
+		};
+		this.entries.set(position, entry);
 		// PS Gen 3–4 carries the recyclable item with the position when switching.
 		if (outgoingIdent && outgoingIdent !== sleepIdent && this.formatId && Dex.forFormat(this.formatId).gen <= 4) {
-			const consumed = this.consumedItems.get(outgoingIdent);
-			if (consumed) this.consumedItems.set(sleepIdent, consumed);
-			else this.consumedItems.delete(sleepIdent);
-			this.consumedItems.delete(outgoingIdent);
+			this.updateIdentityMemory(sleepIdent, { consumedItem: this.identityMemory.get(outgoingIdent)?.consumedItem });
+			this.updateIdentityMemory(outgoingIdent, { consumedItem: undefined });
 		}
-		this.yawnSources.delete(this.activeIdentities.get(position) || '');
+		this.yawnSources.delete(position);
 		this.activeIdentities.set(position, sleepIdent);
-		if (!parts[3]?.split(' ').includes('slp')) {
-			this.restSleep.delete(sleepIdent);
-			this.sleepSources.delete(sleepIdent);
-		} else if (this.formatId && this.restSleep.has(sleepIdent)) {
-			const dex = Dex.forFormat(this.formatId);
-			// Gen 5 resets sleep on re-entry; MMO explicitly removes that reset.
-			if (dex.gen === 5 && dex.currentMod !== 'mmo') this.restSleep.set(sleepIdent, 0);
-			// Gen 3 refunds some Sleep Talk turns on switching; leave that count unknown.
-			if (dex.gen <= 3) this.restSleep.delete(sleepIdent);
-		}
+		entry.memory = this.memoryOnEntry(entry.memory, entry.sleeping);
 
 		this.activeVolatiles.set(position, new Set());
 		this.transientEffects.delete(position);
@@ -498,6 +527,7 @@ export class BattleTracker {
 		this.activeAbilities.delete(position);
 		const outgoing = this.opponentPokemon.get(position);
 		if (outgoing) {
+			outgoing.active = false;
 			outgoing.types = [...(this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(outgoing.species).types];
 			delete outgoing.transformation;
 			outgoing.ability = outgoing.baseAbility || '';
@@ -573,7 +603,7 @@ export class BattleTracker {
 		const ident = `${side}:${positionPart.split(':').slice(1).join(':').trim()}`;
 		const tracked: TrackedPokemon = {
 			ident,
-			sleepSelfInflicted: status === 'slp' ? this.sleepSources.get(ident) : undefined,
+			sleepSelfInflicted: status === 'slp' ? entry.memory.sleepSource : undefined,
 			volatiles: this.activeVolatiles.get(position),
 			species,
 			types,
@@ -583,7 +613,7 @@ export class BattleTracker {
 			abilityChanged: false,
 			item: '',
 			itemLost: false,  // Default: assume item exists but unknown
-			recyclableItem: this.getRecyclableItem(ident),
+			recyclableItem: this.getRecyclableItem(positionPart),
 			hpPercent,
 			status,
 			knownMoves: [],
@@ -602,6 +632,7 @@ export class BattleTracker {
 		// Update if we already know this Pokemon
 		const existing = this.opponentTeam.get(ident);
 		if (existing) {
+			entry.previous = existing;
 			tracked.ability = existing.baseAbility ?? existing.ability;
 			tracked.baseAbility = tracked.ability;
 			tracked.item = existing.item;
@@ -609,11 +640,69 @@ export class BattleTracker {
 			tracked.originalItem = existing.originalItem;
 			tracked.itemChanged = existing.itemChanged;
 			tracked.itemKnockedOff = existing.itemKnockedOff;
-			tracked.knownMoves = existing.knownMoves;
+			tracked.knownMoves = [...existing.knownMoves];
 		}
 
 		this.opponentPokemon.set(position, tracked);
 		this.opponentTeam.set(ident, tracked);
+	}
+
+	/** Illusion ends without leaving the field: all position-bound effects and action history survive. */
+	private handleReplace(parts: string[]): void {
+		const position = parts[1]?.split(':')[0].trim();
+		if (!position || !parts[2]) return;
+		const ident = this.publicIdentity(parts[1]);
+		const entry = this.entries.get(position);
+		const tracked = this.opponentPokemon.get(position);
+		if (tracked && entry) {
+			const formerIdent = tracked.ident || entry.ident;
+			if (formerIdent !== ident) {
+				const other = [...this.opponentPokemon.values()].find(p => p !== tracked && p.active && p.ident === formerIdent);
+				if (other) {
+					const otherEntry = this.entries.get(other.position);
+					if (otherEntry?.previous === tracked) {
+						this.applyEntryKnowledge(other, otherEntry, entry.previous);
+						otherEntry.previous = entry.previous;
+					}
+					this.opponentTeam.set(formerIdent, other);
+				} else if (entry.previous) {
+					this.opponentTeam.set(formerIdent, entry.previous);
+				} else {
+					this.opponentTeam.delete(formerIdent);
+				}
+			}
+			const history = formerIdent === ident ? entry.previous : this.opponentTeam.get(ident);
+			const details = parts[2].split(',').map(part => part.trim());
+			const species = (this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(details[0]);
+			tracked.ident = ident;
+			tracked.species = species.name;
+			tracked.types = [...species.types];
+			tracked.level = Number(details.find(part => /^L\d+$/.test(part))?.slice(1)) || 100;
+			this.applyEntryKnowledge(tracked, entry, history);
+			this.opponentTeam.set(ident, tracked);
+			entry.previous = history;
+		}
+		this.rebindIdentity(position, ident);
+		if (tracked) {
+			tracked.recyclableItem = this.getRecyclableItem(parts[1]);
+			tracked.itemKnockedOff = this.wasItemKnockedOff(parts[1]);
+			tracked.sleepSelfInflicted = this.getIdentityMemory(position).sleepSource;
+			// Some protocols provide condition on replace; PS can omit it entirely.
+			if (parts[3]) this.handleHPChange(['-damage', parts[1], parts[3]]);
+		}
+	}
+
+	private applyEntryKnowledge(tracked: TrackedPokemon, entry: EntryObservations, history?: TrackedPokemon): void {
+		const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
+		const abilities = Object.values(dex.species.get(tracked.species).abilities);
+		tracked.baseAbility = history?.baseAbility || (abilities.length === 1 ? abilities[0] : '');
+		if (!tracked.abilityChanged) tracked.ability = tracked.baseAbility || '';
+		this.activeAbilities.set(tracked.position, tracked.ability);
+		tracked.knownMoves = [...new Set([...(history?.knownMoves || []), ...entry.moves])];
+		tracked.item = entry.item?.item ?? history?.item ?? '';
+		tracked.itemLost = entry.item?.itemLost ?? history?.itemLost ?? false;
+		tracked.originalItem = entry.item?.originalItem || history?.originalItem;
+		tracked.itemChanged = entry.item?.itemChanged || history?.itemChanged;
 	}
 
 	private handleTransform(parts: string[]): void {
@@ -661,15 +750,16 @@ export class BattleTracker {
 
 	recordRequestItem(ident: string, item: string): void {
 		const identity = this.sleepIdentity(ident);
-		if (this.naturalGiftItems.has(identity)) {
-			const berry = this.naturalGiftItems.get(identity);
-			if (berry && !item) this.consumedItems.set(identity, toID(berry));
-			this.naturalGiftItems.delete(identity);
+		const pending = this.getIdentityMemory(identity).naturalGift;
+		if (pending) {
+			this.updateIdentityMemory(identity, { naturalGift: undefined,
+				...(pending.item && !item ? { consumedItem: toID(pending.item) } : {}) });
 		}
 	}
 
 	rememberOurPokemon(position: string, ident: string, pokemon: RequestPokemonFacts): void {
 		const key = position.startsWith('p') ? position : `${this.ourSide}${position}`;
+		this.rebindIdentity(key, this.publicIdentity(ident));
 		const facts = { species: pokemon.species, types: [...pokemon.types], baseStats: { ...pokemon.baseStats },
 			ability: pokemon.ability, moves: [...pokemon.moves], item: pokemon.item };
 		this.ourPokemon.set(key, { ident: this.sleepIdentity(ident), pokemon: facts });
@@ -731,13 +821,7 @@ export class BattleTracker {
 				tracked.baseAbility = ability;
 			}
 			tracked.ability = ability;
-			// Also update team record
-			const teamMon = this.opponentTeam.get(tracked.ident || '');
-			if (teamMon) {
-				teamMon.ability = ability;
-				teamMon.baseAbility = tracked.baseAbility;
-				teamMon.abilityChanged = tracked.abilityChanged;
-			}
+
 		}
 	}
 
@@ -829,23 +913,32 @@ export class BattleTracker {
 		const from = parts.find(p => p.startsWith('[from]')) || '';
 		const own = this.ourPokemon.get(position);
 		// A consumed item's subsequent effect reveals its source, not a newly held item.
-		if (revealOnly && (this.opponentPokemon.get(position)?.itemLost || (own && !own.pokemon.item))) return;
+		if (revealOnly && (this.entries.get(position)?.item?.itemLost || (own && !own.pokemon.item))) return;
 		if (own) own.pokemon.item = command === '-enditem' ? '' : item;
 		// An explicit loss is not the silent consumption inferred from Natural Gift.
-		this.naturalGiftItems.delete(identity);
+		this.updateIdentityMemory(identity, { naturalGift: undefined }, position);
 		if (command === '-enditem' && from === '[from] move: Knock Off' && this.formatId &&
-			Dex.forFormat(this.formatId).gen <= 4) this.knockedOffItems.add(identity);
+			Dex.forFormat(this.formatId).gen <= 4) this.updateIdentityMemory(identity, { knockedOff: true }, position);
 		if (command === '-enditem' && (parts.includes('[eat]') || from === '[from] gem' ||
 			from === '[from] move: Fling' || (!from && toID(item) !== 'airballoon'))) {
-			this.consumedItems.set(identity, toID(item));
+			this.updateIdentityMemory(identity, { consumedItem: toID(item) }, position);
 		} else if (command === '-item' && ['[from] move: Recycle', '[from] move: G-Max Replenish'].includes(from)) {
-			this.consumedItems.delete(identity);
+			this.updateIdentityMemory(identity, { consumedItem: undefined }, position);
 		}
 		// Public loss during this entry can activate Unburden; being itemless on entry cannot.
 		let effects = this.activeVolatiles.get(position);
 		if (!effects) this.activeVolatiles.set(position, effects = new Set());
 		if (command === '-enditem') effects.add('itemlost');
 		else effects.delete('itemlost');
+
+		const entry = this.entries.get(position);
+		if (entry) {
+			const acquired = command === '-item' && parts.some(p => p.startsWith('[from]'));
+			const exchanged = command === '-enditem' && /move: (Trick|Switcheroo)|ability: (Pickpocket|Magician)/.test(from);
+			const originalItem = entry.item?.originalItem || (!entry.item?.itemChanged && !acquired ? item : undefined);
+			entry.item = { item: command === '-enditem' ? '' : item, itemLost: command === '-enditem',
+				originalItem, itemChanged: entry.item?.itemChanged || acquired || exchanged };
+		}
 
 		if (!this.isOpponentSide(side)) return;
 
@@ -855,8 +948,8 @@ export class BattleTracker {
 			const acquired = command === '-item' && parts.some(p => p.startsWith('[from]'));
 			if (acquired) tracked.itemChanged = true;
 			if (!tracked.originalItem && !tracked.itemChanged) tracked.originalItem = item;
-			tracked.recyclableItem = this.getRecyclableItem(identity);
-			tracked.itemKnockedOff = this.wasItemKnockedOff(identity);
+			tracked.recyclableItem = this.getRecyclableItem(positionPart);
+			tracked.itemKnockedOff = this.wasItemKnockedOff(positionPart);
 			if (command === '-enditem' && /move: (Trick|Switcheroo)|ability: (Pickpocket|Magician)/.test(from)) {
 				tracked.itemChanged = true;
 			}
@@ -867,16 +960,7 @@ export class BattleTracker {
 				tracked.item = item;
 				tracked.itemLost = false;  // Item revealed, not lost
 			}
-			// Update team record
-			const teamMon = this.opponentTeam.get(tracked.ident || '');
-			if (teamMon) {
-				teamMon.item = tracked.item;
-				teamMon.itemLost = tracked.itemLost;
-				teamMon.originalItem = tracked.originalItem;
-				teamMon.itemChanged = tracked.itemChanged;
-				teamMon.recyclableItem = tracked.recyclableItem;
-				teamMon.itemKnockedOff = tracked.itemKnockedOff;
-			}
+
 		}
 	}
 
@@ -921,18 +1005,16 @@ export class BattleTracker {
 		const side = position.slice(0, 2);
 
 		const ident = this.sleepIdentity(positionPart);
+		let sleepSource: boolean | undefined;
 		if (parts[2] === 'slp') {
 			const explicit = parts.find(p => p.startsWith('[of] '))?.slice(5, 7);
 			const source = parts.includes('[from] move: Rest') ? side :
-				explicit || this.yawnSources.get(ident) || this.lastMoveSource;
-			if (source) this.sleepSources.set(ident, this.isOurTeamSide(source) === this.isOurTeamSide(side));
-			this.yawnSources.delete(ident);
-		} else {
-			this.sleepSources.delete(ident);
+				explicit || this.yawnSources.get(position) || this.lastMoveSource;
+			if (source) sleepSource = this.isOurTeamSide(source) === this.isOurTeamSide(side);
+			this.yawnSources.delete(position);
 		}
-
-		if (parts[2] === 'slp' && parts.includes('[from] move: Rest')) this.restSleep.set(ident, 0);
-		else this.restSleep.delete(ident);
+		this.updateIdentityMemory(ident, { sleepSource,
+			restSleep: parts[2] === 'slp' && parts.includes('[from] move: Rest') ? 0 : undefined }, position);
 
 		if (!this.isOpponentSide(side)) return;
 
@@ -942,7 +1024,7 @@ export class BattleTracker {
 		const tracked = this.opponentPokemon.get(position);
 		if (tracked) {
 			tracked.status = status;
-			tracked.sleepSelfInflicted = this.sleepSources.get(ident);
+			tracked.sleepSelfInflicted = this.getIdentityMemory(position).sleepSource;
 		}
 	}
 
@@ -957,13 +1039,22 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
 
+		const cured = { restSleep: undefined, sleepSource: undefined };
 		if (parts[0] === '-cureteam') {
-			for (const map of [this.restSleep, this.sleepSources]) {
-				for (const ident of map.keys()) if (ident.startsWith(`${side}:`)) map.delete(ident);
+			for (const ident of this.identityMemory.keys()) {
+				if (ident.startsWith(`${side}:`)) Object.assign(this.identityMemory.get(ident)!, cured);
+			}
+			for (const [key, entry] of this.entries) {
+				if (!key.startsWith(side)) continue;
+				Object.assign(entry.memory, cured);
+				Object.assign(entry.memoryUpdates, cured);
+				if (entry.previous) entry.previous.status = '';
+			}
+			for (const pokemon of this.opponentTeam.values()) {
+				if (pokemon.ident?.startsWith(`${side}:`)) pokemon.status = '';
 			}
 		} else {
-			this.restSleep.delete(this.sleepIdentity(positionPart));
-			this.sleepSources.delete(this.sleepIdentity(positionPart));
+			this.updateIdentityMemory(this.sleepIdentity(positionPart), cured, position);
 		}
 
 		if (!this.isOpponentSide(side)) return;
@@ -999,7 +1090,8 @@ export class BattleTracker {
 
 		const moveId = toID(move);
 		if (moveId === 'naturalgift') {
-			this.naturalGiftItems.set(this.sleepIdentity(positionPart), this.ourPokemon.get(position)?.pokemon.item);
+			this.updateIdentityMemory(this.sleepIdentity(positionPart),
+				{ naturalGift: { item: this.ourPokemon.get(position)?.pokemon.item } }, position);
 			const tracked = this.opponentPokemon.get(position);
 			if (tracked) tracked.recyclableItem = undefined;
 		}
@@ -1025,18 +1117,9 @@ export class BattleTracker {
 					return;
 				}
 
-				// Also add to known moves if not already known
-				if (!Dex.moves.get(move).isZ && moveId !== 'struggle' && !parts.some(p => p.startsWith('[from]')) && !tracked.knownMoves.includes(move)) {
-					tracked.knownMoves.push(move);
-				}
-
-				// Update team record
-				const teamMon = this.opponentTeam.get(tracked.ident || '');
-				if (teamMon) {
-					teamMon.lastMove = move;
-					if (!Dex.moves.get(move).isZ && moveId !== 'struggle' && !parts.some(p => p.startsWith('[from]')) && !teamMon.knownMoves.includes(move)) {
-						teamMon.knownMoves.push(move);
-					}
+				if (!Dex.moves.get(move).isZ && moveId !== 'struggle' && !parts.some(p => p.startsWith('[from]'))) {
+					this.entries.get(position)?.moves.add(move);
+					if (!tracked.knownMoves.includes(move)) tracked.knownMoves.push(move);
 				}
 			}
 		}
@@ -1194,7 +1277,7 @@ export class BattleTracker {
 		}
 		if (effect === 'yawn' && command === '-start') {
 			const source = parts.find(p => p.startsWith('[of] '))?.slice(5, 7) || this.lastMoveSource;
-			if (source) this.yawnSources.set(this.sleepIdentity(positionPart), source);
+			if (source) this.yawnSources.set(position, source);
 		}
 		let effects = this.activeVolatiles.get(position);
 		if (!effects) this.activeVolatiles.set(position, effects = new Set());
@@ -1540,7 +1623,7 @@ export class BattleTracker {
 	}
 
 	getSelfInflictedSleep(ident: string): boolean | undefined {
-		return this.sleepSources.get(this.sleepIdentity(ident));
+		return this.getIdentityMemory(ident).sleepSource;
 	}
 
 	/**
@@ -1804,15 +1887,61 @@ export class BattleTracker {
 		this.formatId = formatId;
 	}
 
-	private sleepIdentity(pokemon: string): string {
+	private publicIdentity(pokemon: string): string {
 		return `${pokemon.slice(0, 2)}:${pokemon.split(':').slice(1).join(':').trim()}`;
+	}
+
+	private sleepIdentity(pokemon: string): string {
+		const position = pokemon.split(':')[0].trim();
+		return this.ourPokemon.get(position)?.ident || this.publicIdentity(pokemon);
+	}
+
+	private getIdentityEntry(pokemon: string): EntryObservations | undefined {
+		const position = pokemon.split(':')[0].trim();
+		if (this.entries.has(position)) return this.entries.get(position);
+		const ident = this.publicIdentity(pokemon);
+		const entries = [...this.entries.values()].filter(entry => entry.ident === ident);
+		// An active Illusion can share the nickname of its active teammate. Never mix their observations.
+		return entries.length === 1 ? entries[0] : undefined;
+	}
+
+	private getIdentityMemory(pokemon: string): IdentityMemory {
+		return this.getIdentityEntry(pokemon)?.memory || this.identityMemory.get(this.publicIdentity(pokemon)) || {};
+	}
+
+	private updateIdentityMemory(ident: string, update: IdentityMemory, position?: string): void {
+		const entry = this.getIdentityEntry(position || ident);
+		if (entry) {
+			Object.assign(entry.memory, update);
+			Object.assign(entry.memoryUpdates, update);
+		} else {
+			this.identityMemory.set(ident, { ...this.identityMemory.get(ident), ...update });
+		}
+	}
+
+	private memoryOnEntry(memory: IdentityMemory = {}, sleeping: boolean): IdentityMemory {
+		const result = { ...memory };
+		if (!sleeping) return { ...result, restSleep: undefined, sleepSource: undefined };
+		const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
+		if (result.restSleep !== undefined && dex.gen === 5 && dex.currentMod !== 'mmo') result.restSleep = 0;
+		if (dex.gen <= 3) result.restSleep = undefined;
+		return result;
+	}
+
+	/** Rebase only this stay's evidence; history of the impersonated member stays with that member. */
+	private rebindIdentity(position: string, ident: string): void {
+		const entry = this.entries.get(position);
+		if (!entry || entry.ident === ident) return;
+		const memory = this.memoryOnEntry(this.identityMemory.get(ident), entry.sleeping);
+		if (memory.restSleep !== undefined) memory.restSleep += entry.sleepChecks;
+		entry.memory = { ...memory, ...entry.memoryUpdates };
+		entry.ident = ident;
+		this.activeIdentities.set(position, ident);
 	}
 
 	/** 1 means waking before the next move; 0 means no publicly known countdown. */
 	getSleepTurns(position: string, ability = ''): number {
-		const ident = position.includes(':') ? this.sleepIdentity(position) :
-			this.activeIdentities.get(position.startsWith('p') ? position : `${this.ourSide}${position}`);
-		const slept = ident ? this.restSleep.get(ident) : undefined;
+		const slept = this.getIdentityMemory(position.startsWith('p') ? position : `${this.ourSide}${position}`).restSleep;
 		if (slept === undefined) return 0;
 		const decrement = toID(ability) === 'earlybird' ? 2 : 1;
 		const remaining = 3 - slept;
@@ -1841,12 +1970,12 @@ export class BattleTracker {
 
 	/** Consumption is separate from removal and temporary effects; Gen 3–4 switches transfer it. */
 	getRecyclableItem(ident: string): string | undefined {
-		const identity = this.sleepIdentity(ident);
-		return this.naturalGiftItems.has(identity) ? undefined : this.consumedItems.get(identity) || '';
+		const memory = this.getIdentityMemory(ident);
+		return memory?.naturalGift ? undefined : memory?.consumedItem || '';
 	}
 
 	wasItemKnockedOff(ident: string): boolean {
-		return this.knockedOffItems.has(this.sleepIdentity(ident));
+		return !!this.getIdentityMemory(ident).knockedOff;
 	}
 
 	/** Public type changes apply to either team and last until switching. */
@@ -1866,16 +1995,14 @@ export class BattleTracker {
 		this.pendingWishPosition = '';
 		this.teamSizes.clear();
 		this.activeIdentities.clear();
-		this.restSleep.clear();
-		this.sleepSources.clear();
 		this.yawnSources.clear();
+		this.identityMemory.clear();
+		this.entries.clear();
+		this.skipPrivateLine = false;
 		this.lastMoveSource = '';
 		this.transformations.clear();
 		this.ourPokemon.clear();
 		this.activeAbilities.clear();
-		this.consumedItems.clear();
-		this.knockedOffItems.clear();
-		this.naturalGiftItems.clear();
 		this.activeVolatiles.clear();
 		this.transientEffects.clear();
 		this.activeTypes.clear();

@@ -241,6 +241,22 @@ describe('NPC public Transform state', () => {
 	});
 });
 
+describe('NPC public protocol boundary', () => {
+	it('ignores private split records, including a split marker delivered in a separate chunk', () => {
+		const tracker = createBattleTracker('p2');
+		tracker.parseMessage('|split|p1\n');
+		tracker.parseMessage('|switch|p1a: Hidden|Zoroark, L100|281/281\n|switch|p1a: Mask|Mew, L100|100/100');
+		assert.equal(tracker.getActiveOpponent().species, 'Mew');
+		assert.equal(tracker.getOpponentTeam().length, 1);
+		tracker.parseMessage('|split|p1\n|-item|p1a: Mask|Choice Specs\n');
+		assert.equal(tracker.getActiveOpponent().item, '');
+		tracker.parseMessage('|split|p1');
+		tracker.reset();
+		tracker.parseMessage('|switch|p1a: Seen|Mew|100/100');
+		assert.equal(tracker.getActiveOpponent().ident, 'p1:Seen');
+	});
+});
+
 describe('Shared public state pipeline across game types', () => {
 	function fixture(gameType, team1, team2, partner1, partner2, reserve, formatId = 'gen9customgame') {
 		const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
@@ -275,6 +291,143 @@ describe('Shared public state pipeline across game types', () => {
 	}
 
 	for (const gameType of ['singles', 'doubles', 'multi']) {
+		it(`${gameType}: Illusion reassigns entry observations while preserving live effects and teammate history`, () => {
+			const hidden = { name: 'Hidden', species: 'Zoroark', ability: 'Illusion', item: 'Sitrus Berry',
+				moves: ['nastyplot', 'substitute', 'agility', 'splash'] };
+			const user = { species: 'Smeargle', ability: 'Own Tempo', moves: ['splash', 'snarl'] };
+			const mask = { name: 'Mask', species: 'Mew', ability: 'Synchronize', item: 'Leftovers', moves: ['calmmind'] };
+			const game = fixture(gameType, hidden, user, undefined, undefined, mask);
+			try {
+				let state = game.build();
+				assert.equal(state.opponent.active[0].species, 'Mew', 'Unrevealed Illusion must remain disguised');
+				game.play('move 1', 'move 1');
+				game.build();
+				const actual = game.battle.p1.active[0];
+				actual.hp = Math.floor(actual.maxhp / 2) + 20;
+				game.play('move 2', 'move 1');
+				game.build();
+				assert.equal(actual.item, '');
+				game.play('move 3', 'move 2');
+				state = game.build();
+				let target = state.opponent.active[0];
+				assert.equal(target.species, 'Zoroark');
+				assert.deepEqual(target.boosts, actual.boosts);
+				assert(target.volatiles.has('substitute'));
+				assert.equal(toID(target.lastMove), 'agility');
+				assert.equal(target.activeMoveActions, 1);
+				assert.equal(target.item, '');
+				assert(target.itemLost);
+				assert.equal(target.recyclableItem, 'sitrusberry');
+				assert.equal(toID(target.originalItem), 'sitrusberry');
+				assert(!game.tracker.getOpponentTeam().some(p => p.ident === 'p1:Mask'), 'Do not invent a seen teammate');
+				const switchSlot = gameType === 'doubles' ? 3 : 2;
+				game.play(`switch ${switchSlot}`, 'move 1');
+				game.build();
+				game.play('move 1', 'move 2');
+				game.build();
+				game.play(`switch ${switchSlot}`, 'move 1');
+				game.build();
+				game.play('move 4', 'move 2');
+				state = game.build();
+				target = state.opponent.active[0];
+				assert.equal(target.species, 'Zoroark');
+				const memory = game.tracker.getOpponentTeam();
+				const real = memory.find(p => p.ident === 'p1:Hidden');
+				const teammate = memory.find(p => p.ident === 'p1:Mask');
+				assert.deepEqual(real.knownMoves.map(toID).sort(), ['agility', 'nastyplot', 'splash', 'substitute']);
+				assert.deepEqual(teammate.knownMoves, ['Calm Mind']);
+				assert.equal(toID(teammate.item), 'leftovers');
+				assert.equal(toID(teammate.originalItem), 'leftovers');
+				assert.equal(teammate.recyclableItem, '');
+				assert(!teammate.active);
+				assert(target.itemLost);
+				assert.equal(target.recyclableItem, 'sitrusberry');
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: an inherited Rest counter is rebased on the revealed member after re-entry`, () => {
+			const hidden = { name: 'Hidden', species: 'Zoroark', ability: 'Illusion', moves: ['rest'] };
+			const user = { species: 'Smeargle', ability: 'Own Tempo', moves: ['splash', 'snarl'] };
+			const mask = { name: 'Mask', species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+			const game = fixture(gameType, hidden, user, undefined, undefined, mask);
+			try {
+				game.build();
+				game.battle.p1.active[0].hp -= 100;
+				game.play('move 1', 'move 2');
+				assert.equal(game.build().opponent.active[0].sleepTurns, 3);
+				const switchSlot = gameType === 'doubles' ? 3 : 2;
+				game.play(`switch ${switchSlot}`, 'move 1');
+				game.build();
+				game.play(`switch ${switchSlot}`, 'move 1');
+				assert.equal(game.build().opponent.active[0].species, 'Mew');
+				game.play('move 1', 'move 2');
+				const target = game.build().opponent.active[0];
+				assert.equal(target.species, 'Zoroark');
+				assert.equal(target.sleepTurns, 2);
+				assert.equal(target.sleepSelfInflicted, true);
+				assert.equal(game.tracker.getSleepTurns('p1: Mask'), 0);
+			} finally { game.battle.destroy(); }
+		});
+
+		if (gameType === 'doubles') it('doubles: an Illusion and its active namesake retain independent observations', () => {
+			const hidden = { name: 'Hidden', species: 'Zoroark', ability: 'Illusion', item: 'Sitrus Berry',
+				moves: ['nastyplot', 'substitute', 'agility'] };
+			const mask = { name: 'Mask', species: 'Mew', ability: 'Synchronize', item: 'Leftovers', moves: ['rest'] };
+			const user = { species: 'Smeargle', ability: 'Own Tempo', moves: ['splash', 'snarl'] };
+			const game = fixture(gameType, hidden, user, mask);
+			try {
+				game.build();
+				game.battle.p1.active[1].hp -= 100;
+				game.play('move 1', 'move 1', 'move 1');
+				game.build();
+				const actual = game.battle.p1.active[0];
+				actual.hp = Math.floor(actual.maxhp / 2) + 20;
+				game.play('move 2', 'move 1', 'move 1');
+				game.build();
+				game.play('move 3', 'move 2', 'move 1');
+				const state = game.build();
+				const real = state.opponent.active.find(p => p.species === 'Zoroark');
+				const teammate = state.opponent.active.find(p => p.species === 'Mew');
+				assert(real.itemLost);
+				assert.equal(real.recyclableItem, 'sitrusberry');
+				assert.equal(real.sleepTurns, 0);
+				assert.equal(teammate.sleepTurns, 1);
+				assert.equal(toID(teammate.item), 'leftovers');
+				assert.equal(teammate.recyclableItem, '');
+				const memory = game.tracker.getOpponentTeam();
+				assert.equal(memory.length, 2);
+				assert.deepEqual(memory.find(p => p.ident === 'p1:Mask').knownMoves, ['Rest']);
+				assert(!memory.find(p => p.ident === 'p1:Hidden').knownMoves.includes('Rest'));
+			} finally { game.battle.destroy(); }
+		});
+
+		for (const own of [false, true]) {
+			it(`${gameType}: ${own ? 'our' : 'opponent'} Illusion keeps Rest counters and source through the reveal`, () => {
+				const hidden = { name: 'Hidden', species: 'Zoroark', ability: 'Illusion', moves: ['rest', 'splash'] };
+				const user = { species: 'Smeargle', ability: 'Own Tempo', moves: ['splash', 'snarl'] };
+				const mask = { name: 'Mask', species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+				const game = fixture(gameType, own ? user : hidden, own ? hidden : user, undefined, undefined, mask);
+				try {
+					game.build();
+					const actual = game.battle[own ? 'p2' : 'p1'].active[0];
+					actual.hp -= 100;
+					game.play('move 1', 'move 1');
+					let state = game.build();
+					let target = (own ? state.self : state.opponent).active[0];
+					assert.equal(target.sleepTurns, 3);
+					assert.equal(target.sleepSelfInflicted, true);
+					game.play(own ? 'move 2' : 'move 1', own ? 'move 1' : 'move 2');
+					state = game.build();
+					target = (own ? state.self : state.opponent).active[0];
+					assert.equal(target.species, 'Zoroark');
+					assert.equal(target.sleepTurns, 2);
+					assert.equal(target.sleepSelfInflicted, true);
+					assert.equal(game.tracker.getSelfInflictedSleep(`${own ? 'p2' : 'p1'}: Mask`), undefined);
+					assert.equal(actual.statusState.time, 2);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
 		for (const [ability, attack] of [['Primordial Sea', 'flamethrower'], ['Desolate Land', 'watergun'], ['Delta Stream', 'icebeam']]) {
 			for (const suppress of [false, true]) {
 				it(`${gameType}: ${ability} ${suppress ? 'under Air Lock' : 'active'} keeps its public identity and correct move effects`, () => {

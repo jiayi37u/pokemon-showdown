@@ -148,10 +148,10 @@ export function buildBattleStateFromRequests(
 			const position = tracker.getPosition(side, i);
 			const pokemon = buildPokemonFromRequest(mon, active ? tracker.getFieldSlot(position) : i + 1, active, formatId);
 			pokemon.ownerSide = side;
+			// Register only request facts. Transform may have occurred before the first request.
+			if (active && !pokemon.fainted) tracker.rememberOurPokemon(position, mon.ident, pokemon);
 			tracker.recordRequestItem(mon.ident, pokemon.item);
 			pokemon.sleepSelfInflicted = tracker.getSelfInflictedSleep(mon.ident);
-			// Register only request facts. Transform may have occurred before the first request.
-			if (active) tracker.rememberOurPokemon(position, mon.ident, pokemon);
 			pokemon.recyclableItem = tracker.getRecyclableItem(mon.ident);
 			pokemon.itemKnockedOff = tracker.wasItemKnockedOff(mon.ident);
 			return { mon, pokemon, position, active };

@@ -82,6 +82,33 @@ afterEach(() => { game?.destroy(); game = undefined; });
 
 describe('Production NPCMultiManager decisions', () => {
 	for (const difficulty of ['normal', 'hard']) {
+		for (const own of [false, true]) {
+			it(`${difficulty}: production Multi preserves ${own ? 'p4' : 'p3'} Illusion state on reveal`, () => {
+				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+				const hidden = { name: 'Hidden', species: 'Zoroark', ability: 'Illusion',
+					moves: ['nastyplot', 'substitute', 'darkpulse'] };
+				const mask = { name: 'Mask', ...passive };
+				const user = { species: 'Smeargle', ability: 'Own Tempo', moves: ['splash', 'snarl'] };
+				game = createMulti(own ? [[user], [passive], [passive], [hidden, mask]] :
+					[[passive], [passive], [hidden, mask], [user]], false, difficulty);
+				game.sync();
+				game.play(['move 1', 'move 1', 'move 1', 'move 1']);
+				game.sync();
+				game.play(own ? ['move 2', 'move 1', 'move 1', 'move 2'] : ['move 1', 'move 1', 'move 2', 'move 2']);
+				game.decide();
+				for (const controller of Object.values(game.manager.controllers)) {
+					const state = difficulty === 'hard' ? controller.state : controller.battleState;
+					const target = (own ? state.self : state.opponent).active.find(p => p.slot === 2);
+					assert.equal(target.species, 'Zoroark');
+					assert(target.volatiles.has('substitute'));
+					assert.equal(target.boosts.spa, game.battle[own ? 'p4' : 'p3'].active[0].boosts.spa);
+					assert.equal(target.activeMoveActions, 1);
+				}
+				game.play(['move 1', null, own ? 'move 1' : 'move 3 1', null]);
+				assert.equal(game.battle.turn, 4);
+			});
+		}
+
 		for (const onlySupport of [false, true]) {
 			it(`${difficulty}: handles p4's ally fainting, onlySupport=${onlySupport}`, () => {
 				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['psychic', 'splash'] };

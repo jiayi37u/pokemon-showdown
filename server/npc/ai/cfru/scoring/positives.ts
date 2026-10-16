@@ -8,6 +8,7 @@
  * @license MIT
  */
 
+import { itemRemovalFailure } from '../util/items';
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, PositiveScoringFunction } from './index';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
@@ -2084,22 +2085,14 @@ export const rewardSaltCure: PositiveScoringFunction = (ctx) => {
 // Knock Off Reward
 // =============================================================================
 
-/**
- * Reward Knock Off for removing opponent's item
- * - Target has item (or unknown): +5
- * - Target has item AND is bulky: extra +3
- * - Target already lost item (itemLost = true): no bonus (negative scorer will apply -5)
- *
- * Note: itemLost is set to true when we see -enditem message.
- * If itemLost is false and item is empty, we assume they have an unknown item.
- */
+/** Reward possible removal (+5), with extra value against bulky targets (+3). */
 export const rewardKnockOff: PositiveScoringFunction = (ctx) => {
 	const moveId = toID(ctx.move.id);
 
 	if (moveId !== 'knockoff') return 0;
 
-	// If target's item is confirmed lost, no bonus
-	if (ctx.target.itemLost) {
+	// Removal eligibility is independent of Knock Off's damage.
+	if (itemRemovalFailure(ctx.attacker, ctx.target, ctx.move, ctx.state.field)) {
 		return 0;
 	}
 

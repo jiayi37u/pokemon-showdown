@@ -12,7 +12,10 @@ import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, NegativeScoringFunction } from './index';
 import { getTypeEffectiveness, getMoveInteraction } from '../util/type-calc';
 import { defensiveAbility, effectiveItem, rulesDex } from '../util/mechanics';
-import { fieldEffectFailure, inflictedStatus, statusFailure } from '../util/move-effects';
+import {
+	delayedMoveFailure, fieldEffectFailure, inflictedStatus, statusFailure, volatileEffectFailure,
+} from '../util/move-effects';
+import { itemMoveFailure, itemRemovalFailure } from '../util/items';
 import { calculateDamage } from '../util/damage-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
 
@@ -20,14 +23,14 @@ import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent
 // Type and Ability Immunity Checks
 // =============================================================================
 
-/** All confirmed move immunities use the same rule result as damage and switching. */
+/** Confirmed failures and immunities use the same rule result as damage and switching. */
 export const checkMoveImmunity: NegativeScoringFunction = ctx => {
 	const result = getMoveInteraction(ctx.attacker, ctx.target, ctx.move, ctx.state.field, {
 		isAllyTarget: ctx.isTargetingPartner,
 		defenderAllies: (ctx.isTargetingPartner ? ctx.state.self : ctx.state.opponent).active,
 	});
 	if (!result.blockedBy) return 0;
-	ctx.flags.isImmune = true;
+	ctx.flags.isImmune = !result.failed;
 	ctx.flags.hasNoEffect = true;
 	ctx.adjustments.push({ reason: result.blockedBy, amount: -100, category: 'negative' });
 	return -100;
@@ -823,82 +826,18 @@ export const checkRoar: NegativeScoringFunction = (ctx) => {
 	return 0;
 };
 
-/**
- * Check if Substitute will fail (already has sub, not enough HP)
- * CFRU: ai_negatives.c lines 1654-1658
- */
-export const checkSubstitute: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'substitute') return 0;
-
-	// Already has substitute
-	if (ctx.attacker.volatiles.has('substitute')) {
-		ctx.adjustments.push({
-			reason: 'Already has Substitute',
-			amount: -10,
-			category: 'negative',
-		});
+export const checkVolatileEffect: NegativeScoringFunction = ctx => {
+	const failure = volatileEffectFailure(ctx.state, ctx.attacker, ctx.target, ctx.move);
+	if (failure) {
 		ctx.flags.hasNoEffect = true;
+		ctx.adjustments.push({ reason: failure, amount: -100, category: 'negative' });
+		return -100;
+	}
+	if (ctx.move.id === 'leechseed' &&
+		defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field) === 'liquidooze') {
+		ctx.adjustments.push({ reason: 'Liquid Ooze will damage user from Leech Seed', amount: -10, category: 'negative' });
 		return -10;
 	}
-
-	// Not enough HP (need >25%)
-	if (ctx.attacker.hpPercent <= 25) {
-		ctx.adjustments.push({
-			reason: 'Not enough HP for Substitute',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	return 0;
-};
-
-/**
- * Check if Leech Seed will fail
- * CFRU: ai_negatives.c lines 1703-1711
- */
-export const checkLeechSeed: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'leechseed') return 0;
-
-	// Grass types are immune
-	if (ctx.target.types.includes('Grass')) {
-		ctx.adjustments.push({
-			reason: 'Grass type immune to Leech Seed',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	// Already seeded
-	if (ctx.target.volatiles.has('leechseed')) {
-		ctx.adjustments.push({
-			reason: 'Target already seeded',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	// Liquid Ooze makes Leech Seed hurt the user
-	const targetAbility = toID(ctx.target.ability);
-	if (targetAbility === 'liquidooze') {
-		ctx.adjustments.push({
-			reason: 'Liquid Ooze will damage user from Leech Seed',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
 	return 0;
 };
 
@@ -1837,211 +1776,35 @@ export const checkDestinyBond: NegativeScoringFunction = (ctx) => {
 	return 0;
 };
 
-/**
- * Check if Future Sight / Doom Desire will fail
- * CFRU: ai_negatives.c lines 2239-2244
- *
- * Future Sight fails if there's already a Future Sight pending on the target
- */
-export const checkFutureSight: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'futuresight' && moveId !== 'doomdesire') return 0;
-
-	// Check if target already has Future Sight pending
-	if (ctx.target.volatiles.has('futuremove')) {
-		ctx.adjustments.push({
-			reason: 'Future Sight already pending on target',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	return 0;
+export const checkFutureSight: NegativeScoringFunction = ctx => {
+	const failure = delayedMoveFailure(ctx.state, ctx.target, ctx.move);
+	if (!failure) return 0;
+	ctx.flags.hasNoEffect = true;
+	ctx.adjustments.push({ reason: failure, amount: -100, category: 'negative' });
+	return -100;
 };
 
-/**
- * Check if Trick / Switcheroo will fail or is a bad idea
- * CFRU: ai_negatives.c lines 2452-2470
- *
- * Trick fails if:
- * 1. CanSwapItems returns false
- * 2. Both Pokemon have the same item
- * 3. Target has Sticky Hold
- */
-export const checkTrick: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'trick' && moveId !== 'switcheroo') return 0;
-
-	const attackerItem = toID(ctx.attacker.item);
-	const targetItem = toID(ctx.target.item);
-	const targetAbility = toID(ctx.target.ability);
-
-	// Sticky Hold prevents item swap
-	if (targetAbility === 'stickyhold') {
-		ctx.adjustments.push({
-			reason: 'Sticky Hold prevents item swap',
-			amount: -10,
-			category: 'negative',
-		});
+/** Eligibility is shared with damage; identical-item and blocked-status penalties are tactical. */
+export const checkItemMove: NegativeScoringFunction = ctx => {
+	if (!['trick', 'switcheroo', 'recycle', 'fling', 'naturalgift'].includes(ctx.move.id)) return 0;
+	const failure = itemMoveFailure(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
+	if (failure) {
 		ctx.flags.hasNoEffect = true;
+		ctx.adjustments.push({ reason: failure, amount: -100, category: 'negative' });
+		return -100;
+	}
+	if (['trick', 'switcheroo'].includes(ctx.move.id) && ctx.attacker.item &&
+		toID(ctx.attacker.item) === toID(ctx.target.item)) {
+		ctx.adjustments.push({ reason: 'Swapping identical items offers little benefit', amount: -10, category: 'negative' });
 		return -10;
 	}
-
-	// Same item (or both no item)
-	if (attackerItem === targetItem) {
-		ctx.adjustments.push({
-			reason: 'Both have same item (or no item)',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	// Can't swap certain items (Mega Stones, Z-Crystals, Plates on Arceus, etc.)
-	// These are handled by game mechanics, simplified check here
-	const unswitchableItems = [
-		'griseousorb', // Giratina
-		'rustedsword', 'rustedshield', // Zacian/Zamazenta
-	];
-
-	// Check if attacker has unswitchable item
-	if (unswitchableItems.some(item => attackerItem.includes(item))) {
-		ctx.adjustments.push({
-			reason: 'Cannot switch this item',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	return 0;
-};
-
-/**
- * Check if Recycle will fail
- * CFRU: ai_negatives.c lines 2529-2540
- *
- * Recycle fails if:
- * 1. No consumed item to recycle (SavedConsumedItems[bankAtk] == ITEM_NONE)
- * 2. Already holding an item (data->atkItem != ITEM_NONE)
- */
-export const checkRecycle: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'recycle') return 0;
-
-	// Check if already holding an item
-	if (ctx.attacker.item) {
-		ctx.adjustments.push({
-			reason: 'Already holding an item',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	// Check if there's a consumed item to recycle
-	// Note: We can't track consumed items in our system yet, so we assume there might be one
-	// This check would need BattleTracker to track consumed items
-
-	return 0;
-};
-
-/**
- * Check if Fling will fail
- * CFRU: ai_negatives.c lines 2916-2942
- *
- * Fling fails if:
- * 1. No item to fling
- * 2. Item cannot be flung (CanFling returns false)
- *
- * Also checks fling effects (burn, paralysis, poison, freeze) against target immunities
- */
-export const checkFling: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'fling') return 0;
-
-	const attackerItem = toID(ctx.attacker.item);
-	const targetAbility = toID(ctx.target.ability);
-
-	// No item to fling
-	if (!attackerItem) {
-		ctx.adjustments.push({
-			reason: 'No item to fling',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	// Items that can't be flung (simplified list)
-	const unflingableItems = [
-		'assaultvest', // can't use status moves
-		'choiceband', 'choicespecs', 'choicescarf', // when locked into other move
-	];
-
-	// Certain item types can't be flung
-	if (attackerItem.endsWith('iumz') || // Z-Crystals
-		attackerItem.endsWith('ite') || // Mega Stones
-		attackerItem === 'redorb' || attackerItem === 'blueorb') { // Primal items
-		ctx.adjustments.push({
-			reason: 'Cannot fling this item',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -10;
-	}
-
-	// Check fling effects vs target immunities
-	// Flame Orb - burns target
-	if (attackerItem === 'flameorb') {
-		if (ctx.target.types.includes('Fire') ||
-			['waterveil', 'waterbubble'].includes(targetAbility)) {
-			ctx.adjustments.push({
-				reason: 'Target immune to burn from Flame Orb',
-				amount: -5,
-				category: 'negative',
-			});
+	if (ctx.move.id === 'fling') {
+		const status = statusFailure(ctx.state, ctx.attacker, ctx.target, ctx.move);
+		if (status) {
+			ctx.adjustments.push({ reason: `Fling status unavailable: ${status}`, amount: -5, category: 'negative' });
 			return -5;
 		}
 	}
-
-	// Toxic Orb - badly poisons target
-	if (attackerItem === 'toxicorb') {
-		if (ctx.target.types.includes('Poison') || ctx.target.types.includes('Steel') ||
-			targetAbility === 'immunity') {
-			ctx.adjustments.push({
-				reason: 'Target immune to poison from Toxic Orb',
-				amount: -5,
-				category: 'negative',
-			});
-			return -5;
-		}
-	}
-
-	// Light Ball - paralyzes target
-	if (attackerItem === 'lightball') {
-		if (ctx.target.types.includes('Electric') || ctx.target.types.includes('Ground') ||
-			targetAbility === 'limber') {
-			ctx.adjustments.push({
-				reason: 'Target immune to paralysis from Light Ball',
-				amount: -5,
-				category: 'negative',
-			});
-			return -5;
-		}
-	}
-
 	return 0;
 };
 
@@ -2161,31 +1924,13 @@ export const checkSemiInvulnerable: NegativeScoringFunction = (ctx) => {
 // Knock Off Check
 // =============================================================================
 
-/**
- * Check if Knock Off is less useful because target already lost item
- * - Target item is confirmed lost (saw -enditem message): -5
- *
- * Note: We use itemLost flag to distinguish:
- * - itemLost = false, item = '': Item unknown, assume has item (no penalty)
- * - itemLost = true, item = '': Item confirmed lost (penalty)
- * - itemLost = false, item = 'X': Item known to exist (no penalty)
- */
-export const checkKnockOff: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (moveId !== 'knockoff') return 0;
-
-	// Only penalize if we've confirmed the item was lost
-	if (ctx.target.itemLost) {
-		ctx.adjustments.push({
-			reason: 'Target already lost item (Knock Off less useful)',
-			amount: -5,
-			category: 'negative',
-		});
-		return -5;
-	}
-
-	return 0;
+/** Losing removal utility does not make Knock Off's damage ineffective. */
+export const checkKnockOff: NegativeScoringFunction = ctx => {
+	if (ctx.move.id !== 'knockoff') return 0;
+	const failure = itemRemovalFailure(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
+	if (!failure) return 0;
+	ctx.adjustments.push({ reason: `Knock Off utility unavailable: ${failure}`, amount: -5, category: 'negative' });
+	return -5;
 };
 
 // =============================================================================
@@ -2240,8 +1985,7 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 	// Special move effects (CFRU: ai_negatives.c 784-843, 1371-1711)
 	checkLiquidOoze,
 	checkRoar,
-	checkSubstitute,
-	checkLeechSeed,
+	checkVolatileEffect,
 	checkSaltCure,
 	checkMentalMoveRedundant,
 	checkCounterMirrorCoat,
@@ -2260,9 +2004,7 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkPainSplit,
 	checkDestinyBond,
 	checkFutureSight,
-	checkTrick,
-	checkRecycle,
-	checkFling,
+	checkItemMove,
 	checkSemiInvulnerable,
 
 	// Item removal

@@ -241,24 +241,24 @@ describe('NPC public Transform state', () => {
 });
 
 describe('Shared public state pipeline across game types', () => {
-	function fixture(gameType, team1, team2, partner1, partner2, reserve) {
+	function fixture(gameType, team1, team2, partner1, partner2, reserve, formatId = 'gen9customgame') {
 		const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
 		const multi = gameType === 'multi';
 		const battle = new Battle({
-			format: { ...Dex.formats.get('gen9customgame'), gameType, playerCount: multi ? 4 : 2 }, seed: [1, 2, 3, 4],
+			format: { ...Dex.formats.get(formatId), gameType, playerCount: multi ? 4 : 2 }, seed: [1, 2, 3, 4],
 			p1: { name: 'Player', team: [...(gameType === 'doubles' ? [team1, partner1 || passive] : [team1]), ...(reserve ? [reserve] : [])] },
 			p2: { name: 'NPC', team: [...(gameType === 'doubles' ? [team2, partner2 || passive] : [team2]), ...(reserve ? [reserve] : [])] },
 			...(multi ? { p3: { name: 'Player2', team: [partner1 || passive] },
 				p4: { name: 'NPC2', team: [partner2 || passive] } } : {}),
 		});
-		battle.makeChoices();
+		if (battle.requestState === 'teampreview') battle.makeChoices();
 		const tracker = createBattleTracker('p2', multi);
-		tracker.setFormat('gen9customgame');
+		tracker.setFormat(formatId);
 		let cursor = 0;
 		const build = () => {
 			tracker.parseMessage(battle.log.slice(cursor).join('\n'));
 			cursor = battle.log.length;
-			const config = { ...DEFAULT_AI_CONFIG, formatId: 'gen9customgame', isDoubles: gameType !== 'singles' };
+			const config = { ...DEFAULT_AI_CONFIG, formatId, isDoubles: gameType !== 'singles' };
 			if (multi) return buildBattleStateFromRequests(['p2', 'p4'].map(side =>
 				({ side, request: JSON.parse(JSON.stringify(battle[side].activeRequest)) })), tracker, config, battle.turn);
 			return buildBattleStateWithTracker(JSON.parse(JSON.stringify(battle.p2.activeRequest)), {
@@ -274,6 +274,253 @@ describe('Shared public state pipeline across game types', () => {
 	}
 
 	for (const gameType of ['singles', 'doubles', 'multi']) {
+		for (const moveId of ['fakeout', 'firstimpression']) {
+			it(`${gameType}: ${moveId} availability resets only after switching`, () => {
+				const player = { species: 'Blissey', ability: 'Natural Cure', moves: [moveId, 'splash'] };
+				const npc = { species: 'Smeargle', ability: 'Own Tempo', moves: [moveId, 'splash'] };
+				const reserve = { species: 'Snorlax', ability: 'Immunity', moves: ['splash'] };
+				const game = fixture(gameType, player, npc, undefined, undefined, reserve);
+				try {
+					let state = game.build();
+					const move = buildAIMove({ id: moveId }, 1);
+					const score = () => new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
+						.scoreMove(state, state.self.active[0], move, state.opponent.active[0]);
+					assert(!score().flags.hasNoEffect);
+					game.play('move 2', 'move 2');
+					state = game.build();
+					assert.equal(score().score, 0);
+					assert.equal(score().flags.isImmune, false);
+					assert.equal(calculateDamage(state.opponent.active[0], state.self.active[0], move, state.field).max, 0);
+					const cursor = game.battle.log.length;
+					game.play('move 1 1', 'move 1 1');
+					assert.equal(game.battle.log.slice(cursor).filter(l => l.startsWith('|-fail|')).length, 2);
+					game.build();
+					const choice = gameType === 'doubles' ? 'switch 3' : 'switch 2';
+					game.play(choice, choice);
+					state = game.build();
+					assert.equal(state.opponent.reserve.find(p => p.species === 'Blissey').lastMove, '');
+					game.play(choice, choice);
+					state = game.build();
+					assert(!score().flags.hasNoEffect);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		for (const spec of [
+			{ move: 'substitute', lowHP: true }, { move: 'substitute', volatile: 'substitute' },
+			{ move: 'leechseed', target: 'Venusaur' }, { move: 'leechseed', volatile: 'leechseed' },
+		]) {
+			it(`${gameType}: guaranteed volatile-effect failure scores zero: ${JSON.stringify(spec)}`, () => {
+				const player = { species: spec.target || 'Blissey', ability: 'Natural Cure', moves: ['splash'] };
+				const npc = { species: 'Smeargle', ability: 'Own Tempo', moves: [spec.move, 'tackle'] };
+				const game = fixture(gameType, player, npc);
+				try {
+					game.build();
+					const source = game.battle.p2.active[0], target = game.battle.p1.active[0];
+					if (spec.lowHP) source.hp = Math.floor(source.maxhp / 4);
+					if (spec.volatile) (spec.move === 'substitute' ? source : target).addVolatile(spec.volatile, source);
+					game.battle.makeRequest('move');
+					const state = game.build();
+					const score = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
+						.scoreMove(state, state.self.active[0], buildAIMove({ id: spec.move }, 1), state.opponent.active[0]);
+					assert.equal(score.score, 0);
+					assert.equal(score.breakdown.positives, 0);
+					const cursor = game.battle.log.length;
+					game.play('move 1', spec.move === 'substitute' ? 'move 1' : 'move 1 1');
+					assert(game.battle.log.slice(cursor).some(l => /^\|-(fail|immune)\|/.test(l)));
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		for (const formatId of ['gen4customgame', 'gen5customgame']) {
+			it(`${gameType}/${formatId}: consumed-item ownership on switching matches PS`, () => {
+				const mon = { species: 'Blissey', ability: 'Natural Cure', item: 'Iron Ball', moves: ['fling', 'splash'] };
+				const reserve = { species: 'Snorlax', ability: 'Immunity', moves: ['splash'] };
+				const game = fixture(gameType, mon, mon, undefined, undefined, reserve, formatId);
+				try {
+					game.build();
+					game.play('move 1 1', 'move 1 1');
+					game.build();
+					const choice = gameType === 'doubles' ? 'switch 3' : 'switch 2';
+					game.play(choice, choice);
+					const state = game.build();
+					for (const [side, owner] of [['self', 'p2'], ['opponent', 'p1']]) {
+						assert.equal(state[side].active[0].recyclableItem, game.battle[owner].active[0].lastItem);
+						assert.equal(state[side].reserve.find(p => p.species === 'Blissey').recyclableItem,
+							game.battle[owner].pokemon.find(p => p.species.name === 'Blissey').lastItem);
+					}
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		for (const formatId of ['gen4customgame', 'gen5customgame']) {
+			it(`${gameType}/${formatId}: Knock Off's item-exchange restriction follows the format`, () => {
+				const player = { species: 'Blissey', ability: 'Natural Cure', item: 'Iron Ball', moves: ['splash'] };
+				const npc = { species: 'Smeargle', ability: 'Own Tempo', item: 'Leftovers', moves: ['knockoff', 'trick'] };
+				const game = fixture(gameType, player, npc, undefined, undefined, undefined, formatId);
+				try {
+					game.build();
+					game.play('move 1', 'move 1 1');
+					const state = game.build();
+					const gen4 = formatId === 'gen4customgame';
+					assert.equal(!!state.opponent.active[0].itemKnockedOff, gen4);
+					const score = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
+						.scoreMove(state, state.self.active[0], buildAIMove({ id: 'trick' }, 2, formatId), state.opponent.active[0]);
+					assert.equal(!!score.flags.hasNoEffect, gen4);
+					const cursor = game.battle.log.length;
+					game.play('move 1', 'move 2 1');
+					assert.equal(game.battle.log.slice(cursor).some(l => l.startsWith('|-fail|p2')), gen4);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		it(`${gameType}: acquiring and losing another item preserves the last consumed item`, () => {
+			const player = { species: 'Smeargle', ability: 'Own Tempo', item: 'Leftovers', moves: ['splash', 'trick', 'knockoff'] };
+			const npc = { species: 'Blissey', ability: 'Natural Cure', item: 'Iron Ball', moves: ['fling', 'recycle', 'splash'] };
+			const game = fixture(gameType, player, npc);
+			try {
+				game.build();
+				game.play('move 1', 'move 1 1');
+				game.build();
+				game.play('move 2 1', 'move 3');
+				let state = game.build();
+				assert.equal(state.self.active[0].item, 'leftovers');
+				assert.equal(state.self.active[0].recyclableItem, 'ironball');
+				assert.equal(state.opponent.active[0].originalItem, 'Leftovers');
+				assert.equal(state.opponent.active[0].itemChanged, true);
+				game.play('move 3 1', 'move 3');
+				state = game.build();
+				assert.equal(state.self.active[0].item, '');
+				assert.equal(state.self.active[0].recyclableItem, 'ironball');
+				assert.equal(game.battle.p2.active[0].lastItem, 'ironball');
+				game.play('move 1', 'move 2');
+				state = game.build();
+				assert.equal(state.self.active[0].item, 'ironball');
+				assert.equal(state.self.active[0].recyclableItem, '');
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: Transform does not change the species that binds an item`, () => {
+			const player = { species: 'Charizard', ability: 'Blaze', item: 'Charizardite X', moves: ['fling'] };
+			const npc = { species: 'Ditto', ability: 'Limber', item: 'Charizardite X', moves: ['transform'] };
+			const game = fixture(gameType, player, npc);
+			try {
+				game.build();
+				game.play('move 1 1', 'move 1 1');
+				const state = game.build();
+				const actor = state.self.active[0], target = state.opponent.active[0];
+				assert.equal(actor.species, 'Charizard');
+				assert.equal(actor.baseSpecies, 'Ditto');
+				const move = buildAIMove({ id: 'fling' }, 1);
+				const score = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn)).scoreMove(state, actor, move, target);
+				assert(!score.flags.hasNoEffect);
+				assert(calculateDamage(actor, target, move, state.field).max > 0);
+				game.play('move 1 1', 'move 1 1');
+				assert.equal(game.build().self.active[0].item, '');
+			} finally { game.battle.destroy(); }
+		});
+
+		for (const [moveId, item] of [['knockoff', 'Oran Berry'], ['incinerate', 'Oran Berry'], ['pluck', 'Oran Berry'], ['tackle', 'Air Balloon']]) {
+			it(`${gameType}: ${moveId} removing ${item} does not create a recyclable item`, () => {
+				const player = { species: 'Smeargle', ability: 'Own Tempo', moves: [moveId] };
+				const npc = { species: 'Blissey', ability: 'Natural Cure', item, moves: ['splash', 'recycle'] };
+				const game = fixture(gameType, player, npc);
+				try {
+					game.build();
+					game.play(moveId === 'incinerate' ? 'move 1' : 'move 1 1', 'move 1');
+					const state = game.build();
+					assert.equal(state.self.active[0].item, '');
+					assert.equal(state.self.active[0].recyclableItem, '');
+					assert.equal(game.battle.p2.active[0].lastItem, '');
+					const score = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
+						.scoreMove(state, state.self.active[0], buildAIMove({ id: 'recycle' }, 2), state.opponent.active[0]);
+					assert.equal(score.score, 0);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		it(`${gameType}: Natural Gift consumption is confirmed by our request, not an opponent's hidden item`, () => {
+			const player = { species: 'Blissey', ability: 'Natural Cure', item: 'Oran Berry', moves: ['naturalgift', 'splash'] };
+			const npc = { species: 'Chansey', ability: 'Natural Cure', item: 'Oran Berry', moves: ['naturalgift', 'recycle'] };
+			const game = fixture(gameType, player, npc);
+			try {
+				game.build();
+				game.play('move 1 1', 'move 1 1');
+				const state = game.build();
+				assert.equal(state.self.active[0].recyclableItem, 'oranberry');
+				assert.equal(state.self.active[0].item, '');
+				assert.equal(state.opponent.active[0].recyclableItem, undefined);
+				assert.equal(state.opponent.active[0].itemKnown, false);
+			} finally { game.battle.destroy(); }
+		});
+
+		for (const [moveId, formatId] of ['gen4customgame', 'gen5pokemmorandombattle', 'gen7customgame', 'gen9customgame']
+			.flatMap(format => ['futuresight', 'doomdesire'].map(move => [move, format]))) {
+			it(`${gameType}/${formatId}: ${moveId} occupies the target position through switching and expires after impact`, () => {
+				const player = { species: 'Blissey', ability: 'Natural Cure', moves: ['splash'] };
+				const npc = { species: 'Slowbro', ability: 'Own Tempo', moves: [moveId, 'splash'] };
+				const reserve = { species: 'Snorlax', ability: 'Immunity', moves: ['splash'] };
+				const game = fixture(gameType, player, npc, undefined, undefined, reserve, formatId);
+				try {
+					game.build();
+					game.play('move 1', 'move 1 1');
+					let state = game.build();
+					assert.equal(state.opponent.conditions.futureMoves[1], 2);
+					assert(!state.self.active[0].volatiles.has(moveId));
+					const score = target => new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
+						.scoreMove(state, state.self.active[0], buildAIMove({ id: moveId }, 1, formatId), target);
+					assert.equal(score(state.opponent.active[0]).score, 0);
+					if (gameType !== 'singles') assert(!score(state.opponent.active[1]).flags.hasNoEffect, JSON.stringify(score(state.opponent.active[1])));
+					const cursor = game.battle.log.length;
+					game.play(gameType === 'doubles' ? 'switch 3' : 'switch 2', 'move 1 1');
+					state = game.build();
+					assert(game.battle.log.slice(cursor).some(l => l.startsWith('|-fail|p2')));
+					assert.equal(state.opponent.active[0].species, 'Snorlax');
+					assert.equal(state.opponent.conditions.futureMoves[1], 1);
+					assert.equal(score(state.opponent.active[0]).score, 0);
+					game.play('move 1', 'move 2');
+					state = game.build();
+					assert.equal(state.opponent.conditions.futureMoves[1], 0);
+					assert(!score(state.opponent.active[0]).flags.hasNoEffect);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
+		it(`${gameType}: consumed items survive switching, and Recycle clears consumption history`, () => {
+			const player = { species: 'Smeargle', ability: 'Own Tempo', item: 'Iron Ball', moves: ['fling', 'recycle', 'splash'] };
+			const npc = { species: 'Blissey', ability: 'Natural Cure', item: 'Iron Ball', moves: ['fling', 'recycle', 'splash'] };
+			const reserve = { species: 'Snorlax', ability: 'Immunity', moves: ['splash'] };
+			const game = fixture(gameType, player, npc, undefined, undefined, reserve);
+			try {
+				let state = game.build();
+				const scoreRecycle = () => new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
+					.scoreMove(state, state.self.active[0], buildAIMove({ id: 'recycle' }, 2), state.opponent.active[0]);
+				assert.equal(scoreRecycle().score, 0);
+				game.play('move 1 1', 'move 1 1');
+				state = game.build();
+				for (const side of ['self', 'opponent']) {
+					assert.equal(state[side].active[0].recyclableItem, 'ironball');
+					assert.equal(state[side].active[0].item, '');
+				}
+				assert(!scoreRecycle().flags.hasNoEffect);
+				const switchChoice = gameType === 'doubles' ? 'switch 3' : 'switch 2';
+				game.play(switchChoice, switchChoice);
+				state = game.build();
+				assert.equal(state.self.active[0].recyclableItem, '');
+				game.play(switchChoice, switchChoice);
+				state = game.build();
+				assert.equal(state.self.active[0].recyclableItem, 'ironball');
+				assert.equal(state.opponent.active[0].recyclableItem, 'ironball');
+				game.play('move 2', 'move 2');
+				state = game.build();
+				for (const side of ['self', 'opponent']) {
+					assert.equal(state[side].active[0].recyclableItem, '');
+					assert.equal(toID(state[side].active[0].item), 'ironball');
+				}
+				assert.equal(scoreRecycle().score, 0);
+			} finally { game.battle.destroy(); }
+		});
+
 		for (const moveId of ['sunnyday', 'electricterrain', 'spikes', 'toxicspikes', 'stealthrock',
 			'stickyweb', 'reflect', 'lightscreen', 'tailwind', 'safeguard', 'wish']) {
 			it(`${gameType}: an existing ${moveId} effect cannot earn repeat-use rewards`, () => {

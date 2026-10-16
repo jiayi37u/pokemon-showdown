@@ -13,6 +13,7 @@ import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions, SideCon
 import { getSTABMultiplier, getMoveInteraction, resolveItemMoveType, type MoveInteractionContext } from './type-calc';
 import { isFaster, getEffectiveSpeed } from './speed';
 import { getEffectiveStat, effectiveItem, grounded, rulesDex, defensiveAbility } from './mechanics';
+import { flingFailure, itemAllowsRemoval } from './items';
 import { pokemonCacheId } from './cache';
 import { canHaveOpponentMoves } from './opponent-presets';
 
@@ -672,7 +673,14 @@ function getVariableBasePower(
 	}
 
 	// Gen 5 and MMO retain 20-power Knock Off without the modern item boost.
-	if (moveId === 'knockoff' && basePower === 65 && defender.item) {
+	if (moveId === 'fling') {
+		return flingFailure(attacker, move, field) ? 0 : rulesDex(field).items.get(attacker.item).fling!.basePower;
+	}
+	if (moveId === 'naturalgift') {
+		return rulesDex(field).items.get(effectiveItem(attacker, field)).naturalGift?.basePower || 0;
+	}
+	if (moveId === 'knockoff' && basePower === 65 && defender.item && !defender.itemLost &&
+		itemAllowsRemoval(defender, defender, move, field)) {
 		return Math.floor(basePower * 1.5);
 	}
 

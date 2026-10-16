@@ -26,16 +26,44 @@ export function fieldEffectFailure(state: BattleState, attacker: AIPokemon, move
 	if (move.id === 'wish' && (state.self.conditions.wishes?.[attacker.slot] || 0) > 0) return 'Wish is already pending';
 }
 
+/** Slot occupancy is independent of the Pokemon currently occupying that position. */
+export function delayedMoveFailure(state: BattleState, target: AIPokemon, move: AIMove): string | undefined {
+	if (!['futuresight', 'doomdesire'].includes(move.id)) return;
+	const side = state.self.active.includes(target) ? state.self : state.opponent;
+	if ((side.conditions.futureMoves?.[target.slot] || 0) > 0) return 'Future attack already pending on target position';
+}
+
+/** Volatile effects with prerequisites beyond ordinary type/ability immunity. */
+export function volatileEffectFailure(
+	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove
+): string | undefined {
+	const dex = rulesDex(state.field);
+	if (move.id === 'substitute') {
+		if (attacker.volatiles.has('substitute')) return 'Already has Substitute';
+		const tooWeak = dex.gen === 1 ? attacker.hp < Math.floor(attacker.maxHp / 4) :
+			attacker.hp <= attacker.maxHp / 4 || attacker.maxHp === 1;
+		if (tooWeak) return 'Not enough HP for Substitute';
+	}
+	if (move.id === 'leechseed') {
+		if (target.volatiles.has('leechseed')) return 'Target already seeded';
+		if (target.volatiles.has('substitute') && !(dex.gen >= 6 && toID(attacker.ability) === 'infiltrator')) {
+			return 'Substitute blocks Leech Seed';
+		}
+	}
+}
+
 /** Includes damaging moves' secondary status without treating their damage as ineffective. */
-export function inflictedStatus(move: AIMove, state: BattleState): string {
+export function inflictedStatus(move: AIMove, state: BattleState, attacker?: AIPokemon): string {
 	const data = rulesDex(state.field).moves.get(move.id);
+	if (move.id === 'fling' && attacker) return rulesDex(state.field).items.get(attacker.item).fling?.status || '';
 	if (move.id === 'yawn') return 'slp';
 	if (data.volatileStatus === 'confusion') return 'confusion';
 	return data.status || data.secondary?.status || data.secondaries?.find(s => s.status)?.status || '';
 }
 
 export function statusFailure(
-	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove, status = inflictedStatus(move, state)
+	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove,
+	status = inflictedStatus(move, state, attacker)
 ): string | undefined {
 	if (!status) return;
 	const field = state.field;
@@ -104,10 +132,11 @@ export function secondaryEffectFailure(
 ): string | undefined {
 	const dex = rulesDex(state.field);
 	const data = dex.moves.get(move.id);
-	if (!data.secondary && !data.secondaries?.length) return;
+	const fling = move.id === 'fling' && dex.items.get(attacker.item).fling;
+	if (!data.secondary && !data.secondaries?.length && !(fling && (fling.status || fling.volatileStatus))) return;
 	const ability = defensiveAbility(attacker, target, move, state.field);
 	if (effectiveItem(target, state.field) === 'covertcloak' || ability === 'shielddust' ||
-		toID(attacker.ability) === 'sheerforce') return 'Secondary effect is suppressed';
+		(toID(attacker.ability) === 'sheerforce' && !fling)) return 'Secondary effect is suppressed';
 	if (target.volatiles.has('substitute') &&
 		!(dex.gen >= 6 && (move.flags.sound || toID(attacker.ability) === 'infiltrator'))) {
 		return 'Substitute blocks secondary effect';

@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert').strict;
-const { Battle } = require('../../../dist/sim');
+const { Battle, Dex } = require('../../../dist/sim');
 const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 const { buildAIMove, buildBattleStateWithTracker } = require('../../../dist/server/npc/ai/cfru/state-builder');
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
@@ -10,6 +10,7 @@ const { calculateDamage, getModifiedBasePower, getAttackStat, getDefenseStat } =
 const { getEffectiveSpeed } = require('../../../dist/server/npc/ai/cfru/util/speed');
 const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
 const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
+const { itemMoveFailure, itemAllowsRemoval, itemRemovalFailure } = require('../../../dist/server/npc/ai/cfru/util/items');
 const { statusFailure } = require('../../../dist/server/npc/ai/cfru/util/move-effects');
 
 // Exact oracle inputs isolate mechanical calculations. Public information ingestion is tested separately.
@@ -20,6 +21,8 @@ function snapshot(p) {
 		baseStats: { hp: p.maxhp, ...p.storedStats }, boosts: { ...p.boosts }, moves: p.moveSlots.map(m => m.id),
 		active: true, level: p.level, gender: p.gender,
 	});
+	result.itemKnown = true;
+	result.baseSpecies = p.baseSpecies.name;
 	result.volatiles = new Set(Object.keys(p.volatiles));
 	return result;
 }
@@ -36,6 +39,12 @@ function evaluate(state, actor, target, move) {
 
 describe('Shared status eligibility against PS', () => {
 	for (const spec of [
+		{ move: 'fling', attackerItem: 'Light Ball', species: 'Garchomp' },
+		{ move: 'fling', attackerItem: 'Light Ball', species: 'Pikachu' },
+		{ move: 'fling', attackerItem: 'Flame Orb', species: 'Charizard' },
+		{ move: 'fling', attackerItem: 'Toxic Orb', ability: 'Shield Dust' },
+		{ move: 'fling', attackerItem: 'Toxic Orb', item: 'Covert Cloak' },
+		{ move: 'fling', attackerItem: 'Toxic Orb', attackerAbility: 'Sheer Force' },
 		{ move: 'spore', species: 'Venusaur', format: 'gen5customgame' },
 		{ move: 'spore', species: 'Venusaur', format: 'gen6customgame' },
 		{ move: 'spore', species: 'Venusaur', format: 'gen5pokemmorandombattle' },
@@ -84,12 +93,12 @@ describe('Shared status eligibility against PS', () => {
 		it(JSON.stringify(spec), () => {
 			const formatId = spec.format || 'gen9customgame';
 			const battle = new Battle({ formatid: formatId, seed: [1, 2, 3, 4],
-				p1: { name: 'Actor', team: [{ species: 'Mew', ability: spec.attackerAbility || 'Pressure', moves: [spec.move] }] },
+				p1: { name: 'Actor', team: [{ species: 'Mew', ability: spec.attackerAbility || 'Pressure', item: spec.attackerItem || '', moves: [spec.move] }] },
 				p2: { name: 'Target', team: [{ species: spec.species || 'Mew', ability: spec.ability || 'Pressure',
 					item: spec.item || '', moves: ['splash'] }] },
 			});
 			try {
-				battle.makeChoices();
+				if (battle.requestState === 'teampreview') battle.makeChoices();
 				battle.p1.active[0].boosts.accuracy = 6;
 				if (spec.terrain) battle.field.setTerrain(`${spec.terrain}terrain`, battle.p1.active[0]);
 				if (spec.sun) battle.field.setWeather('sunnyday', battle.p1.active[0]);
@@ -132,7 +141,7 @@ describe('Shared numerical modifiers against PS', () => {
 					p2: { name: 'Target', team: [{ species: 'Electrode', ability: 'Soundproof', moves: ['splash'] }] },
 				});
 				try {
-					battle.makeChoices();
+					if (battle.requestState === 'teampreview') battle.makeChoices();
 					const actor = battle.p1.active[0];
 					const target = battle.p2.active[0];
 					if (setup === 'boosts') actor.boosts.spe = -2;
@@ -157,7 +166,7 @@ describe('Shared numerical modifiers against PS', () => {
 				p2: { name: 'Target', team: [{ species: 'Ivysaur', ability: 'Pressure', item: defensive ? item : '', moves: ['splash'] }] },
 			});
 			try {
-				battle.makeChoices();
+				if (battle.requestState === 'teampreview') battle.makeChoices();
 				const actor = snapshot(battle.p1.active[0]);
 				const target = snapshot(battle.p2.active[0]);
 				const move = buildAIMove({ id: item === 'Choice Band' ? 'firepunch' : 'flamethrower' }, 1, formatId);
@@ -186,7 +195,7 @@ describe('Sleep clauses from public origins and format rules', () => {
 					p2: { name: 'Actor', team: [{ species: 'Mew', ability: 'Pressure', moves: ['hypnosis', 'splash'] }] },
 				});
 				try {
-					battle.makeChoices();
+					if (battle.requestState === 'teampreview') battle.makeChoices();
 					battle.p1.active[0].hp--;
 					battle.p2.active[0].boosts.accuracy = 6;
 					battle.makeChoices(rest ? 'move 1' : 'move 2', rest ? 'move 2' : 'move 1');
@@ -222,7 +231,7 @@ describe('Successful-hit damage versus move failure', () => {
 				p2: { name: 'Target', team: [{ species: 'Mew', ability: 'Pressure', moves: ['tackle'] }] },
 			});
 			try {
-				battle.makeChoices();
+				if (battle.requestState === 'teampreview') battle.makeChoices();
 				const actor = snapshot(battle.p1.active[0]);
 				const target = snapshot(battle.p2.active[0]);
 				target.lastMove = lastMove;
@@ -261,7 +270,7 @@ describe('Successful-hit damage versus move failure', () => {
 				p2: { name: 'Target', team: [{ species: 'Mew', ability: 'Pressure', item, moves: ['splash'] }] },
 			});
 			try {
-				battle.makeChoices();
+				if (battle.requestState === 'teampreview') battle.makeChoices();
 				const actor = snapshot(battle.p1.active[0]);
 				const target = snapshot(battle.p2.active[0]);
 				const field = { formatId };
@@ -294,7 +303,7 @@ describe('Defensive stat modifiers against PS', () => {
 				p2: { name: 'Target', team: [{ species: spec.species, ability: spec.ability, item: spec.item, moves: ['splash'] }] },
 			});
 			try {
-				battle.makeChoices();
+				if (battle.requestState === 'teampreview') battle.makeChoices();
 				const target = battle.p2.active[0];
 				if (spec.status) target.setStatus(spec.status);
 				if (spec.terrain) battle.field.setTerrain(`${spec.terrain}terrain`, target);
@@ -311,6 +320,115 @@ describe('Defensive stat modifiers against PS', () => {
 				assert.equal(getEffectiveSpeed(snapshot(target), field), target.getStat('spe'));
 				assert.equal(getAttackStat(snapshot(battle.p1.active[0]), move, field),
 					battle.p1.active[0].getStat(move.category === 'Physical' ? 'atk' : 'spa'));
+			} finally { battle.destroy(); }
+		});
+	}
+});
+
+describe('Shared item rules against PS', () => {
+	for (const formatId of ['gen4customgame', 'gen5customgame', 'gen5pokemmorandombattle', 'gen7customgame', 'gen9customgame']) {
+		for (const spec of [
+			{ move: 'naturalgift', item: 'Oran Berry' },
+			{ move: 'naturalgift', item: 'Oran Berry', magicroom: true },
+			{ move: 'naturalgift', item: 'Oran Berry', ability: 'Klutz' },
+			{ move: 'naturalgift', item: 'Leftovers' },
+			{ move: 'trick', item: 'Leftovers', targetItem: 'Charizardite X', targetSpecies: 'Charizard', magicroom: true },
+			{ move: 'fling', item: 'Eviolite' },
+			{ move: 'fling', item: 'Choice Band' },
+			{ move: 'fling', item: 'Iron Ball', ability: 'Klutz' },
+			{ move: 'fling', item: 'Iron Ball', magicroom: true },
+			{ move: 'fling', item: 'Leftovers', embargo: true },
+			{ move: 'fling', item: 'Charizardite X' },
+			{ move: 'fling', item: 'Charizardite X', species: 'Charizard' },
+			{ move: 'fling', item: 'Normalium Z' },
+			{ move: 'fling' },
+			{ move: 'trick' },
+			{ move: 'trick', item: 'Leftovers', targetItem: 'Leftovers' },
+			{ move: 'trick', item: 'Leftovers', targetAbility: 'Sticky Hold' },
+			{ move: 'trick', item: 'Leftovers', targetAbility: 'Sticky Hold', ability: 'Mold Breaker' },
+			{ move: 'trick', item: 'Charizardite X', targetSpecies: 'Charizard' },
+			{ move: 'trick', item: 'Rusted Sword', targetSpecies: 'Zacian' },
+			{ move: 'trick', item: 'Rusted Sword' },
+			{ move: 'switcheroo', targetItem: 'Flame Plate', targetSpecies: 'Arceus', targetAbility: 'Multitype' },
+		]) {
+			it(`${formatId}: ${JSON.stringify(spec)}`, () => {
+				const battle = new Battle({ formatid: formatId, seed: [1, 2, 3, 4],
+					p1: { name: 'Actor', team: [{ species: spec.species || 'Mew', ability: spec.ability || 'Pressure',
+						item: spec.item || '', moves: [spec.move] }] },
+					p2: { name: 'Target', team: [{ species: spec.targetSpecies || 'Mew', ability: spec.targetAbility || 'Pressure',
+						item: spec.targetItem || '', moves: ['splash'] }] },
+				});
+				try {
+					if (battle.requestState === 'teampreview') battle.makeChoices();
+					if (spec.magicroom) battle.field.addPseudoWeather('magicroom', battle.p1.active[0]);
+					if (spec.embargo) battle.p1.active[0].addVolatile('embargo');
+					const actor = snapshot(battle.p1.active[0]), target = snapshot(battle.p2.active[0]);
+					const field = { formatId, magicroom: !!spec.magicroom };
+					const move = buildAIMove({ id: spec.move }, 1, formatId);
+					const failure = itemMoveFailure(actor, target, move, field);
+					const scored = evaluate(stateFor(actor, target, field), actor, target, move);
+					const cursor = battle.log.length;
+					battle.makeChoices('move 1', 'move 1');
+					const log = battle.log.slice(cursor).join('\n');
+					const failed = log.includes('|-fail|p1') || log.includes('|-immune|p2');
+					assert.equal(!!failure, failed, `${failure}\n${log}`);
+					if (failure) {
+						assert.equal(scored.score, 0);
+						assert.equal(scored.breakdown.positives, 0);
+					} else if (['fling', 'naturalgift'].includes(move.id)) {
+						assert(calculateDamage(actor, target, move, field).max > 0);
+						assert.equal(getModifiedBasePower(actor, target, move, field), battle.dex.items.get(spec.item)[move.id === 'fling' ? 'fling' : 'naturalGift'].basePower);
+					}
+				} finally { battle.destroy(); }
+			});
+		}
+	}
+
+	it('item predicates can read only projected public facts in audited item tables', () => {
+		const restricted = object => new Proxy(object, { get(target, key) {
+			assert(Object.hasOwn(target, key), `Unexpected item predicate input: ${String(key)}`);
+			return target[key];
+		} });
+		for (const formatId of ['gen4customgame', 'gen5pokemmorandombattle', 'gen7customgame', 'gen9customgame']) {
+			const dex = Dex.forFormat(formatId);
+			for (const item of dex.items.all()) {
+				if (typeof item.onTakeItem !== 'function') continue;
+				for (const species of ['Mew', ...(item.itemUser || []), ...Object.keys(item.megaStone || {})]) {
+					const subject = restricted({ baseSpecies: dex.species.get(species) });
+					const result = item.onTakeItem.call(restricted({ activeMove: restricted({ id: 'trick' }) }), item, subject, subject);
+					const mon = { species, item: item.id };
+					assert.equal(itemAllowsRemoval(mon, mon, { id: 'trick' }, { formatId }), result !== false);
+				}
+			}
+		}
+	});
+
+	for (const spec of [
+		{ item: 'Leftovers', removable: true, power: 97 },
+		{ item: 'Leftovers', ability: 'Sticky Hold', removable: false, power: 97 },
+		{ item: 'Leftovers', ability: 'Sticky Hold', attackerAbility: 'Mold Breaker', removable: true, power: 97 },
+		{ item: 'Normalium Z', removable: false, power: 65 },
+		{ item: 'Charizardite X', species: 'Charizard', removable: false, power: 65 },
+		{ item: 'Charizardite X', removable: true, power: 97 },
+		{ item: '', removable: false, power: 65 },
+	]) {
+		it(`Knock Off separates power from removal: ${JSON.stringify(spec)}`, () => {
+			const battle = new Battle({ formatid: 'gen7customgame', seed: [1, 2, 3, 4],
+				p1: { name: 'Actor', team: [{ species: 'Mew', ability: spec.attackerAbility || 'Pressure', moves: ['knockoff'] }] },
+				p2: { name: 'Target', team: [{ species: spec.species || 'Mew', ability: spec.ability || 'Pressure',
+					item: spec.item, moves: ['splash'] }] },
+			});
+			try {
+				if (battle.requestState === 'teampreview') battle.makeChoices();
+				const actor = snapshot(battle.p1.active[0]), target = snapshot(battle.p2.active[0]);
+				const field = { formatId: 'gen7customgame' }, move = buildAIMove({ id: 'knockoff' }, 1, field.formatId);
+				assert.equal(getModifiedBasePower(actor, target, move, field), spec.power);
+				assert.equal(!itemRemovalFailure(actor, target, move, field), spec.removable);
+				const score = evaluate(stateFor(actor, target, field), actor, target, move);
+				assert.equal(score.breakdown.details.some(a => a.reason === 'Knock Off item removal utility'), spec.removable);
+				const cursor = battle.log.length;
+				battle.makeChoices('move 1', 'move 1');
+				assert.equal(battle.log.slice(cursor).some(l => l.startsWith('|-enditem|p2')), spec.removable);
 			} finally { battle.destroy(); }
 		});
 	}

@@ -14,7 +14,7 @@ import { abilityStatModifier } from './mechanics';
 import { defaultBoosts, type AIPokemon } from '../types';
 
 /** Only facts available in our request; never store inferred models or scoring state here. */
-type RequestPokemonFacts = Pick<AIPokemon, 'species' | 'types' | 'baseStats' | 'ability' | 'moves'>;
+type RequestPokemonFacts = Pick<AIPokemon, 'species' | 'types' | 'baseStats' | 'ability' | 'moves' | 'item'>;
 
 export interface TrackedTransformation {
 	targetIdent: string;
@@ -66,6 +66,8 @@ export interface TrackedPokemon {
 	/** First public item, retained after consumption; acquired items do not identify the original set. */
 	originalItem?: string;
 	itemChanged?: boolean;
+	recyclableItem?: string;
+	itemKnockedOff?: boolean;
 
 	/**
 	 * Whether we know for sure the item was lost (consumed/knocked off)
@@ -131,7 +133,8 @@ export class BattleTracker {
 	private activeVolatiles = new Map<string, Set<string>>();
 	private turn = 0;
 	private acted = new Set<string>();
-	private wishes = new Map<string, number>();
+	private slotEffects = new Map<string, { wish?: number, futuremove?: number }>();
+	private pendingFutureMove?: { source: string, target: string };
 	private pendingWishPosition = '';
 	private teamSizes = new Map<string, number>();
 	private formatId = '';
@@ -143,6 +146,10 @@ export class BattleTracker {
 	private lastMoveSource = '';
 	private transformations = new Map<string, TrackedTransformation>();
 	private ourPokemon = new Map<string, { ident: string, pokemon: RequestPokemonFacts }>();
+	private consumedItems = new Map<string, string>();
+	private knockedOffItems = new Set<string>();
+	/** Natural Gift has no enditem event; only our next request can confirm the consumed berry. */
+	private naturalGiftItems = new Map<string, string | undefined>();
 
 	/** All known opponent Pokemon (keyed by player and public nickname for team tracking) */
 	private opponentTeam: Map<string, TrackedPokemon> = new Map();
@@ -376,10 +383,13 @@ export class BattleTracker {
 		case 'move':
 			this.acted.add(parts[1].split(':')[0].trim());
 			this.pendingWishPosition = '';
+			this.pendingFutureMove = ['futuresight', 'doomdesire'].includes(toID(parts[2])) ? {
+				source: parts[1].split(':')[0].trim(), target: parts[3]?.split(':')[0].trim(),
+			} : undefined;
 			if (toID(parts[2]) === 'wish') {
 				const position = parts[1].split(':')[0].trim();
 				if (!this.getWish(position)) {
-					this.wishes.set(position, this.turn + 2);
+					this.setSlotEffect(position, 'wish', this.turn + 2);
 					this.pendingWishPosition = position;
 				}
 			}
@@ -388,7 +398,7 @@ export class BattleTracker {
 		case '-fail': {
 			const position = parts[1]?.split(':')[0].trim();
 			// A repeated Wish must not extend an existing timer; a failed new Wish creates none.
-			if (position === this.pendingWishPosition) this.wishes.delete(position);
+			if (position === this.pendingWishPosition) this.setSlotEffect(position, 'wish', 0);
 			break;
 		}
 		case '-weather':
@@ -438,6 +448,14 @@ export class BattleTracker {
 		const slot = position.slice(2); // "a" or "b"
 
 		const sleepIdent = this.sleepIdentity(positionPart);
+		const outgoingIdent = this.activeIdentities.get(position);
+		// PS Gen 3–4 carries the recyclable item with the position when switching.
+		if (outgoingIdent && outgoingIdent !== sleepIdent && this.formatId && Dex.forFormat(this.formatId).gen <= 4) {
+			const consumed = this.consumedItems.get(outgoingIdent);
+			if (consumed) this.consumedItems.set(sleepIdent, consumed);
+			else this.consumedItems.delete(sleepIdent);
+			this.consumedItems.delete(outgoingIdent);
+		}
 		this.yawnSources.delete(this.activeIdentities.get(position) || '');
 		this.activeIdentities.set(position, sleepIdent);
 		if (!parts[3]?.split(' ').includes('slp')) {
@@ -459,13 +477,13 @@ export class BattleTracker {
 		const outgoing = this.opponentPokemon.get(position);
 		if (outgoing) {
 			outgoing.types = [...(this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(outgoing.species).types];
-		}
-		if (outgoing?.transformation) {
 			delete outgoing.transformation;
 			outgoing.ability = outgoing.baseAbility || '';
 			outgoing.abilityChanged = false;
 			outgoing.boosts = defaultBoosts();
 			outgoing.lastMove = '';
+			outgoing.volatiles = new Set();
+			outgoing.recyclableItem = this.getRecyclableItem(outgoing.ident || '');
 		}
 
 		// CFRU AI Fix: Clear our team boosts, ability stat mods, and lastMove when we switch out
@@ -543,6 +561,7 @@ export class BattleTracker {
 			abilityChanged: false,
 			item: '',
 			itemLost: false,  // Default: assume item exists but unknown
+			recyclableItem: this.getRecyclableItem(ident),
 			hpPercent,
 			status,
 			knownMoves: [],
@@ -567,6 +586,7 @@ export class BattleTracker {
 			tracked.itemLost = existing.itemLost;  // Preserve itemLost status
 			tracked.originalItem = existing.originalItem;
 			tracked.itemChanged = existing.itemChanged;
+			tracked.itemKnockedOff = existing.itemKnockedOff;
 			tracked.knownMoves = existing.knownMoves;
 		}
 
@@ -614,10 +634,19 @@ export class BattleTracker {
 		return this.transformations.get(position.startsWith('p') ? position : `${this.ourSide}${position}`);
 	}
 
+	recordRequestItem(ident: string, item: string): void {
+		const identity = this.sleepIdentity(ident);
+		if (this.naturalGiftItems.has(identity)) {
+			const berry = this.naturalGiftItems.get(identity);
+			if (berry && !item) this.consumedItems.set(identity, toID(berry));
+			this.naturalGiftItems.delete(identity);
+		}
+	}
+
 	rememberOurPokemon(position: string, ident: string, pokemon: RequestPokemonFacts): void {
 		const key = position.startsWith('p') ? position : `${this.ourSide}${position}`;
 		const facts = { species: pokemon.species, types: [...pokemon.types], baseStats: { ...pokemon.baseStats },
-			ability: pokemon.ability, moves: [...pokemon.moves] };
+			ability: pokemon.ability, moves: [...pokemon.moves], item: pokemon.item };
 		this.ourPokemon.set(key, { ident: this.sleepIdentity(ident), pokemon: facts });
 		// An opening Imposter can precede the first request containing our own stats.
 		for (const transformation of this.transformations.values()) {
@@ -762,6 +791,22 @@ export class BattleTracker {
 
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
+		const item = parts[2];
+		if (!item) return;
+		const identity = this.sleepIdentity(positionPart);
+		const from = parts.find(p => p.startsWith('[from]')) || '';
+		const own = this.ourPokemon.get(position);
+		if (own) own.pokemon.item = command === '-enditem' ? '' : item;
+		// An explicit loss is not the silent consumption inferred from Natural Gift.
+		this.naturalGiftItems.delete(identity);
+		if (command === '-enditem' && from === '[from] move: Knock Off' && this.formatId &&
+			Dex.forFormat(this.formatId).gen <= 4) this.knockedOffItems.add(identity);
+		if (command === '-enditem' && (parts.includes('[eat]') || from === '[from] gem' ||
+			from === '[from] move: Fling' || (!from && toID(item) !== 'airballoon'))) {
+			this.consumedItems.set(identity, toID(item));
+		} else if (command === '-item' && ['[from] move: Recycle', '[from] move: G-Max Replenish'].includes(from)) {
+			this.consumedItems.delete(identity);
+		}
 		// Public loss during this entry can activate Unburden; being itemless on entry cannot.
 		let effects = this.activeVolatiles.get(position);
 		if (!effects) this.activeVolatiles.set(position, effects = new Set());
@@ -770,15 +815,17 @@ export class BattleTracker {
 
 		if (!this.isOpponentSide(side)) return;
 
-		const item = parts[2];
-		if (!item) return;
-
 		const tracked = this.opponentPokemon.get(position);
 		if (tracked) {
 			tracked.volatiles = effects;
 			const acquired = command === '-item' && parts.some(p => p.startsWith('[from]'));
 			if (acquired) tracked.itemChanged = true;
 			if (!tracked.originalItem && !tracked.itemChanged) tracked.originalItem = item;
+			tracked.recyclableItem = this.getRecyclableItem(identity);
+			tracked.itemKnockedOff = this.wasItemKnockedOff(identity);
+			if (command === '-enditem' && /move: (Trick|Switcheroo)|ability: (Pickpocket|Magician)/.test(from)) {
+				tracked.itemChanged = true;
+			}
 			if (command === '-enditem') {
 				tracked.item = ''; // Item consumed/knocked off
 				tracked.itemLost = true;  // Mark as confirmed lost
@@ -793,6 +840,8 @@ export class BattleTracker {
 				teamMon.itemLost = tracked.itemLost;
 				teamMon.originalItem = tracked.originalItem;
 				teamMon.itemChanged = tracked.itemChanged;
+				teamMon.recyclableItem = tracked.recyclableItem;
+				teamMon.itemKnockedOff = tracked.itemKnockedOff;
 			}
 		}
 	}
@@ -915,6 +964,11 @@ export class BattleTracker {
 		if (!move) return;
 
 		const moveId = toID(move);
+		if (moveId === 'naturalgift') {
+			this.naturalGiftItems.set(this.sleepIdentity(positionPart), this.ourPokemon.get(position)?.pokemon.item);
+			const tracked = this.opponentPokemon.get(position);
+			if (tracked) tracked.recyclableItem = undefined;
+		}
 
 		// Track our team's lastMove (for AI decision making)
 		// In multi battles, this handles both p2 and p4 moves
@@ -1072,6 +1126,16 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim();
 		// Record protocol facts for both teams, without adding any inferred effects.
 		const effect = toID((parts[2] || '').replace(/^(?:move|ability): /, ''));
+		if (effect === 'futuresight' || effect === 'doomdesire') {
+			// Start names the user, while end names the occupant of the target position.
+			if (command === '-end') this.setSlotEffect(position, 'futuremove', 0);
+			else if (this.pendingFutureMove?.source === position && this.pendingFutureMove.target) {
+				const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
+				const expiry = dex.gen >= 8 && this.turn >= 255 ? Infinity : this.turn + 3;
+				this.setSlotEffect(this.pendingFutureMove.target, 'futuremove', expiry);
+			}
+			return;
+		}
 		if (effect === 'typechange' || effect === 'typeadd') {
 			const current = this.activeTypes.get(position) || {};
 			if (command === '-end') {
@@ -1653,19 +1717,34 @@ export class BattleTracker {
 		return this.acted.has(position.startsWith('p') ? position : `${this.ourSide}${position}`);
 	}
 
+	private setSlotEffect(position: string, effect: 'wish' | 'futuremove', expiry: number): void {
+		const effects = this.slotEffects.get(position) || {};
+		effects[effect] = expiry;
+		this.slotEffects.set(position, effects);
+	}
+
+	private getSlotEffects(effect: 'wish' | 'futuremove', ours: boolean): Record<number, number> {
+		const result: Record<number, number> = {};
+		for (const [position, effects] of this.slotEffects) {
+			if (effects[effect] === undefined) continue;
+			const side = position.slice(0, 2);
+			if (ours ? this.isOurTeamSide(side) : this.isOpponentSide(side)) {
+				result[this.getFieldSlot(position)] = Math.max(0, (effects[effect] || 0) - this.turn);
+			}
+		}
+		return result;
+	}
+
 	getWish(position = this.getPosition(this.ourSide)): number {
-		return Math.max(0, (this.wishes.get(position) || 0) - this.turn);
+		return Math.max(0, (this.slotEffects.get(position)?.wish || 0) - this.turn);
 	}
 
 	getWishes(ours = true): Record<number, number> {
-		const wishes: Record<number, number> = {};
-		for (const position of this.wishes.keys()) {
-			const side = position.slice(0, 2);
-			if (ours ? this.isOurTeamSide(side) : this.isOpponentSide(side)) {
-				wishes[this.getFieldSlot(position)] = this.getWish(position);
-			}
-		}
-		return wishes;
+		return this.getSlotEffects('wish', ours);
+	}
+
+	getFutureMoves(ours = true): Record<number, number> {
+		return this.getSlotEffects('futuremove', ours);
 	}
 
 	getTurn(): number {
@@ -1696,6 +1775,16 @@ export class BattleTracker {
 		return new Set(this.activeVolatiles.get(key));
 	}
 
+	/** Consumption is separate from removal and temporary effects; Gen 3–4 switches transfer it. */
+	getRecyclableItem(ident: string): string | undefined {
+		const identity = this.sleepIdentity(ident);
+		return this.naturalGiftItems.has(identity) ? undefined : this.consumedItems.get(identity) || '';
+	}
+
+	wasItemKnockedOff(ident: string): boolean {
+		return this.knockedOffItems.has(this.sleepIdentity(ident));
+	}
+
 	/** Public type changes apply to either team and last until switching. */
 	getTypes(position: string, fallback: readonly string[]): string[] {
 		const current = this.activeTypes.get(position);
@@ -1708,7 +1797,8 @@ export class BattleTracker {
 	reset(): void {
 		this.turn = 0;
 		this.acted.clear();
-		this.wishes.clear();
+		this.slotEffects.clear();
+		this.pendingFutureMove = undefined;
 		this.pendingWishPosition = '';
 		this.teamSizes.clear();
 		this.activeIdentities.clear();
@@ -1718,6 +1808,9 @@ export class BattleTracker {
 		this.lastMoveSource = '';
 		this.transformations.clear();
 		this.ourPokemon.clear();
+		this.consumedItems.clear();
+		this.knockedOffItems.clear();
+		this.naturalGiftItems.clear();
 		this.activeVolatiles.clear();
 		this.activeTypes.clear();
 		this.opponentPokemon.clear();

@@ -14,13 +14,12 @@ import { defensiveAbility, effectiveItem, effectivePriority, grounded, rulesDex 
 /** Resolve item-dependent move types from the AI's current item knowledge. */
 export function resolveItemMoveType(attacker: AIPokemon, move: AIMove, field: FieldConditions): AIMove {
 	const moveId = toID(move.id);
-	if (!['judgment', 'multiattack', 'technoblast'].includes(moveId)) return move;
+	if (!['judgment', 'multiattack', 'technoblast', 'naturalgift'].includes(moveId)) return move;
 	let type = 'Normal';
-	if (attacker.item && !attacker.itemLost && toID(attacker.ability) !== 'klutz' &&
-		!field.magicroom && !attacker.volatiles.has('embargo')) {
-		const item = Dex.items.get(attacker.item);
+	const item = rulesDex(field).items.get(effectiveItem(attacker, field));
+	if (item.exists) {
 		const itemType = moveId === 'judgment' ? (!item.zMove && item.onPlate) :
-			moveId === 'multiattack' ? item.onMemory : item.onDrive;
+			moveId === 'multiattack' ? item.onMemory : moveId === 'naturalgift' ? item.naturalGift?.type : item.onDrive;
 		if (typeof itemType === 'string') type = itemType;
 	}
 	return move.type === type ? move : { ...move, type };
@@ -339,16 +338,20 @@ export interface MoveInteractionContext {
 export function getMoveInteraction(
 	attacker: AIPokemon, defender: AIPokemon, move: AIMove, field: FieldConditions,
 	context: MoveInteractionContext = {}
-): { effectiveness: number, blockedBy?: string } {
+): { effectiveness: number, blockedBy?: string, failed?: boolean } {
 	const dex = rulesDex(field);
 	const data = dex.moves.get(move.id);
 	const ability = defensiveAbility(attacker, defender, move, field);
-	const block = (blockedBy: string) => ({ effectiveness: 0, blockedBy });
+	const block = (blockedBy: string, failed = false) => ({ effectiveness: 0, blockedBy, ...(failed ? { failed } : {}) });
+	if (['fakeout', 'firstimpression'].includes(move.id) && (attacker.activeMoveActions || attacker.lastMove)) {
+		return block(`${move.name} only works on the first action after entry`, true);
+	}
+	if (move.id === 'leechseed' && defender.types.includes('Grass')) return block('Grass type immune to Leech Seed');
 	if (move.id === 'dreameater' && defender.status !== 'slp' && ability !== 'comatose') {
-		return block('Dream Eater fails on non-sleeping target');
+		return block('Dream Eater fails on non-sleeping target', true);
 	}
 	if (move.id === 'suckerpunch' && defender.volatiles.has('mustrecharge')) {
-		return block('Sucker Punch fails against a recharging target');
+		return block('Sucker Punch fails against a recharging target', true);
 	}
 	const direct = ['normal', 'any', 'allAdjacent', 'allAdjacentFoes', 'adjacentAlly', 'adjacentAllyOrSelf']
 		.includes(move.target) &&

@@ -10,9 +10,12 @@ Normal 和 Hard 共用信息层。单打、双打、Multi 均由 `buildBattleSta
 | `cfru/state-builder.ts` | 合并请求和 tracker，统一场地名称、场上位置和双方队伍信息，应用公开效果及对手配置估计。 |
 | `cfru/util/opponent-presets.ts`、`random-presets.ts`、`hard/opponent-model.ts` | 管理配置候选与推断；已观察事实优先于候选，未知槽位不等于不存在招式。 |
 | `cfru/util/damage-calc.ts`、`type-calc.ts`、`speed.ts` | 集中维护共享机制估算；缓存区分状态快照和计算条件，不能只按敌我可能重复的槽位编号区分精灵。 |
+| `cfru/util/items.ts`、`move-effects.ts` | 判断道具操作、状态附加、场地及位置效果是否可生效；评分器只负责把结果转换为分数。 |
 | `cfru/scoring/`、`hard/evaluation.ts` | 根据同一状态做策略评分；评分上下文的 `dex` 对应当前 format。 |
 
-新增机制时，先区分其作用范围：精灵本身、场上位置、整队或全场。例如变身随精灵离场清除，Wish 留在施放位置，Reflect 属于队伍，Gravity 属于全场。共享机制不分别写在 Normal、Hard 或 Multi 控制器中，也不按单个招式拆文件。
+新增机制时，先区分其作用范围：精灵本身、场上位置、整队或全场。例如变身随精灵离场清除，Gen5 起已消耗道具的回收记录随精灵跨换人保留（Gen3–4 按 PS 随位置转交），Wish 留在施放位置，Future Sight / Doom Desire 占用目标位置，Reflect 属于队伍，Gravity 属于全场。共享机制不分别写在 Normal、Hard 或 Multi 控制器中，也不按单个招式拆文件。
+
+道具的持有、效果失效、被移除和被消耗是不同状态。`items.ts` 通过只提供公开物种和招式的投影调用当前 format 的 `onTakeItem` 纯判断，回归测试约束其读取范围；不传入真实 Battle/Pokemon。投掷和自然之恩的威力读取当前 format 的道具数据。拍落的威力加成与移除收益分别判断。`recyclableItem` 的空字符串表示没有可回收道具，`undefined` 表示公开信息不足；例如对手使用自然之恩不暴露具体树果，己方则可用下一次授权请求确认消耗。
 
 Multi 中，`self.team` 包含己方两名玩家的精灵；每个控制器的 `self.reserve` 只包含自己可以换入的后备。场上 `slot` 表示位置，后备 `slot` 表示所属玩家的队伍序号，不能拿它充当全局精灵身份。
 

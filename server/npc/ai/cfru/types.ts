@@ -97,6 +97,12 @@ export interface AIPokemon {
 
 	/** Item (empty string if unknown) */
 	item: string;
+	/** Public species before Transform, used by species-bound items. */
+	baseSpecies?: string;
+	/** Last publicly consumed item eligible for Recycle; empty means none, undefined means uncertain. */
+	recyclableItem?: string;
+	/** Gen 3–4 Knock Off prevents subsequent item exchange, even after switching. */
+	itemKnockedOff?: boolean;
 
 	/**
 	 * Whether we know for sure the item was lost (consumed/knocked off)
@@ -208,8 +214,8 @@ export interface SideConditions {
 	/** Wish remaining turns by field slot; follows the position across switches. */
 	wishes: Record<number, number>;
 
-	/** Future Sight / Doom Desire (remaining turns) */
-	futuremove: number;
+	/** Future Sight / Doom Desire remaining turns by target field slot. */
+	futureMoves: Record<number, number>;
 }
 
 /** Field conditions */

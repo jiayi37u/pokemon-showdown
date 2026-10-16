@@ -190,11 +190,6 @@ export class HardEvaluation {
 			const canFlinch = !actor.activeMoveActions && !actor.lastMove &&
 				!['innerfocus', 'shielddust'].includes(toID(target.ability)) &&
 				!target.volatiles.has('substitute');
-			if (fakeOut && (actor.activeMoveActions || actor.lastMove)) {
-				add(-result.score, 'Fake Out only works on the first action after entry');
-				result.breakdown.final = 0;
-				continue;
-			}
 			let prevented = 0;
 			let beforeDamage = 0;
 			for (const [foe, responses] of predictions) {

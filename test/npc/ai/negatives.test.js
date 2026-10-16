@@ -16,9 +16,7 @@ function runNegativesScoringTests() {
 		checkPainSplit,
 		checkDestinyBond,
 		checkFutureSight,
-		checkTrick,
-		checkRecycle,
-		checkFling,
+		checkItemMove,
 		checkSemiInvulnerable,
 		checkTypeResistance,
 		checkLowDamage,
@@ -286,46 +284,15 @@ function runNegativesScoringTests() {
 	section('Pain Split 测试 / Pain Split Tests');
 
 	function createPainSplitContext(overrides = {}) {
-		return {
-			state: {
-				isDoubles: false,
-				field: { weather: '', terrain: '' },
-				opponent: { conditions: {} },
-				self: { conditions: {} },
-			},
-			attacker: {
-				slot: 0,
-				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
-				hpPercent: overrides.attackerHp || 50,
-				ability: '',
-				item: overrides.attackerItem || '',
-				types: ['Normal'],
-				status: '',
-				volatiles: overrides.attackerVolatiles || new Set(),
-				moves: overrides.attackerMoves || [],
-			},
-			target: {
-				slot: 1,
-				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
-				hpPercent: overrides.targetHp || 50,
-				ability: overrides.targetAbility || '',
-				item: overrides.targetItem || '',
-				types: ['Normal'],
-				volatiles: overrides.targetVolatiles || new Set(),
-				moves: overrides.targetMoves || [],
-			},
-			move: {
-				id: overrides.moveId || 'painsplit',
-				category: 'Status',
-				type: 'Normal',
-				basePower: 0,
-				priority: 0,
-				target: 'normal',
-				flags: {},
-			},
+		return createDoublesContext({
+			state: { isDoubles: false },
+			attacker: { hpPercent: overrides.attackerHp || 50, ability: '', item: overrides.attackerItem || '', itemKnown: true,
+				types: ['Normal'], volatiles: overrides.attackerVolatiles || new Set(), moves: overrides.attackerMoves || [] },
+			target: { hpPercent: overrides.targetHp || 50, ability: overrides.targetAbility || '', item: overrides.targetItem || '', itemKnown: true,
+				types: ['Normal'], volatiles: overrides.targetVolatiles || new Set(), moves: overrides.targetMoves || [] },
+			move: buildAIMove({ id: overrides.moveId || 'painsplit' }, 1),
 			flags: { canKO: false, goesFirst: overrides.goesFirst !== false },
-			adjustments: [],
-		};
+		});
 	}
 
 	test('Pain Split: 攻击方HP高时应扣分 / Pain Split penalized when attacker HP higher', () => {
@@ -390,8 +357,9 @@ function runNegativesScoringTests() {
 			moveId: 'futuresight',
 			targetVolatiles: new Set(['futuremove']),
 		});
+		ctx.state.opponent.conditions.futureMoves = ctx.target.volatiles.has('futuremove') ? { [ctx.target.slot]: 1 } : {};
 		const penalty = checkFutureSight(ctx);
-		assertEqual(penalty, -10, 'Future Sight已设置时应扣10分');
+		assertEqual(penalty, -100, 'Future Sight已设置时应判定为无效');
 	});
 
 	test('Future Sight: 未设置时不扣分 / Future Sight OK when not pending', () => {
@@ -399,6 +367,7 @@ function runNegativesScoringTests() {
 			moveId: 'futuresight',
 			targetVolatiles: new Set(),
 		});
+		ctx.state.opponent.conditions.futureMoves = ctx.target.volatiles.has('futuremove') ? { [ctx.target.slot]: 1 } : {};
 		const penalty = checkFutureSight(ctx);
 		assertEqual(penalty, 0, 'Future Sight未设置时不扣分');
 	});
@@ -408,8 +377,9 @@ function runNegativesScoringTests() {
 			moveId: 'doomdesire',
 			targetVolatiles: new Set(['futuremove']),
 		});
+		ctx.state.opponent.conditions.futureMoves = ctx.target.volatiles.has('futuremove') ? { [ctx.target.slot]: 1 } : {};
 		const penalty = checkFutureSight(ctx);
-		assertEqual(penalty, -10, 'Doom Desire已设置时应扣10分');
+		assertEqual(penalty, -100, 'Doom Desire已设置时应判定为无效');
 	});
 
 	// =============================================================================
@@ -424,8 +394,8 @@ function runNegativesScoringTests() {
 			attackerItem: 'Choice Scarf',
 			targetAbility: 'Sticky Hold',
 		});
-		const penalty = checkTrick(ctx);
-		assertEqual(penalty, -10, 'Sticky Hold阻止Trick');
+		const penalty = checkItemMove(ctx);
+		assertEqual(penalty, -100, 'Sticky Hold阻止Trick');
 	});
 
 	test('Trick: 道具相同时应扣分 / Trick penalized when same item', () => {
@@ -434,8 +404,8 @@ function runNegativesScoringTests() {
 			attackerItem: '',
 			targetItem: '',
 		});
-		const penalty = checkTrick(ctx);
-		assertEqual(penalty, -10, '双方无道具时应扣分');
+		const penalty = checkItemMove(ctx);
+		assertEqual(penalty, -100, '双方无道具时应扣分');
 	});
 
 	test('Trick: 正常情况不扣分 / Trick OK normally', () => {
@@ -444,7 +414,7 @@ function runNegativesScoringTests() {
 			attackerItem: 'Choice Scarf',
 			targetItem: 'Leftovers',
 		});
-		const penalty = checkTrick(ctx);
+		const penalty = checkItemMove(ctx);
 		assertEqual(penalty, 0, '正常情况不扣分');
 	});
 
@@ -453,8 +423,8 @@ function runNegativesScoringTests() {
 			moveId: 'switcheroo',
 			targetAbility: 'Sticky Hold',
 		});
-		const penalty = checkTrick(ctx);
-		assertEqual(penalty, -10, 'Switcheroo也受Sticky Hold阻止');
+		const penalty = checkItemMove(ctx);
+		assertEqual(penalty, -100, 'Switcheroo也受Sticky Hold阻止');
 	});
 
 	// =============================================================================
@@ -468,16 +438,17 @@ function runNegativesScoringTests() {
 			moveId: 'recycle',
 			attackerItem: 'Sitrus Berry',
 		});
-		const penalty = checkRecycle(ctx);
-		assertEqual(penalty, -10, '已有道具时应扣分');
+		const penalty = checkItemMove(ctx);
+		assertEqual(penalty, -100, '已有道具时应扣分');
 	});
 
-	test('Recycle: 无道具时不扣分 / Recycle OK when no item', () => {
+	test('Recycle: 消耗过道具且当前无道具时可用 / Recycle can restore a consumed item', () => {
 		const ctx = createPainSplitContext({
 			moveId: 'recycle',
 			attackerItem: '',
 		});
-		const penalty = checkRecycle(ctx);
+		ctx.attacker.recyclableItem = 'sitrusberry';
+		const penalty = checkItemMove(ctx);
 		assertEqual(penalty, 0, '无道具时不扣分');
 	});
 
@@ -492,8 +463,8 @@ function runNegativesScoringTests() {
 			moveId: 'fling',
 			attackerItem: '',
 		});
-		const penalty = checkFling(ctx);
-		assertEqual(penalty, -10, '无道具时应扣分');
+		const penalty = checkItemMove(ctx);
+		assertEqual(penalty, -100, '无道具时应扣分');
 	});
 
 	test('Fling: Z-Crystal不能投掷 / Fling fails with Z-Crystal', () => {
@@ -502,8 +473,8 @@ function runNegativesScoringTests() {
 			attackerItem: 'Fightinium Z',
 		});
 		ctx.attacker.item = 'fightiniumz';
-		const penalty = checkFling(ctx);
-		assertEqual(penalty, -10, 'Z-Crystal不能投掷');
+		const penalty = checkItemMove(ctx);
+		assertEqual(penalty, -100, 'Z-Crystal不能投掷');
 	});
 
 	test('Fling: 正常道具不扣分 / Fling OK with normal item', () => {
@@ -512,7 +483,7 @@ function runNegativesScoringTests() {
 			attackerItem: 'Iron Ball',
 		});
 		ctx.attacker.item = 'ironball';
-		const penalty = checkFling(ctx);
+		const penalty = checkItemMove(ctx);
 		assertEqual(penalty, 0, '正常道具可以投掷');
 	});
 
@@ -523,7 +494,7 @@ function runNegativesScoringTests() {
 		});
 		ctx.attacker.item = 'flameorb';
 		ctx.target.types = ['Fire'];
-		const penalty = checkFling(ctx);
+		const penalty = checkItemMove(ctx);
 		assertEqual(penalty, -5, '火焰宝珠对火系扣分');
 	});
 

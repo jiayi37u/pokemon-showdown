@@ -148,9 +148,12 @@ export function buildBattleStateFromRequests(
 			const position = tracker.getPosition(side, i);
 			const pokemon = buildPokemonFromRequest(mon, active ? tracker.getFieldSlot(position) : i + 1, active, formatId);
 			pokemon.ownerSide = side;
+			tracker.recordRequestItem(mon.ident, pokemon.item);
 			pokemon.sleepSelfInflicted = tracker.getSelfInflictedSleep(mon.ident);
 			// Register only request facts. Transform may have occurred before the first request.
 			if (active) tracker.rememberOurPokemon(position, mon.ident, pokemon);
+			pokemon.recyclableItem = tracker.getRecyclableItem(mon.ident);
+			pokemon.itemKnockedOff = tracker.wasItemKnockedOff(mon.ident);
 			return { mon, pokemon, position, active };
 		}));
 	const selfActive: AIPokemon[] = [];
@@ -176,13 +179,14 @@ export function buildBattleStateFromRequests(
 		const result = trackedPokemonToAIPokemon(pokemon, tracker.getFieldSlot(position), true, formatId,
 			tracker.getSleepTurns(position, pokemon.ability));
 		result.types = tracker.getTypes(position, result.types);
+		result.activeMoveActions = tracker.hasActed(position) ? 1 : 0;
 		return result;
 	});
 	const opponentReserve = buildOpponentReserveFromTracker(tracker, opponentActive, formatId);
 	return {
 		turn, isDoubles,
 		self: { active: selfActive, reserve: selfReserve, team: [...selfActive, ...selfReserve],
-			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(), futuremove: 0 } },
+			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(), futureMoves: tracker.getFutureMoves() } },
 		opponent: { remaining: tracker.getRemainingOpponents(), active: opponentActive, reserve: opponentReserve,
 			team: [...opponentActive, ...opponentReserve], conditions: buildOpponentConditionsFromTracker(tracker) },
 		field: { ...buildFieldConditionsFromTracker(tracker), formatId },
@@ -294,6 +298,8 @@ export function trackedPokemonToAIPokemon(
 	pokemon.itemKnown = !!tracked.item || tracked.itemLost;
 	pokemon.observedAbility = tracked.baseAbility || '';
 	pokemon.itemChanged = tracked.itemChanged;
+	pokemon.recyclableItem = tracked.recyclableItem;
+	pokemon.itemKnockedOff = tracked.itemKnockedOff;
 	pokemon.originalItem = tracked.originalItem || '';
 	pokemon.abilityChanged = tracked.abilityChanged;
 	pokemon.moveKnowledge = getOpponentMoveKnowledge(tracked.species, tracked.knownMoves, formatId);
@@ -366,6 +372,6 @@ function buildOpponentConditionsFromTracker(tracker: BattleTracker): SideConditi
 		tailwind: conditions.tailwind,
 		safeguard: conditions.safeguard,
 		wishes: tracker.getWishes(false),
-		futuremove: 0, // Not tracked
+		futureMoves: tracker.getFutureMoves(false),
 	};
 }

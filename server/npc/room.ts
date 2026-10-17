@@ -7,12 +7,13 @@
  * @license MIT
  */
 
-import { NPC, NPC_RANDOM_MULTI_FORMATS, NPCTemplate, MultiTeam } from './manager';
+import { NPC, NPC_RANDOM_MULTI_FORMATS, type NPCTemplate } from './manager';
 import { BasicAI } from './ai/basic';
 import { HardAI } from './ai/hard';
 import { NormalAI, NormalAIOptions } from './ai/normal';
 import { NPCMultiManager, NPCMultiManagerOptions } from './ai/multi-manager';
 import { LogLevel } from './ai/cfru/logger';
+import { Utils } from '../../lib';
 import { Teams } from '../../sim/teams';
 import { TeamValidator } from '../../sim/team-validator';
 import type { PokemonSet } from '../../sim/teams';
@@ -481,6 +482,13 @@ function createNPCUser(npc: NPCTemplate, team: string, suffix?: string): User {
 	} as unknown as User;
 }
 
+/** Generate one balanced roster per alliance, then randomly assign three Pokemon to each player. */
+function generateRandomMultiTeams(format: string): [PokemonSet[], PokemonSet[]] {
+	const team = Teams.generate(`${format}@@@!! Max Team Size = 6`);
+	Utils.shuffle(team);
+	return [team.slice(0, 3), team.slice(3)];
+}
+
 /**
  * Create an NPC Multi Battle
  * Creates a 4-player multi battle room:
@@ -524,20 +532,20 @@ export async function createNPCMultiBattle(options: NPCMultiBattleCreateOptions)
 		return { success: false, error: 'Random Multi battles support Smart or Hard AI' };
 	}
 
-	// Generate all four random teams only after the invitation has been accepted.
+	// Generate both alliance rosters only after the invitation has been accepted.
 	try {
-		const npcMultiTeam: MultiTeam | null = isRandom ? {
-			p2: Teams.generate(format), p4: Teams.generate(format),
-		} : NPC.getMultiTeam(npcId, format);
+		const npcTeams = isRandom ? generateRandomMultiTeams(format) : null;
+		const npcMultiTeam = npcTeams ? { p2: npcTeams[0], p4: npcTeams[1] } : NPC.getMultiTeam(npcId, format);
 		if (!npcMultiTeam) {
 			return { success: false, error: `Failed to load NPC multi team for ${npc.name}` };
 		}
 
 		// Get user team (p1)
 		let userTeam: string;
+		const playerMultiTeam = isRandom ? generateRandomMultiTeams(format) : null;
 
-		if (isRandom) {
-			userTeam = Teams.pack(Teams.generate(format));
+		if (playerMultiTeam) {
+			userTeam = Teams.pack(playerMultiTeam[0]);
 		} else if (options.team) {
 			if (typeof options.team === 'string') {
 				userTeam = options.team;
@@ -548,7 +556,7 @@ export async function createNPCMultiBattle(options: NPCMultiBattleCreateOptions)
 			return { success: false, error: 'No team provided for p1' };
 		}
 
-		let partnerTeam = isRandom ? Teams.pack(Teams.generate(format)) : teammateTeam!;
+		let partnerTeam = playerMultiTeam ? Teams.pack(playerMultiTeam[1]) : teammateTeam!;
 
 		// Fixed teams still use the format's normal validation.
 		if (!isRandom) {

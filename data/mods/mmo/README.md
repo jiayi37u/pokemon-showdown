@@ -12,7 +12,7 @@ The main `/npc` table contains a Random Battle row whose Formats column lists Ge
 
 Regression coverage lives in `test/random-battles/mmo.js`, `test/server/npc/pokemmo-random.js`, and `test/server/npc/random-menu.js`, including the full source catalogue, balancing levels, reproducibility, NPC team generation, and completed battles with BasicAI/NormalAI.
 
-`gen5pokemmomultirandombattle` uses the same MMO rules, Gen 5 random sets, and balancing levels in a four-player Multi battle, with three Pokemon generated independently for each player. These sets are inherited from singles, not separately tuned for Multi. In `/npc challenge random`, click **Multi** beside PokeMMO Multi Random Battle, enter a teammate, and **Send Invitation**. Accepting generates all four teams; neither human needs a selected team. The NPC pair uses Smart AI. Invitation and completed-battle coverage lives in `test/server/npc/random-multi.js`.
+`gen5pokemmomultirandombattle` uses the same MMO rules, Gen 5 random sets, and balancing levels in a four-player Multi battle. The NPC invitation entry point generates one six-Pokemon roster per alliance, shuffles each roster, and assigns three Pokemon to each player. Allied players therefore share the generator's species uniqueness and team composition constraints; opposing alliances can contain the same species. These sets are inherited from singles, not separately tuned for Multi. In `/npc challenge random`, click **Multi** beside PokeMMO Multi Random Battle, enter a teammate, and **Send Invitation**. Accepting generates and distributes both alliance rosters; neither human needs a selected team. The NPC pair uses Smart AI. Invitation and completed-battle coverage lives in `test/server/npc/random-multi.js`.
 
 ## Sources
 

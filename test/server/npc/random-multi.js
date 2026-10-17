@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert').strict;
-const { Battle, Teams, PRNG, TeamValidator } = require('../../../dist/sim');
+const { Battle, Dex, Teams, PRNG, TeamValidator } = require('../../../dist/sim');
 const { NPC, NPC_RANDOM_MULTI_FORMATS } = require('../../../dist/server/npc/manager');
 const { createNPCMultiBattle, createNPCBattle } = require('../../../dist/server/npc/room');
 const { NPCMultiManager } = require('../../../dist/server/npc/ai/multi-manager');
@@ -65,8 +65,8 @@ function completeBattle(options) {
 }
 
 describe('NPC Random Multi invitations', () => {
-	let originalCreateBattle, originalGetUser, originalGetRandom, originalGenerate;
-	let user, teammate, context, errors, boxes, created, generated, battleRoom;
+	let originalCreateBattle, originalGetUser, originalGetRandom, originalGenerate, originalRandom;
+	let user, teammate, context, errors, boxes, created, generated, rosters, battleRoom;
 	const makeUser = id => ({
 		id, name: id, connected: true, battleSettings: {}, messages: [], joined: [],
 		getIdentity() { return ` ${id}`; },
@@ -80,14 +80,20 @@ describe('NPC Random Multi invitations', () => {
 		originalGetUser = Users.get;
 		originalGetRandom = NPC.getRandom;
 		originalGenerate = Teams.generate;
+		originalRandom = Math.random;
+		// Fix the shuffle draws so assignment checks never depend on chance.
+		Math.random = () => 0;
 		user = makeUser('randommultiinviter');
 		teammate = makeUser('randommultiacceptor');
 		Users.get = id => [user, teammate].find(u => u.id === toID(id)) || originalGetUser.call(Users, id);
 		NPC.getRandom = () => NPC.get('norman');
 		generated = 0;
-		Teams.generate = (format, options) => originalGenerate.call(Teams, format, {
-			...options, seed: [++generated, 2, 3, 4],
-		});
+		rosters = [];
+		Teams.generate = (format, options) => {
+			const team = originalGenerate.call(Teams, format, { ...options, seed: [++generated, 2, 3, 4] });
+			rosters.push({ format, team: Teams.unpack(Teams.pack(team)) });
+			return team;
+		};
 		errors = [];
 		boxes = [];
 		created = [];
@@ -104,6 +110,7 @@ describe('NPC Random Multi invitations', () => {
 		Users.get = originalGetUser;
 		NPC.getRandom = originalGetRandom;
 		Teams.generate = originalGenerate;
+		Math.random = originalRandom;
 	});
 
 	for (const format of NPC_RANDOM_MULTI_FORMATS) {
@@ -126,7 +133,7 @@ describe('NPC Random Multi invitations', () => {
 			assert.deepEqual(errors, []);
 			assert.equal(challenges.search(user.id, teammate.id), null);
 			assert.equal(created.length, 1);
-			assert.equal(generated, 4);
+			assert.equal(generated, 2);
 			assert.equal(battleRoom.npcMultiBattle.difficulty, 'smart');
 			assert.equal(created[0].players[0].user, user);
 			assert.equal(created[0].players[2].user, teammate);
@@ -134,6 +141,16 @@ describe('NPC Random Multi invitations', () => {
 			assert.deepEqual(user.joined, [battleRoom]);
 			assert.deepEqual(teammate.joined, [battleRoom]);
 			assert.equal(new Set(created[0].players.map(p => p.team)).size, 4);
+			for (const [index, players] of [[0, [1, 3]], [1, [0, 2]]]) {
+				const roster = rosters[index];
+				assert.equal(Dex.formats.get(roster.format).gameType, 'multi');
+				assert.equal(Dex.forFormat(roster.format).currentMod, Dex.forFormat(format).currentMod);
+				assert.equal(roster.team.length, 6);
+				const assigned = players.flatMap(i => Teams.unpack(created[0].players[i].team));
+				assert.equal(new Set(assigned.map(p => Dex.forFormat(format).species.get(p.species).baseSpecies)).size, 6);
+				assert.equal(Teams.pack(assigned), Teams.pack([...roster.team.slice(1), roster.team[0]]),
+					'Both players receive exactly the shuffled roster, preserving sets and levels');
+			}
 			completeBattle(created[0]);
 		});
 	}

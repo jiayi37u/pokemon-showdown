@@ -151,6 +151,8 @@ export function buildBattleStateFromRequests(
 			// Register only request facts. Transform may have occurred before the first request.
 			if (active && !pokemon.fainted) tracker.rememberOurPokemon(position, mon.ident, pokemon);
 			tracker.recordRequestItem(mon.ident, pokemon.item);
+			pokemon.timesAttacked = tracker.getTimesAttacked(active ? position : mon.ident);
+			pokemon.toxicCounter = active ? tracker.getToxicCounter(position) : 0;
 			pokemon.sleepSelfInflicted = tracker.getSelfInflictedSleep(mon.ident);
 			pokemon.recyclableItem = tracker.getRecyclableItem(mon.ident);
 			pokemon.itemKnockedOff = tracker.wasItemKnockedOff(mon.ident);
@@ -176,9 +178,11 @@ export function buildBattleStateFromRequests(
 	}
 	const opponentActive = tracker.getActiveOpponents().map(({ position, pokemon }) => {
 		const result = trackedPokemonToAIPokemon(pokemon, tracker.getFieldSlot(position), true, formatId,
-			tracker.getSleepTurns(position, pokemon.ability));
+			tracker.getSleepTurns(position, pokemon.ability), {
+				activeMoveActions: tracker.hasActed(position) ? 1 : 0,
+				timesAttacked: tracker.getTimesAttacked(position), toxicCounter: tracker.getToxicCounter(position),
+			});
 		result.types = tracker.getTypes(position, result.types);
-		result.activeMoveActions = tracker.hasActed(position) ? 1 : 0;
 		return result;
 	});
 	const opponentReserve = buildOpponentReserveFromTracker(tracker, opponentActive, formatId);
@@ -224,7 +228,8 @@ function buildOpponentReserveFromTracker(tracker: BattleTracker, active: AIPokem
 		if (mon.hpPercent <= 0) continue; // Skip fainted
 
 		reserve.push(trackedPokemonToAIPokemon(
-			mon, slot++, false, formatId, tracker.getSleepTurns(mon.ident || mon.position, mon.ability)
+			mon, slot++, false, formatId, tracker.getSleepTurns(mon.ident || mon.position, mon.ability),
+			{ timesAttacked: tracker.getTimesAttacked(mon.ident || mon.position) }
 		));
 	}
 
@@ -245,7 +250,8 @@ export function trackedPokemonToAIPokemon(
 	slot: number,
 	isActive: boolean,
 	formatId = '',
-	sleepTurns = 0
+	sleepTurns = 0,
+	observations: Partial<Pick<AIPokemon, 'timesAttacked' | 'toxicCounter' | 'activeMoveActions'>> = {}
 ): AIPokemon {
 	// CFRU AI Fix: Use tracked.level directly instead of resolveLevel
 	// This ensures opponent level matches the actual level parsed from protocol messages
@@ -313,6 +319,8 @@ export function trackedPokemonToAIPokemon(
 	pokemon.originalItem = tracked.originalItem || '';
 	pokemon.abilityChanged = tracked.abilityChanged;
 	pokemon.moveKnowledge = getOpponentMoveKnowledge(tracked.species, tracked.knownMoves, formatId);
+	// Hypotheses vary hidden configuration, never the public history used by damage and action checks.
+	Object.assign(pokemon, observations);
 	return applyTransformation(applyRandomBattlePresets(pokemon, formatId), tracked.transformation, formatId);
 }
 
@@ -382,6 +390,7 @@ function buildOpponentConditionsFromTracker(tracker: BattleTracker): SideConditi
 		auroraveil: conditions.auroraveil,
 		tailwind: conditions.tailwind,
 		safeguard: conditions.safeguard,
+		mist: conditions.mist,
 		wishes: tracker.getWishes(false),
 		futureMoves: tracker.getFutureMoves(false),
 	};

@@ -10,8 +10,8 @@
 
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions, SideConditions } from '../types';
-import { getSTABMultiplier, getMoveInteraction, resolveItemMoveType, type MoveInteractionContext } from './type-calc';
-import { isFaster, getEffectiveSpeed } from './speed';
+import { getSTABMultiplier, getMoveInteraction, resolveMove, type MoveInteractionContext } from './type-calc';
+import { compareSpeedOrder, getEffectiveSpeed } from './speed';
 import { effectiveAbility, getEffectiveStat, effectiveItem, grounded, rulesDex, defensiveAbility } from './mechanics';
 import { flingFailure, itemAllowsRemoval } from './items';
 import { pokemonCacheId } from './cache';
@@ -278,11 +278,21 @@ export { getEffectiveStat } from './mechanics';
 export function getAttackStat(
 	attacker: AIPokemon,
 	move: AIMove,
-	field: FieldConditions
+	field: FieldConditions,
+	defender?: AIPokemon
 ): number {
 	const isPhysical = move.category === 'Physical';
-	const baseStat = isPhysical ? attacker.baseStats.atk : attacker.baseStats.spa;
-	const boost = isPhysical ? attacker.boosts.atk : attacker.boosts.spa;
+	const data = rulesDex(field).moves.get(move.calledMove || move.id);
+	const statId = data.overrideOffensiveStat || (isPhysical ? 'atk' : 'spa');
+	const source = data.overrideOffensivePokemon === 'target' && defender ? defender : attacker;
+	const baseStatId = field.wonderroom && (statId === 'def' || statId === 'spd') ?
+		(statId === 'def' ? 'spd' : 'def') : statId;
+	const baseStat = source.baseStats[baseStatId];
+	const unaware = defender && (source === attacker ?
+		defensiveAbility(attacker, defender, move, field) === 'unaware' :
+		effectiveAbility(attacker, field) === 'unaware' && statId === 'def');
+	const boost = data.ignoreOffensive || unaware ||
+		(data.ignoreNegativeOffensive && source.boosts[statId] < 0) ? 0 : source.boosts[statId];
 
 	let stat = getEffectiveStat(baseStat, boost);
 
@@ -352,16 +362,19 @@ export function getDefenseStat(
 	defender: AIPokemon,
 	move: AIMove,
 	field: FieldConditions,
-	ability: string = effectiveAbility(defender, field)
+	ability: string = effectiveAbility(defender, field),
+	attacker?: AIPokemon
 ): number {
-	// Special case: Psyshock, Psystrike, Secret Sword use physical defense
-	const moveId = toID(move.id);
-	const usesPhysicalDef = move.category === 'Physical' ||
-		moveId === 'psyshock' || moveId === 'psystrike' || moveId === 'secretsword';
+	const statId = rulesDex(field).moves.get(move.id).overrideDefensiveStat ||
+		(move.category === 'Physical' ? 'def' : 'spd');
+	const usesPhysicalDef = statId === 'def';
 
 	const physicalBase = usesPhysicalDef !== !!field.wonderroom;
 	const baseStat = physicalBase ? defender.baseStats.def : defender.baseStats.spd;
-	const boost = usesPhysicalDef ? defender.boosts.def : defender.boosts.spd;
+	const data = rulesDex(field).moves.get(move.calledMove || move.id);
+	const stage = usesPhysicalDef ? defender.boosts.def : defender.boosts.spd;
+	const boost = data.ignoreDefensive || (data.ignorePositiveDefensive && stage > 0) ||
+		(attacker && effectiveAbility(attacker, field) === 'unaware') ? 0 : stage;
 
 	let stat = getEffectiveStat(baseStat, boost);
 
@@ -429,6 +442,7 @@ export function getModifiedBasePower(
 ): number {
 	// Dynamic-power moves can have a static Dex power of 0 (e.g. Flail and Crush Grip).
 	let basePower = getVariableBasePower(attacker, defender, move, move.basePower, field, context);
+	basePower = Math.floor(basePower * (move.typeChangeBoost || 1));
 	if (basePower === 0) return 0;
 
 	const moveId = toID(move.id);
@@ -496,10 +510,9 @@ export function getModifiedBasePower(
 		basePower = Math.floor(basePower * 1.5);
 	}
 
-	// Analytic：后手时 ×1.3（CFRU damage_calc.c:3996）。
-	// 这里用 isFaster 的反向判定：如果 attacker 不是更快，就视作后手。
-	// AI 侧对"是否后手"的近似已经够用，Trick Room / priority 比较都在 isFaster 内。
-	if (attackerAbility === 'analytic' && !isFaster(attacker, defender, field)) {
+	// Analytic estimates ordinary-priority order; a speed tie is not a confirmed second strike.
+	if (attackerAbility === 'analytic' && compareSpeedOrder(attacker, defender, field,
+		context?.attackerSideConditions, context?.defenderSideConditions) < 0) {
 		basePower = Math.floor(basePower * 1.3);
 	}
 
@@ -581,6 +594,8 @@ function getVariableBasePower(
 	const attackerMaxHp = attacker.maxHp || 100;
 	const defenderHp = defender.maxHp > 0 ? defender.hp : defender.hpPercent;
 	const defenderMaxHp = defender.maxHp || 100;
+
+	if (moveId === 'ragefist') return Math.min(350, 50 * (1 + (attacker.timesAttacked || 0)));
 
 	// Resolve current HP at decision time, including damage already taken on switching in.
 	if (moveId === 'waterspout' || moveId === 'eruption' || moveId === 'dragonenergy') {
@@ -687,9 +702,11 @@ function getVariableBasePower(
 		return Math.floor(basePower * 1.5);
 	}
 
+	if (moveId === 'terrainpulse' && field.terrain && grounded(attacker, field)) return 100;
+
 	// Weather Ball: type and power change in weather
 	if (moveId === 'weatherball') {
-		return 100; // Power doubles in weather
+		return field.weather && field.weatherId !== 'deltastream' ? 100 : 50;
 	}
 
 	return basePower;
@@ -843,10 +860,11 @@ export function calculateDamage(
 	cache?: AICache,
 	spreadInfo?: DamageContext
 ): DamageResult {
-	move = resolveItemMoveType(attacker, move, field);
+	move = resolveMove(attacker, move, field);
 	// HP-dependent power, fixed damage and KO flags must reflect the current snapshot.
 	const spreadKey = spreadInfo?.isDoubles ? `-spread${spreadInfo.numAliveTargets}` : '';
-	const protectionKey = `${spreadInfo?.isAllyTarget}-${spreadInfo?.defenderAllies?.map(pokemonCacheId).join(',')}`;
+	const protectionKey = `${spreadInfo?.isAllyTarget}-${spreadInfo?.defenderAllies?.map(pokemonCacheId).join(',')}` +
+		`-${spreadInfo?.activePokemon?.map(pokemonCacheId).join(',')}`;
 	const hpKey = `${attacker.hp}/${attacker.maxHp}-${defender.hp}/${defender.maxHp}`;
 	const cacheKey = `${pokemonCacheId(attacker)}-${pokemonCacheId(defender)}-${move.id}-${move.type}-${move.basePower}` +
 		`-${hpKey}${spreadKey}-${protectionKey}-${JSON.stringify(field)}` +
@@ -900,7 +918,7 @@ export function calculateDamage(
 			minPercent: defenderMaxHp > 0 ? (fixed.min / defenderMaxHp) * 100 : 0,
 			maxPercent: defenderMaxHp > 0 ? (fixed.max / defenderMaxHp) * 100 : 0,
 			averagePercent: defenderMaxHp > 0 ? (avg / defenderMaxHp) * 100 : 0,
-			effectiveness, // 保留类型效果信息（Normal 对 Ghost 已在上面被豁免掉了）
+			effectiveness: 1, // Immunities were checked above; fixed damage ignores resistance and weakness.
 			canKO: fixed.max >= currentHp,
 			guaranteedKO: fixed.min >= currentHp,
 			hitsToKO: avg > 0 ? Math.ceil(currentHp / avg) : Infinity,
@@ -910,8 +928,8 @@ export function calculateDamage(
 	}
 
 	// Get stats
-	const attack = getAttackStat(attacker, move, field);
-	const defense = getDefenseStat(defender, move, field, defensiveAbility(attacker, defender, move, field));
+	const attack = getAttackStat(attacker, move, field, defender);
+	const defense = getDefenseStat(defender, move, field, defensiveAbility(attacker, defender, move, field), attacker);
 	const basePower = getModifiedBasePower(attacker, defender, move, field, spreadInfo);
 
 	// DEBUG: Uncomment to debug damage calculation inputs
@@ -942,136 +960,123 @@ export function calculateDamage(
 		return result;
 	}
 
-	// Base damage formula
-	const level = attacker.level || 100;
-	let baseDamage = Math.floor(Math.floor(Math.floor(2 * level / 5 + 2) * basePower * attack / defense) / 50 + 2);
+	const hitDamage = (power: number): number => {
+		// Base damage formula
+		const level = attacker.level || 100;
+		let baseDamage = Math.floor(Math.floor(Math.floor(2 * level / 5 + 2) * power * attack / defense) / 50 + 2);
 
-	// STAB
-	const stabMultiplier = getSTABMultiplier(move.type, attacker.types, effectiveAbility(attacker, field));
-	baseDamage = Math.floor(baseDamage * stabMultiplier);
+		// STAB
+		const stabMultiplier = getSTABMultiplier(move.type, attacker.types, effectiveAbility(attacker, field));
+		baseDamage = Math.floor(baseDamage * stabMultiplier);
 
-	// Type effectiveness
-	baseDamage = Math.floor(baseDamage * effectiveness);
+		// Type effectiveness
+		baseDamage = Math.floor(baseDamage * effectiveness);
 
-	// 以下这些乘数依赖 "是否超效 / 是否被抵抗" 的判断，必须在 effectiveness 相乘之后
-	const atkAbilityId = effectiveAbility(attacker, field);
-	const defAbilityId = defensiveAbility(attacker, defender, move, field);
+		// 以下这些乘数依赖 "是否超效 / 是否被抵抗" 的判断，必须在 effectiveness 相乘之后
+		const atkAbilityId = effectiveAbility(attacker, field);
+		const defAbilityId = defensiveAbility(attacker, defender, move, field);
 
-	// Tinted Lens (attacker)：抵抗招式伤害 ×2（CFRU damage_calc.c:3107）
-	if (atkAbilityId === 'tintedlens' && effectiveness < 1 && effectiveness > 0) {
-		baseDamage = Math.floor(baseDamage * 2);
-	}
-
-	// Neuroforce (attacker)：超效招式 ×1.25（CFRU damage_calc.c:3971）
-	if (atkAbilityId === 'neuroforce' && effectiveness > 1) {
-		baseDamage = Math.floor(baseDamage * 1.25);
-	}
-
-	// Filter / Solid Rock / Prism Armor (defender)：超效伤害 ×0.75（CFRU damage_calc.c:3136-3139）
-	if ((defAbilityId === 'filter' || defAbilityId === 'solidrock' || defAbilityId === 'prismarmor') && effectiveness > 1) {
-		baseDamage = Math.floor(baseDamage * 0.75);
-	}
-
-	// Fluffy (defender)：火招式 ×2 / 接触招式 ×0.5（两条可叠加，CFRU damage_calc.c:3159）
-	if (defAbilityId === 'fluffy') {
-		if (move.type === 'Fire') baseDamage = Math.floor(baseDamage * 2);
-		if (move.flags['contact']) baseDamage = Math.floor(baseDamage * 0.5);
-	}
-
-	// Ice Scales (defender)：特殊招式 ×0.5（CFRU damage_calc.c:3175）
-	if (defAbilityId === 'icescales' && move.category === 'Special') {
-		baseDamage = Math.floor(baseDamage * 0.5);
-	}
-
-	// Punk Rock (defender)：声音招式 ×0.5（CFRU damage_calc.c:3169）
-	if (defAbilityId === 'punkrock' && move.flags['sound']) {
-		baseDamage = Math.floor(baseDamage * 0.5);
-	}
-
-	// 半减果 / 抵抗果：对应属性超效时 ×0.5（CFRU damage_calc.c:3188）。
-	// 只有一发消耗型；defender.itemLost 为真说明道具已被打掉。
-	if (effectiveness > 1 && !defender.itemLost) {
-		const berry = effectiveItem(defender, field);
-		if (RESIST_BERRY_TYPES[berry] === move.type) {
-			baseDamage = Math.floor(baseDamage * 0.5);
+		// Tinted Lens (attacker)：抵抗招式伤害 ×2（CFRU damage_calc.c:3107）
+		if (atkAbilityId === 'tintedlens' && effectiveness < 1 && effectiveness > 0) {
+			baseDamage = Math.floor(baseDamage * 2);
 		}
-	}
-	// Chilan Berry 特殊：Normal 招式无条件 ×0.5（不要求超效）
-	if (!defender.itemLost && effectiveItem(defender, field) === 'chilanberry' && move.type === 'Normal') {
-		baseDamage = Math.floor(baseDamage * 0.5);
-	}
 
-	// Burn penalty (physical moves, except Guts/Facade)
-	if (attacker.status === 'brn' && move.category === 'Physical' &&
-		effectiveAbility(attacker, field) !== 'guts' && toID(move.id) !== 'facade') {
-		baseDamage = Math.floor(baseDamage * 0.5);
-	}
+		// Neuroforce (attacker)：超效招式 ×1.25（CFRU damage_calc.c:3971）
+		if (atkAbilityId === 'neuroforce' && effectiveness > 1) {
+			baseDamage = Math.floor(baseDamage * 1.25);
+		}
 
-	// Life Orb
-	if (effectiveItem(attacker, field) === 'lifeorb') {
-		baseDamage = Math.floor(baseDamage * 1.3);
-	}
-
-	// Expert Belt
-	if (effectiveItem(attacker, field) === 'expertbelt' && effectiveness > 1) {
-		baseDamage = Math.floor(baseDamage * 1.2);
-	}
-
-	const conditions = spreadInfo?.defenderSideConditions;
-	const screen = conditions?.auroraveil || (move.category === 'Physical' ?
-		conditions?.reflect || defender.volatiles.has('reflect') :
-		conditions?.lightscreen || defender.volatiles.has('lightscreen'));
-	if (screen && effectiveAbility(attacker, field) !== 'infiltrator' &&
-		!['brickbreak', 'psychicfangs'].includes(move.id)) {
-		baseDamage = Math.floor(baseDamage * (spreadInfo?.isDoubles ? 2 / 3 : 0.5));
-	}
-
-	// Spread Move Cut (CFRU: damage_calc.c:3239-3247)
-	// In doubles/multi, spread moves deal 75% damage when hitting multiple targets
-	if (spreadInfo?.isDoubles && spreadInfo.numAliveTargets >= 2) {
-		const moveTarget = move.target;
-		// MOVE_TARGET_BOTH = allAdjacentFoes (Earthquake, Heat Wave, etc.)
-		// MOVE_TARGET_FOES_AND_ALLY = allAdjacent (Surf, Boomburst, etc.)
-		if (moveTarget === 'allAdjacentFoes' || moveTarget === 'allAdjacent') {
+		// Filter / Solid Rock / Prism Armor (defender)：超效伤害 ×0.75（CFRU damage_calc.c:3136-3139）
+		if ((defAbilityId === 'filter' || defAbilityId === 'solidrock' || defAbilityId === 'prismarmor') && effectiveness > 1) {
 			baseDamage = Math.floor(baseDamage * 0.75);
 		}
-	}
+
+		// Fluffy (defender)：火招式 ×2 / 接触招式 ×0.5（两条可叠加，CFRU damage_calc.c:3159）
+		if (defAbilityId === 'fluffy') {
+			if (move.type === 'Fire') baseDamage = Math.floor(baseDamage * 2);
+			if (move.flags['contact']) baseDamage = Math.floor(baseDamage * 0.5);
+		}
+
+		// Ice Scales (defender)：特殊招式 ×0.5（CFRU damage_calc.c:3175）
+		if (defAbilityId === 'icescales' && move.category === 'Special') {
+			baseDamage = Math.floor(baseDamage * 0.5);
+		}
+
+		// Punk Rock (defender)：声音招式 ×0.5（CFRU damage_calc.c:3169）
+		if (defAbilityId === 'punkrock' && move.flags['sound']) {
+			baseDamage = Math.floor(baseDamage * 0.5);
+		}
+
+		// 半减果 / 抵抗果：对应属性超效时 ×0.5（CFRU damage_calc.c:3188）。
+		// 只有一发消耗型；defender.itemLost 为真说明道具已被打掉。
+		if (effectiveness > 1 && !defender.itemLost) {
+			const berry = effectiveItem(defender, field);
+			if (RESIST_BERRY_TYPES[berry] === move.type) {
+				baseDamage = Math.floor(baseDamage * 0.5);
+			}
+		}
+		// Chilan Berry 特殊：Normal 招式无条件 ×0.5（不要求超效）
+		if (!defender.itemLost && effectiveItem(defender, field) === 'chilanberry' && move.type === 'Normal') {
+			baseDamage = Math.floor(baseDamage * 0.5);
+		}
+
+		// Burn penalty (physical moves, except Guts/Facade)
+		if (attacker.status === 'brn' && move.category === 'Physical' &&
+			effectiveAbility(attacker, field) !== 'guts' && toID(move.id) !== 'facade') {
+			baseDamage = Math.floor(baseDamage * 0.5);
+		}
+
+		// Life Orb
+		if (effectiveItem(attacker, field) === 'lifeorb') {
+			baseDamage = Math.floor(baseDamage * 1.3);
+		}
+
+		// Expert Belt
+		if (effectiveItem(attacker, field) === 'expertbelt' && effectiveness > 1) {
+			baseDamage = Math.floor(baseDamage * 1.2);
+		}
+
+		const conditions = spreadInfo?.defenderSideConditions;
+		const screen = conditions?.auroraveil || (move.category === 'Physical' ?
+			conditions?.reflect || defender.volatiles.has('reflect') :
+			conditions?.lightscreen || defender.volatiles.has('lightscreen'));
+		if (screen && effectiveAbility(attacker, field) !== 'infiltrator' &&
+			!['brickbreak', 'psychicfangs', 'ragingbull'].includes(move.id)) {
+			baseDamage = Math.floor(baseDamage * (spreadInfo?.isDoubles ? 2 / 3 : 0.5));
+		}
+
+		// Spread Move Cut (CFRU: damage_calc.c:3239-3247)
+		// In doubles/multi, spread moves deal 75% damage when hitting multiple targets
+		if (spreadInfo?.isDoubles && spreadInfo.numAliveTargets >= 2) {
+			const moveTarget = move.target;
+			// MOVE_TARGET_BOTH = allAdjacentFoes (Earthquake, Heat Wave, etc.)
+			// MOVE_TARGET_FOES_AND_ALLY = allAdjacent (Surf, Boomburst, etc.)
+			if (moveTarget === 'allAdjacentFoes' || moveTarget === 'allAdjacent') {
+				baseDamage = Math.floor(baseDamage * 0.75);
+			}
+		}
+
+		return baseDamage;
+	};
 
 	// Get multi-hit count
 	const hitCount = getExpectedHitCount(move, effectiveAbility(attacker, field),
 		effectiveItem(attacker, field), attacker.species);
 
-	// Calculate single hit damage with rolls
-	const singleMinDamage = Math.floor(baseDamage * MIN_ROLL);
-	const singleMaxDamage = Math.floor(baseDamage * MAX_ROLL);
-
-	// Calculate total damage for multi-hit moves
-	// For multi-hit moves, need to consider Multiscale/Shadow Shield on first hit
-	let minDamage: number;
-	let maxDamage: number;
-
-	if (hitCount > 1) {
-		// Check if first hit damage is halved (Multiscale/Shadow Shield at full HP)
-		const defenderAbility = defensiveAbility(attacker, defender, move, field);
-		const firstHitHalved = defender.hpPercent >= 100 &&
-			(defenderAbility === 'multiscale' || defenderAbility === 'shadowshield');
-
-		if (firstHitHalved) {
-			// First hit halved, subsequent hits normal
-			// Total = (first_hit * 0.5) + (remaining_hits * normal)
-			const firstHitMin = Math.floor(singleMinDamage * 0.5);
-			const firstHitMax = Math.floor(singleMaxDamage * 0.5);
-			const remainingHits = hitCount - 1;
-			minDamage = firstHitMin + Math.floor(singleMinDamage * remainingHits);
-			maxDamage = firstHitMax + Math.floor(singleMaxDamage * remainingHits);
-		} else {
-			// All hits normal damage
-			minDamage = Math.floor(singleMinDamage * hitCount);
-			maxDamage = Math.floor(singleMaxDamage * hitCount);
-		}
-	} else {
-		minDamage = singleMinDamage;
-		maxDamage = singleMaxDamage;
+	const increasing = ['tripleaxel', 'triplekick'].includes(move.calledMove || move.id);
+	const defenderAbility = defensiveAbility(attacker, defender, move, field);
+	const firstHitHalved = defender.hpPercent >= 100 &&
+		['multiscale', 'shadowshield'].includes(defenderAbility);
+	let minDamage = 0;
+	let maxDamage = 0;
+	for (let hit = 1; hit <= Math.ceil(hitCount); hit++) {
+		const power = increasing ? getModifiedBasePower(attacker, defender,
+			{ ...move, basePower: move.basePower * hit }, field, spreadInfo) : basePower;
+		const damage = hitDamage(power);
+		const weight = Math.min(1, hitCount - hit + 1);
+		const reduction = hit === 1 && firstHitHalved ? 0.5 : 1;
+		minDamage += Math.floor(Math.floor(damage * MIN_ROLL) * reduction * weight);
+		maxDamage += Math.floor(Math.floor(damage * MAX_ROLL) * reduction * weight);
 	}
 
 	const avgDamage = Math.floor((minDamage + maxDamage) / 2);
@@ -1173,7 +1178,8 @@ export function findStrongestMove(
 ): { move: AIMove; damage: DamageResult } | null {
 	let best: { move: AIMove; damage: DamageResult } | null = null;
 
-	for (const move of moves) {
+	for (const candidate of moves) {
+		const move = resolveMove(attacker, candidate, field);
 		if (move.category === 'Status' || move.disabled) continue;
 
 		const damage = calculateDamage(attacker, defender, move, field, cache);
@@ -1216,9 +1222,8 @@ export function getPoisonDamage(pokemon: AIPokemon, forAI = true, field?: FieldC
 	// Toxic poison: 1/16 * turn multiplier
 	if (pokemon.status === 'tox') {
 		const baseDamage = Math.max(1, Math.floor(maxHp / 16));
-		// toxicCounter starts at 1 and increases each turn
-		// For AI, we assume next turn will do more damage
-		const toxicCounter = (pokemon.toxicCounter || 1) + (forAI ? 1 : 0);
+		// Number of completed public poison ticks during this stay; next tick starts at 1.
+		const toxicCounter = Math.max(1, (pokemon.toxicCounter || 0) + (forAI ? 1 : 0));
 		return baseDamage * Math.min(toxicCounter, 15);
 	}
 
@@ -1599,6 +1604,14 @@ export function willFaintFromSecondaryDamage(
 		recovery = Math.floor(maxHp / 16);
 	}
 
+	const ability = effectiveAbility(pokemon, field);
+	const maxHp = pokemon.maxHp || 100;
+	if (field?.terrain === 'grassy' && grounded(pokemon, field)) recovery += Math.floor(maxHp / 16);
+	if ((weather === 'rain' && ability === 'raindish') || (weather === 'hail' && ability === 'icebody')) {
+		recovery += Math.floor(maxHp / 16);
+	}
+	if (weather === 'rain' && ability === 'dryskin') recovery += Math.floor(maxHp / 8);
+	if (ability === 'poisonheal' && ['psn', 'tox'].includes(pokemon.status)) recovery += Math.floor(maxHp / 8);
 	return secondaryDamage - recovery >= currentHp;
 }
 

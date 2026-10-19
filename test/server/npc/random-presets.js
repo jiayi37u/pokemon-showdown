@@ -191,3 +191,52 @@ describe('Shared random-battle configuration inference', function () {
 		assert.equal(pokemon.baseStats.spe, 333);
 	});
 });
+
+describe('Random preset hypotheses preserve public action history', () => {
+	const { buildBattleStateFromRequests, buildAIMove } = require('../../../dist/server/npc/ai/cfru/state-builder');
+	const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
+	for (const mode of ['singles', 'doubles', 'multi']) {
+		it(`${mode}: includes public counters before building active and reserve hypotheses`, () => {
+			const formatId = 'gen9randombattle';
+			const tracker = createBattleTracker('p2', mode === 'multi');
+			tracker.setFormat(formatId);
+			const request = side => ({ side, request: { side: { id: side, pokemon: [{
+				ident: `${side}: Own`, details: 'Mew, L100', active: true, condition: '300/300',
+				stats: { atk: 200, def: 200, spa: 200, spd: 200, spe: 200 },
+				moves: ['tackle'], ability: 'Synchronize', item: '',
+			}] }, active: [{}] } });
+			const requests = (mode === 'multi' ? ['p2', 'p4'] : ['p2']).map(request);
+			if (mode === 'doubles') {
+				requests[0].request.side.pokemon.push({ ...requests[0].request.side.pokemon[0], ident: 'p2: Ally' });
+				requests[0].request.active.push({});
+			}
+			tracker.parseMessage('|switch|p1a: Ape|Annihilape, L76|100/100\n|switch|p2a: Own|Mew|100/100');
+			if (mode !== 'singles') {
+				tracker.parseMessage(`|switch|${mode === 'multi' ? 'p3b' : 'p1b'}: Foe|Mew|100/100`);
+			}
+			tracker.parseMessage('|move|p1a: Ape|Rage Fist|p2a: Own\n|move|p2a: Own|Double Hit|p1a: Ape\n' +
+				'|-damage|p1a: Ape|90/100\n|-damage|p1a: Ape|80/100\n|-hitcount|p1a: Ape|2\n' +
+				'|-status|p1a: Ape|tox\n|-damage|p1a: Ape|74/100 tox|[from] psn\n' +
+				'|turn|2\n|-damage|p1a: Ape|62/100 tox|[from] psn\n|turn|3');
+			const build = () => buildBattleStateFromRequests(requests, tracker,
+				{ ...DEFAULT_AI_CONFIG, formatId, isDoubles: mode !== 'singles' });
+			let state = build();
+			const foe = state.opponent.active[0];
+			assert(foe.presetModels.length > 0);
+			for (const model of inferOpponent(foe, formatId)) {
+				assert.equal(model.pokemon.timesAttacked, 2);
+				assert.equal(model.pokemon.toxicCounter, 2);
+				assert.equal(model.pokemon.activeMoveActions, 1);
+				const move = buildAIMove({ id: 'ragefist' }, 1, formatId);
+				const damage = calculateDamage(model.pokemon, state.self.active[0], move, state.field);
+				assert(damage.average > calculateDamage({ ...model.pokemon, timesAttacked: 0 },
+					state.self.active[0], move, state.field).average * 2);
+			}
+			tracker.parseMessage('|switch|p1a: Bench|Mew|100/100');
+			state = build();
+			const reserve = state.opponent.reserve.find(p => p.species === 'Annihilape');
+			assert(reserve.presetModels.every(model => model.pokemon.timesAttacked === 2));
+			assert(reserve.presetModels.every(model => model.pokemon.toxicCounter === 0));
+		});
+	}
+});

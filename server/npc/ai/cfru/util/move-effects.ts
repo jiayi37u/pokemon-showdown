@@ -3,6 +3,7 @@ import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, BattleState } from '../types';
 import { effectiveAbility, defensiveAbility, effectiveItem, grounded, normalizeWeather, rulesDex } from './mechanics';
 import { getMoveInteraction } from './type-calc';
+import { actsBeforeTarget } from './speed';
 
 /** Existing field/side effects that make a status move fail, independent of tactical value. */
 export function fieldEffectFailure(state: BattleState, attacker: AIPokemon, move: AIMove): string | undefined {
@@ -54,6 +55,16 @@ export function volatileEffectFailure(
 	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove
 ): string | undefined {
 	const dex = rulesDex(state.field);
+	if (move.id === 'encore') {
+		if (target.volatiles.has('encore')) return 'Target already encored';
+		if (target.volatiles.has('dynamax')) return 'Dynamax prevents Encore';
+		// A slower target cannot establish a new last move before this Encore resolves.
+		if (actsBeforeTarget(state, attacker, target, move)) {
+			if (!target.lastMove) return 'Target has not used a move before Encore';
+			const last = dex.moves.get(target.lastMove);
+			if (last.flags.failencore || last.isZ || last.isMax) return 'Last move cannot be encored';
+		}
+	}
 	const transfer = dex.moves.get(move.id).selfSwitch;
 	if (transfer === 'copyvolatile' || transfer === 'shedtail') {
 		if (attacker.volatiles.has('commanded')) return 'Commanded Pokemon cannot pass effects';
@@ -101,7 +112,8 @@ export function statusFailure(
 	const side = allied ? state.self : state.opponent;
 	const ability = defensiveAbility(attacker, target, move, field);
 	const interaction = getMoveInteraction(attacker, target, move, field,
-		{ defenderAllies: side.active, isAllyTarget: allied });
+		{ defenderAllies: side.active, isAllyTarget: allied,
+			activePokemon: [...state.self.active, ...state.opponent.active] });
 	if (interaction.blockedBy) return interaction.blockedBy;
 	if (status === 'confusion') {
 		if (target.volatiles.has('confusion')) return 'Target already confused';
@@ -164,7 +176,7 @@ export function secondaryEffectFailure(
 	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove
 ): string | undefined {
 	const dex = rulesDex(state.field);
-	const data = dex.moves.get(move.id);
+	const data = dex.moves.get(move.calledMove || move.id);
 	const fling = move.id === 'fling' && dex.items.get(attacker.item).fling;
 	if (!data.secondary && !data.secondaries?.length && !(fling && (fling.status || fling.volatileStatus))) return;
 	const ability = defensiveAbility(attacker, target, move, state.field);

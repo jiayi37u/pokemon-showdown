@@ -86,8 +86,10 @@ export interface AIPokemon {
 	/** Remaining sleep turns (if applicable) */
 	sleepTurns: number;
 
-	/** Toxic counter (if applicable) */
+	/** Completed public poison ticks during this stay; the next Toxic tick adds one. */
 	toxicCounter: number;
+	/** Public attack hits received, retained across switches and transformations. */
+	timesAttacked?: number;
 
 	/** Types */
 	types: string[];
@@ -187,6 +189,7 @@ export interface AIPokemon {
 /** Side conditions (entry hazards, screens, etc.) */
 export interface SideConditions {
 	safeguard?: number;
+	mist?: number;
 	/** Stealth Rock */
 	stealthrock: boolean;
 
@@ -301,6 +304,13 @@ export interface AIMove {
 	/** Move ID */
 	id: string;
 
+	/** Deterministic called attack, while id/slot still identify the selected move. */
+	calledMove?: string;
+	/** Ability conversion power modifier; recalculated from the current snapshot. */
+	typeChangeBoost?: number;
+	/** Type before context-dependent conversion, for repeatable resolution. */
+	baseType?: string;
+
 	/** Move name */
 	name: string;
 
@@ -361,6 +371,8 @@ export interface AIMove {
 
 /** Base score constant */
 export const BASE_SCORE = 100;
+/** Shared ceiling for legal moves with no worthwhile tactical opportunity. */
+export const DISCOURAGED_SCORE = 60;
 
 /**
  * AIPokemon.boosts 的默认值（所有阶段为 0）。
@@ -430,7 +442,7 @@ export interface MoveScoreFlags {
 	/** Can 2HKO the target */
 	can2HKO: boolean;
 
-	/** AI Pokemon outspeeds target */
+	/** This move precedes possible opposing attacks; not a comparison of ordinary speed. */
 	goesFirst: boolean;
 
 	/** This is the strongest damage move */

@@ -100,6 +100,7 @@ export interface TrackedPokemon {
 
 /** Identity-bound facts; position-bound effects remain in the active maps. */
 interface IdentityMemory {
+	timesAttacked?: number;
 	restSleep?: number;
 	sleepSource?: boolean;
 	consumedItem?: string;
@@ -110,6 +111,8 @@ interface IdentityMemory {
 
 /** Bounded to one stay, so an Illusion reveal can reassign observations without replaying the battle. */
 interface EntryObservations {
+	receivedHits?: number;
+	toxicTicks?: number;
 	ident: string;
 	/** Copy callbacks depending on the recipient's ability wait for public/authorized identity facts. */
 	copyEffectsPending?: boolean;
@@ -163,6 +166,7 @@ export class BattleTracker {
 	private entries = new Map<string, EntryObservations>();
 	private yawnSources = new Map<string, string>();
 	private lastMoveSource = '';
+	private currentAttack?: { source: string, damaging: boolean, hits: Map<string, number> };
 	private transformations = new Map<string, TrackedTransformation>();
 	private ourPokemon = new Map<string, { ident: string, pokemon: RequestPokemonFacts }>();
 	private activeAbilities = new Map<string, string>();
@@ -195,6 +199,7 @@ export class BattleTracker {
 		auroraveil: number;
 		tailwind: number;
 		safeguard: number,
+		mist: number,
 	} = {
 		stealthrock: false,
 		spikes: 0,
@@ -203,7 +208,7 @@ export class BattleTracker {
 		reflect: 0,
 		lightscreen: 0,
 		auroraveil: 0,
-		tailwind: 0, safeguard: 0,
+		tailwind: 0, safeguard: 0, mist: 0,
 	};
 
 	/** Our side conditions (for tracking hazards on our side) */
@@ -217,6 +222,7 @@ export class BattleTracker {
 		auroraveil: number,
 		tailwind: number,
 		safeguard: number,
+		mist: number,
 	} = {
 		stealthrock: false,
 		spikes: 0,
@@ -225,7 +231,7 @@ export class BattleTracker {
 		reflect: 0,
 		lightscreen: 0,
 		auroraveil: 0,
-		tailwind: 0, safeguard: 0,
+		tailwind: 0, safeguard: 0, mist: 0,
 	};
 
 	/**
@@ -343,12 +349,17 @@ export class BattleTracker {
 			return;
 		}
 		this.handleAbilityEvent(parts);
+		this.recordAttackHit(parts);
+		const entry = this.entries.get(parts[1]?.split(':')[0].trim());
+		if (entry && parts[0] === '-damage' && parts.includes('[from] psn')) entry.toxicTicks = (entry.toxicTicks || 0) + 1;
+		if (entry && ['-status', '-curestatus'].includes(parts[0])) entry.toxicTicks = 0;
 
 		switch (command) {
 		case 'teamsize':
 			this.teamSizes.set(parts[1], Number(parts[2]));
 			break;
 		case 'turn':
+			this.currentAttack = undefined;
 			this.clearTransientEffects('turn');
 			this.lastMoveSource = '';
 			this.turn = Number(parts[1]) || this.turn;
@@ -425,6 +436,8 @@ export class BattleTracker {
 			}
 			break;
 		case 'move':
+			this.currentAttack = { source: parts[1].split(':')[0].trim(),
+				damaging: (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(parts[2]).category !== 'Status', hits: new Map() };
 			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
 			this.pendingWishPosition = '';
@@ -485,6 +498,7 @@ export class BattleTracker {
 			break;
 		}
 		case 'upkeep':
+			this.currentAttack = undefined;
 			this.clearTransientEffects('turn');
 			break;
 		}
@@ -1298,6 +1312,9 @@ export class BattleTracker {
 			conditions.auroraveil = isStart ? 5 : 0;
 		}
 		// Tailwind
+		else if (conditionId === 'mist') {
+			conditions.mist = isStart ? 5 : 0;
+		}
 		else if (conditionId === 'safeguard') {
 			conditions.safeguard = isStart ? 5 : 0;
 		} else if (conditionId === 'tailwind') {
@@ -1601,10 +1618,11 @@ export class BattleTracker {
 	/**
 	 * Get all known opponent team members
 	 */
-	getRemainingOpponents(): number {
+	getRemainingOpponents(): number | undefined {
+		if ([...this.opponentSides].some(side => !this.teamSizes.has(side))) return undefined;
 		const known = this.getOpponentTeam();
 		const size = [...this.teamSizes].reduce((n, [side, count]) => n + (this.isOpponentSide(side) ? count : 0), 0);
-		return Math.max(0, (size || known.length) - known.filter(p => p.hpPercent <= 0).length);
+		return size ? Math.max(0, size - known.filter(p => p.hpPercent <= 0).length) : undefined;
 	}
 
 	getOpponentTeam(): TrackedPokemon[] {
@@ -1982,6 +2000,36 @@ export class BattleTracker {
 		return entries.length === 1 ? entries[0] : undefined;
 	}
 
+	/** Public attack damage counts hits; substitute-only hits, recoil and residuals do not. */
+	private recordAttackHit(parts: string[]): void {
+		const position = parts[1]?.split(':')[0].trim();
+		const entry = this.entries.get(position);
+		if (!entry) return;
+		const future = parts.some(p => ['[from] move: Future Sight', '[from] move: Doom Desire'].includes(p));
+		const direct = parts[0] === '-damage' && (future || !parts.some(p => p.startsWith('[from]')));
+		let hits = 0;
+		if (direct && (future || (this.currentAttack?.damaging && position !== this.currentAttack.source))) {
+			hits = 1;
+			if (!future && this.currentAttack) {
+				this.currentAttack.hits.set(position, (this.currentAttack.hits.get(position) || 0) + 1);
+			}
+		} else if (parts[0] === '-hitcount') {
+			// PS counts the full multihit sequence if it eventually damages the Pokemon behind a substitute.
+			const directHits = this.currentAttack?.hits.get(position) || 0;
+			if (directHits) hits = Math.max(0, Number(parts[2]) - directHits);
+		}
+		entry.receivedHits = (entry.receivedHits || 0) + hits;
+		entry.memory.timesAttacked = (entry.memory.timesAttacked || 0) + hits;
+	}
+
+	getToxicCounter(pokemon: string): number {
+		return this.getIdentityEntry(pokemon)?.toxicTicks || 0;
+	}
+
+	getTimesAttacked(pokemon: string): number {
+		return this.getIdentityMemory(pokemon).timesAttacked || 0;
+	}
+
 	private getIdentityMemory(pokemon: string): IdentityMemory {
 		return this.getIdentityEntry(pokemon)?.memory || this.identityMemory.get(this.publicIdentity(pokemon)) || {};
 	}
@@ -2011,7 +2059,8 @@ export class BattleTracker {
 		if (!entry || entry.ident === ident) return;
 		const memory = this.memoryOnEntry(this.identityMemory.get(ident), entry.sleeping);
 		if (memory.restSleep !== undefined) memory.restSleep += entry.sleepChecks;
-		entry.memory = { ...memory, ...entry.memoryUpdates };
+		entry.memory = { ...memory, ...entry.memoryUpdates,
+			timesAttacked: (memory.timesAttacked || 0) + (entry.receivedHits || 0) };
 		entry.ident = ident;
 		this.activeIdentities.set(position, ident);
 	}
@@ -2071,6 +2120,7 @@ export class BattleTracker {
 		this.pendingFutureMove = undefined;
 		this.pendingWishPosition = '';
 		this.teamSizes.clear();
+		this.currentAttack = undefined;
 		this.activeIdentities.clear();
 		this.yawnSources.clear();
 		this.identityMemory.clear();
@@ -2098,7 +2148,7 @@ export class BattleTracker {
 			reflect: 0,
 			lightscreen: 0,
 			auroraveil: 0,
-			tailwind: 0, safeguard: 0,
+			tailwind: 0, safeguard: 0, mist: 0,
 		};
 		this.ourSideConditions = {
 			stealthrock: false,
@@ -2108,7 +2158,7 @@ export class BattleTracker {
 			reflect: 0,
 			lightscreen: 0,
 			auroraveil: 0,
-			tailwind: 0, safeguard: 0,
+			tailwind: 0, safeguard: 0, mist: 0,
 		};
 	}
 }

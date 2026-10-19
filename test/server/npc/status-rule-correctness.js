@@ -6,6 +6,7 @@ const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 const { buildAIMove, trackedPokemonToAIPokemon } = require('../../../dist/server/npc/ai/cfru/state-builder');
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
+const { goesFirst } = require('../../../dist/server/npc/ai/cfru/util/speed');
 const { makeAIPokemonSkeleton } = require('../../../dist/server/npc/ai/cfru/util/pokemon-builder');
 const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
 const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
@@ -44,10 +45,13 @@ describe('NPC team cures and opponent stat-drop effects', () => {
 		assert.equal(score('tackle', { actor: fast, target: { ...slow, moves: [],
 			moveKnowledge: { revealedMoves: [], presetCandidates: ['iceshard'], remainingSlots: 4 },
 		} }).flags.goesFirst, false);
-		assert.equal(score('counter', { actor: fast, target: { ...slow, moves: ['roar'] } }).flags.goesFirst, true,
+		assert.equal(goesFirst(fast, slow, buildAIMove({ id: 'counter' }, 1), [buildAIMove({ id: 'roar' }, 1)], {}), true,
 			'Counter (-5) acts before Roar (-6)');
-		assert.equal(score('iceshard', { actor: slow, target: { ...fast, ability: 'Prankster', moves: ['thunderwave'] } })
-			.flags.goesFirst, false, 'Prankster status moves can act before slower priority attacks');
+		const prankster = { ...fast, ability: 'Prankster', moves: ['thunderwave'] };
+		assert.equal(goesFirst(slow, prankster, buildAIMove({ id: 'iceshard' }, 1),
+			[buildAIMove({ id: 'thunderwave' }, 1)], {}), false, 'Exact action order retains Prankster priority');
+		assert.equal(score('iceshard', { actor: slow, target: prankster }).flags.goesFirst, true,
+			'Attack-race rewards do not compare against status candidates');
 	});
 
 	for (const id of ['explosion', 'selfdestruct', 'mistyexplosion']) {

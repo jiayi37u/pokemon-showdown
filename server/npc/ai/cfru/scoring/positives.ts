@@ -8,17 +8,34 @@
  * @license MIT
  */
 
-import { effectiveAbility, effectiveItem } from '../util/mechanics';
+import { effectiveAbility, effectiveItem, effectivePriority, defensiveAbility } from '../util/mechanics';
+import { BASE_SCORE, DISCOURAGED_SCORE } from '../types';
+import { buildAIMove } from '../state-builder';
 
 import { itemRemovalFailure } from '../util/items';
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, PositiveScoringFunction } from './index';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
-import { isFaster, goesFirst } from '../util/speed';
+import { actsBeforeTarget, attacksFirst, compareSpeedOrder } from '../util/speed';
 import { secondaryEffectFailure, statusFailure } from '../util/move-effects';
 import { getTypeEffectiveness } from '../util/type-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
 import { getHazeBenefit } from './negatives';
+
+/** Ordinary speed order, independent of either move's priority bracket. */
+function speedOrder(ctx: ScoringContext): number {
+	return compareSpeedOrder(ctx.attacker, ctx.target, ctx.state.field, ctx.state.self.conditions,
+		(ctx.isTargetingPartner ? ctx.state.self : ctx.state.opponent).conditions);
+}
+
+/** Interpolate the existing 0/+2/+4 reward anchors; lowered stats retain the first-boost reward. */
+function setupReward(stage: number, first = 10, second = 5, third = 2): number {
+	if (stage <= 0) return first;
+	if (stage >= 6) return 0;
+	const anchors = [first, second, third, 0];
+	const index = Math.floor(stage / 2);
+	return Math.ceil((anchors[index] + (stage % 2 ? anchors[index + 1] : anchors[index])) / 2);
+}
 
 /** Unknown slots are not evidence that a target lacks recovery. */
 function targetLacksRecovery(ctx: ScoringContext): boolean {
@@ -58,7 +75,8 @@ export const rewardKnockout: PositiveScoringFunction = (ctx) => {
 		});
 
 		// Extra bonus for going first (guaranteed KO)
-		if (ctx.flags.goesFirst) {
+		if (ctx.flags.goesFirst && (speedOrder(ctx) > 0 ||
+			ctx.damageResult && ctx.damageResult.average >= ctx.target.hp)) {
 			bonus += 5;
 			ctx.adjustments.push({
 				reason: 'Outspeeds (safe KO)',
@@ -90,7 +108,7 @@ export const rewardKnockout: PositiveScoringFunction = (ctx) => {
 		});
 
 		// Extra bonus if we outspeed
-		if (ctx.flags.goesFirst) {
+		if (ctx.flags.goesFirst && speedOrder(ctx) > 0) {
 			bonus += 2;
 			ctx.adjustments.push({
 				reason: 'Outspeeds (favorable 2HKO)',
@@ -145,6 +163,8 @@ export const rewardHighDamage: PositiveScoringFunction = (ctx) => {
  */
 export const rewardSTAB: PositiveScoringFunction = (ctx) => {
 	if (ctx.move.category === 'Status') return 0;
+	const data = ctx.dex.moves.get(ctx.move.id);
+	if (data.damage || data.damageCallback) return 0;
 
 	if (ctx.attacker.types.includes(ctx.move.type)) {
 		ctx.adjustments.push({
@@ -183,10 +203,11 @@ export const rewardSuperEffective: PositiveScoringFunction = (ctx) => {
  */
 export const rewardPriorityKO: PositiveScoringFunction = (ctx) => {
 	if (ctx.move.category === 'Status') return 0;
-	if (ctx.move.priority <= 0) return 0;
+	if (effectivePriority(ctx.attacker, ctx.move, ctx.state.field) <= 0) return 0;
+	if (!ctx.flags.goesFirst || speedOrder(ctx) >= 0) return 0;
 
 	// Priority move that can KO is very valuable
-	if (ctx.flags.canKO) {
+	if (ctx.damageResult && ctx.damageResult.average >= ctx.target.hp) {
 		ctx.adjustments.push({
 			reason: 'Priority KO',
 			amount: 10,
@@ -266,7 +287,7 @@ export const rewardParalysisMove: PositiveScoringFunction = (ctx) => {
 	let bonus = 0;
 
 	// Bonus if target is faster
-	if (!ctx.flags.goesFirst) {
+	if (speedOrder(ctx) < 0 && !ctx.state.field.trickroom) {
 		bonus += 8;
 		ctx.adjustments.push({
 			reason: 'Paralysis on faster target',
@@ -277,7 +298,7 @@ export const rewardParalysisMove: PositiveScoringFunction = (ctx) => {
 		// Still useful for potential full paralysis
 		bonus += 4;
 		ctx.adjustments.push({
-			reason: 'Paralysis for speed control',
+			reason: 'Paralysis for potential full paralysis',
 			amount: 4,
 			category: 'positive',
 		});
@@ -416,12 +437,13 @@ export const rewardSleepTalkSnore: PositiveScoringFunction = (ctx) => {
 	if (ctx.attacker.sleepTurns === 1) return 0;
 
 	// Asleep with turns remaining - this is the ideal time to use Sleep Talk/Snore
+	const bonus = (ctx.attacker.sleepTurns || 0) > 1 ? 30 : 10;
 	ctx.adjustments.push({
 		reason: `${ctx.move.name} while asleep`,
-		amount: 10,
+		amount: bonus,
 		category: 'positive',
 	});
-	return 10;
+	return bonus;
 };
 
 // =============================================================================
@@ -432,17 +454,28 @@ export const rewardSleepTalkSnore: PositiveScoringFunction = (ctx) => {
  * Reward setup moves when appropriate
  * Based on CFRU ai_positives.c EFFECT_ATTACK_UP_2 and ai_advanced.c ShouldTryToSetUpStat
  *
- * Key considerations from CFRU:
- * 1. Don't set up if you'll die from chip damage (WillFaintFromSecondaryDamage)
- * 2. Don't set up if foe can 2HKO you (Can2HKO check)
- * 3. +2 boost doubles the stat - diminishing returns after that
- * 4. HP threshold matters - low HP means setup is risky
- * 5. If target's defense is boosted, your attack boost is more valuable
+ * Rewards diminish with existing boosts and missing HP. Low-HP setup is discouraged
+ * by checkStatusOpportunity; this rule does not predict survival against incoming damage.
  */
 export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	if (ctx.move.category !== 'Status') return 0;
 
 	const moveId = toID(ctx.move.id);
+
+	const attacks = ctx.attacker.moves.map(id => buildAIMove({ id }, 1, ctx.state.field.formatId))
+		.filter(move => move.category !== 'Status');
+	if (attacks.length && attacks.every(move =>
+		defensiveAbility(ctx.attacker, ctx.target, move, ctx.state.field) === 'unaware')) {
+		const boosts = ctx.dex.moves.get(moveId).boosts;
+		const usefulSpeed = boosts?.spe && speedOrder(ctx) <= 0 && !ctx.state.field.trickroom;
+		const indirect = ctx.attacker.moves.some(id => ['storedpower', 'powertrip', 'batonpass'].includes(toID(id)));
+		if (!indirect) {
+			const amount = usefulSpeed ? 4 : 0;
+			if (amount) ctx.adjustments.push({ reason: 'Setup retains utility beyond ignored offensive boosts',
+				amount, category: 'positive' });
+			return amount;
+		}
+	}
 
 	// Attack boosting moves
 	const atkBoostMoves = ['swordsdance', 'dragondance', 'bellydrum', 'howl'];
@@ -456,23 +489,12 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	let bonus = 0;
 
 	// ==========================================================================
-	// HP-based safety check (CFRU: WillFaintFromSecondaryDamage, Can2HKO)
+	// HP-based opportunity check
 	// ==========================================================================
 	const hpPercent = ctx.attacker.hpPercent;
 
-	// Critical HP - don't setup, should be attacking or switching
-	if (hpPercent <= 25) {
-		return 0;
-	}
-
-	// Low HP - heavily discourage setup
 	if (hpPercent <= 40) {
-		// Only allow setup if we're faster and can survive one more turn
-		if (!ctx.flags.goesFirst) {
-			return 0;
-		}
-		// Even if faster, reduce bonus significantly
-		bonus -= 11;
+		return 0;
 	}
 
 	// Moderate HP - slight penalty
@@ -486,7 +508,7 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	// So the first +2 is the most impactful (2x), subsequent boosts have diminishing returns
 	// ==========================================================================
 
-	const goesFirst = ctx.flags.goesFirst;
+	const slower = speedOrder(ctx) <= 0 && !ctx.state.field.trickroom;
 	const targetDefBoost = ctx.target.boosts.def || 0;
 	const targetSpdBoost = ctx.target.boosts.spd || 0;
 
@@ -498,27 +520,14 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 			return dexMove.category === 'Physical' && dexMove.basePower > 0;
 		});
 
-		if (!hasPhysicalMove) return bonus; // No physical moves = no point boosting atk
+		if (!hasPhysicalMove) return Math.max(0, bonus); // No physical moves = no point boosting atk
 
 		const currentAtk = ctx.attacker.boosts.atk || 0;
 
 		// Can't boost further
-		if (currentAtk >= 6) return bonus;
+		if (currentAtk >= 6) return Math.max(0, bonus);
 
-		// Base calculation
-		if (currentAtk === 0) {
-			// First boost: +2 = 2x damage = very valuable
-			bonus += 10;
-			if (moveId === 'swordsdance') bonus += 0; // No extra bonus for +2 move now
-		} else if (currentAtk === 2) {
-			// Second boost: +4 = 3x damage (1.5x increase from 2x)
-			bonus += 5;
-			if (moveId === 'swordsdance') bonus += 0;
-		} else if (currentAtk === 4) {
-			// Third boost: +6 = 4x damage (1.33x increase from 3x)
-			// Diminishing returns - usually better to attack now
-			bonus += 2;
-		}
+		bonus += setupReward(currentAtk);
 
 		// Belly Drum special case - max attack in one turn
 		if (moveId === 'bellydrum' && hpPercent > 55 && currentAtk < 6) {
@@ -547,22 +556,13 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 			return dexMove.category === 'Special' && dexMove.basePower > 0;
 		});
 
-		if (!hasSpecialMove) return bonus;
+		if (!hasSpecialMove) return Math.max(0, bonus);
 
 		const currentSpa = ctx.attacker.boosts.spa || 0;
 
-		if (currentSpa >= 6) return bonus;
+		if (currentSpa >= 6) return Math.max(0, bonus);
 
-		// Base calculation - same logic as attack
-		if (currentSpa === 0) {
-			bonus += 10;
-			if (moveId === 'nastyplot' || moveId === 'tailglow') bonus += 0;
-		} else if (currentSpa === 2) {
-			bonus += 5;
-			if (moveId === 'nastyplot' || moveId === 'tailglow') bonus += 0;
-		} else if (currentSpa === 4) {
-			bonus += 2;
-		}
+		bonus += setupReward(currentSpa);
 
 		// Target's special defense boost makes our special attack boost more valuable
 		if (targetSpdBoost > 0 && currentSpa < 4) {
@@ -582,28 +582,22 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	if (speBoostMoves.includes(moveId)) {
 		const currentSpe = ctx.attacker.boosts.spe || 0;
 
-		if (currentSpe >= 6) return bonus;
+		if (currentSpe >= 6) return Math.max(0, bonus);
 
 		// Speed boost is most valuable when we're currently slower
-		if (!goesFirst) {
-			if (currentSpe === 0) {
-				bonus += 10; // First speed boost when slower is very valuable
-			} else if (currentSpe === 2) {
-				bonus += 5;
-			} else if (currentSpe === 4) {
-				bonus += 2;
-			}
-
-			ctx.adjustments.push({
-				reason: `Speed boost to outspeed (spe: +${currentSpe}, HP: ${Math.floor(hpPercent)}%)`,
-				amount: bonus,
-				category: 'positive',
-			});
+		if (slower) {
+			bonus += setupReward(currentSpe);
 		} else {
 			// Already faster - less valuable, but Dragon Dance still has attack component
 			if (currentSpe < 4) {
 				bonus += 2;
 			}
+		}
+		if (bonus > 0) {
+			ctx.adjustments.push({
+				reason: slower ? `Speed boost to outspeed (spe: +${currentSpe}, HP: ${Math.floor(hpPercent)}%)` :
+				'Speed boost for potential future matchups', amount: bonus, category: 'positive',
+			});
 		}
 	}
 
@@ -668,7 +662,7 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 	// Special Defense boosting moves
 	const spdBoostMoves = ['amnesia'];
 	// Mixed defense boosting moves
-	const mixedDefBoostMoves = ['cosmicpower', 'defend order', 'stockpile'];
+	const mixedDefBoostMoves = ['cosmicpower', 'defendorder', 'stockpile'];
 
 	let bonus = 0;
 
@@ -677,14 +671,9 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 	// ==========================================================================
 	const hpPercent = ctx.attacker.hpPercent;
 
-	// Critical HP - don't setup defensively, probably need to attack or switch
-	if (hpPercent <= 25) {
-		return 0;
-	}
-
-	// Low HP - defensive setup has some merit (can stall for recovery)
+	// checkStatusOpportunity also suppresses unrelated rewards in this situation.
 	if (hpPercent <= 40) {
-		bonus -= 3;
+		return 0;
 	}
 
 	// ==========================================================================
@@ -727,14 +716,7 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 
 		if (targetHasPhysical) {
 			// Good idea to raise defense against physical attacker
-			if (currentDef === 0) {
-				bonus += 8;
-				if (moveId === 'cottonguard' || moveId === 'irondefense') bonus += 2; // +2/+3 moves
-			} else if (currentDef === 2) {
-				bonus += 5;
-			} else if (currentDef === 4) {
-				bonus += 2;
-			}
+			bonus += setupReward(currentDef, ['cottonguard', 'irondefense'].includes(moveId) ? 10 : 8);
 
 			if (bonus > 0) {
 				ctx.adjustments.push({
@@ -745,13 +727,7 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 			}
 		} else if (hasBodyPress) {
 			// Body Press user - defense boosts increase damage
-			if (currentDef === 0) {
-				bonus += 10; // Body Press makes defense boost very valuable
-			} else if (currentDef === 2) {
-				bonus += 7;
-			} else if (currentDef === 4) {
-				bonus += 4;
-			}
+			bonus += setupReward(currentDef, 10, 7, 4);
 
 			if (bonus > 0) {
 				ctx.adjustments.push({
@@ -780,14 +756,7 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 
 		if (targetHasSpecial) {
 			// Good idea to raise special defense against special attacker
-			if (currentSpd === 0) {
-				bonus += 8;
-				if (moveId === 'amnesia') bonus += 2; // +2 move
-			} else if (currentSpd === 2) {
-				bonus += 5;
-			} else if (currentSpd === 4) {
-				bonus += 2;
-			}
+			bonus += setupReward(currentSpd, moveId === 'amnesia' ? 10 : 8);
 
 			if (bonus > 0) {
 				ctx.adjustments.push({
@@ -821,15 +790,11 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 		}) ?? true;
 
 		if (targetHasPhysical && currentDef < 6) {
-			if (currentDef === 0) bonus += 6;
-			else if (currentDef === 2) bonus += 4;
-			else if (currentDef === 4) bonus += 2;
+			bonus += setupReward(currentDef, 6, 4, 2);
 		}
 
 		if (targetHasSpecial && currentSpd < 6) {
-			if (currentSpd === 0) bonus += 6;
-			else if (currentSpd === 2) bonus += 4;
-			else if (currentSpd === 4) bonus += 2;
+			bonus += setupReward(currentSpd, 6, 4, 2);
 		}
 
 		if (bonus > 0) {
@@ -949,6 +914,9 @@ export const rewardPivotMove: PositiveScoringFunction = (ctx) => {
 	const pivotMoves = ['uturn', 'voltswitch', 'flipturn', 'partingshot', 'teleport'];
 
 	if (!pivotMoves.includes(moveId)) return 0;
+	const reserves = ctx.state.self.reserve.filter(mon => !mon.fainted && !mon.active && mon.hp > 0 &&
+		(!ctx.attacker.ownerSide || !mon.ownerSide || mon.ownerSide === ctx.attacker.ownerSide));
+	if (!reserves.length) return 0;
 
 	let bonus = 0;
 
@@ -962,7 +930,7 @@ export const rewardPivotMove: PositiveScoringFunction = (ctx) => {
 	}
 
 	// Extra bonus if we have healthy reserves
-	const healthyReserves = ctx.state.self.reserve.filter(mon => !mon.fainted && mon.hpPercent > 50).length;
+	const healthyReserves = reserves.filter(mon => mon.hpPercent > 50).length;
 	if (healthyReserves > 0) {
 		bonus += 2;
 	}
@@ -1284,80 +1252,17 @@ export const rewardDisable: PositiveScoringFunction = (ctx) => {
 	return bonus;
 };
 
-/**
- * Reward Encore when opponent used a status/setup move
- * Based on CFRU ai_positives.c EFFECT_ENCORE (lines 955-968)
- *
- * Encore forces opponent to repeat their last move.
- * IMPORTANT: Encore only works on the LAST MOVE USED, not based on their moveset.
- *
- * Key considerations from CFRU:
- * 1. Check gLastUsedMoves[bankDef] - must have used a move
- * 2. Most valuable when locking into STATUS moves
- * 3. Also good if locking into a move that DOESN'T AFFECT US (type immunity)
- * 4. If slower, use predictedMove instead (not implemented yet)
- */
+/** Reward a reliable interruption of the target's last status move. */
 export const rewardEncore: PositiveScoringFunction = (ctx) => {
-	if (toID(ctx.move.id) !== 'encore') return 0;
-
-	// Check if target already encored (would fail)
-	if (ctx.target.volatiles.has('encore')) {
-		return 0;
-	}
-
-	// Mental Herb would cure Encore
-	if (ctx.dex.gen >= 5 && effectiveItem(ctx.target, ctx.state.field) === 'mentalherb') {
-		return 0;
-	}
-
-	// CFRU Logic: Check gLastUsedMoves[bankDef]
-	// If opponent hasn't used a move yet, Encore has no value
-	const lastMove = ctx.target.lastMove;
-	if (!lastMove) {
-		return 0;
-	}
-
-	let bonus = 0;
-	const lastMoveData = ctx.dex.moves.get(lastMove);
-	const lastMoveIsStatus = lastMoveData.category === 'Status';
-
-	// CFRU line 961-964: Check if last move is Status OR doesn't affect us
-	// Calculate if move is immune against us
-	const isImmune = lastMoveData.category !== 'Status' &&
-		!ctx.dex.getImmunity(lastMoveData.type, ctx.attacker.types);
-
-	// If we're faster, we can encore before they can change moves
-	if (ctx.flags.goesFirst) {
-		// CFRU: Lock into status moves OR moves that don't affect us
-		if (lastMoveIsStatus) {
-			bonus += 4;
-			ctx.adjustments.push({
-				reason: `Encore opponent into status move (${lastMove})`,
-				amount: 4,
-				category: 'positive',
-			});
-		} else if (isImmune) {
-			bonus += 4;
-			ctx.adjustments.push({
-				reason: `Encore opponent into immune move (${lastMove})`,
-				amount: 4,
-				category: 'positive',
-			});
-		}
-	} else {
-		// CFRU line 966-967: If slower, use predictedMove
-		// Since we don't have prediction yet, we use a simpler heuristic:
-		// If they just used a status move, locking them is still good
-		if (lastMoveIsStatus) {
-			bonus += 3;
-			ctx.adjustments.push({
-				reason: `Encore status move when slower (${lastMove})`,
-				amount: 3,
-				category: 'positive',
-			});
-		}
-	}
-
+	if (ctx.move.id !== 'encore' || ctx.target.volatiles.has('encore')) return 0;
+	if (ctx.dex.gen >= 5 && effectiveItem(ctx.target, ctx.state.field) === 'mentalherb') return 0;
+	const last = ctx.dex.moves.get(ctx.target.lastMove || '');
+	if (!last.exists || last.category !== 'Status' || last.flags.failencore || last.isZ || last.isMax) return 0;
+	if (!actsBeforeTarget(ctx.state, ctx.attacker, ctx.target, ctx.move)) return 0;
+	const bonus = BASE_SCORE + 20 - DISCOURAGED_SCORE;
+	ctx.adjustments.push({
+		reason: `Encore interrupts the last status move (${last.name})`, amount: bonus, category: 'positive',
+	});
 	return bonus;
 };
 
@@ -1645,6 +1550,7 @@ export const rewardSpreadMove: PositiveScoringFunction = (ctx) => {
 	const spreadInfo = {
 		isDoubles: true, numAliveTargets,
 		defenderAllies: ctx.state.opponent.active,
+		activePokemon: [...ctx.state.self.active, ...ctx.state.opponent.active],
 		attackerSideConditions: ctx.state.self.conditions,
 		defenderSideConditions: ctx.state.opponent.conditions,
 	};
@@ -1677,7 +1583,11 @@ export const rewardSpreadMove: PositiveScoringFunction = (ctx) => {
 				});
 
 				// Extra bonus for going first (safe double KO)
-				if (ctx.flags.goesFirst) {
+				const knowledge = otherTarget.moveKnowledge;
+				const responses = (knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] : otherTarget.moves)
+					.map(id => buildAIMove({ id }, 1, ctx.state.field.formatId));
+				if (ctx.flags.canKO && ctx.flags.goesFirst && attacksFirst(ctx.attacker, otherTarget, ctx.move,
+					responses, ctx.state.field, ctx.state.self.conditions, ctx.state.opponent.conditions)) {
 					bonus += 5;
 					ctx.adjustments.push({
 						reason: 'Outspeeds for double KO',
@@ -1960,10 +1870,7 @@ export const rewardTailwind: PositiveScoringFunction = (ctx) => {
 	let bonus = 0;
 
 	// CFRU: If we're slower than opponent, Tailwind is very valuable
-	const attackerSpeed = ctx.attacker.baseStats.spe;
-	const defenderSpeed = ctx.target.baseStats.spe;
-
-	if (attackerSpeed < defenderSpeed) {
+	if (speedOrder(ctx) < 0 && !ctx.state.field.trickroom) {
 		// Significant speed disadvantage - Tailwind is very valuable
 		bonus += 12;
 		ctx.adjustments.push({

@@ -12,18 +12,74 @@ import type { AIPokemon, AIMove, AICache, FieldConditions } from '../types';
 import { effectiveAbility, defensiveAbility, effectiveItem, effectivePriority, grounded, rulesDex } from './mechanics';
 import { itemMoveFailure } from './items';
 
-/** Resolve item-dependent move types from the AI's current item knowledge. */
-export function resolveItemMoveType(attacker: AIPokemon, move: AIMove, field: FieldConditions): AIMove {
-	const moveId = toID(move.id);
-	if (!['judgment', 'multiattack', 'technoblast', 'naturalgift'].includes(moveId)) return move;
-	let type = 'Normal';
-	const item = rulesDex(field).items.get(effectiveItem(attacker, field));
-	if (item.exists) {
-		const itemType = moveId === 'judgment' ? (!item.zMove && item.onPlate) :
-			moveId === 'multiattack' ? item.onMemory : moveId === 'naturalgift' ? item.naturalGift?.type : item.onDrive;
-		if (typeof itemType === 'string') type = itemType;
+/** Resolve public move effects while retaining the selected move's identity and slot. */
+export function resolveMove(attacker: AIPokemon, move: AIMove, field: FieldConditions): AIMove {
+	const dex = rulesDex(field);
+	let id = move.id;
+	if (id === 'naturepower') {
+		const terrainMoves: Record<string, string> = {
+			electric: 'thunderbolt', grassy: 'energyball', misty: 'moonblast', psychic: 'psychic',
+		};
+		id = dex.currentMod === 'mmo' || dex.gen >= 6 ? (terrainMoves[field.terrain] || 'triattack') :
+			dex.gen === 5 ? 'earthquake' : dex.gen === 3 ? 'swift' : 'triattack';
+		const called = dex.moves.get(id);
+		move = { ...move, calledMove: id, category: called.category, basePower: called.basePower,
+			type: called.type, baseType: called.type, accuracy: called.accuracy, flags: called.flags, target: called.target,
+			status: called.status, boosts: called.boosts, recoil: called.recoil,
+			secondaryChance: called.secondary?.chance || 0, multihit: called.multihit || null };
 	}
-	return move.type === type ? move : { ...move, type };
+	const baseType = move.baseType || move.type;
+	let type = baseType;
+	if (['judgment', 'multiattack', 'technoblast', 'naturalgift'].includes(id)) {
+		type = 'Normal';
+		const item = dex.items.get(effectiveItem(attacker, field));
+		const itemType = id === 'judgment' ? (!item.zMove && item.onPlate) :
+			id === 'multiattack' ? item.onMemory : id === 'naturalgift' ? item.naturalGift?.type : item.onDrive;
+		if (typeof itemType === 'string') type = itemType;
+	} else if (id === 'revelationdance') {
+		const types = attacker.volatiles.has('roost') ? attacker.types.filter(t => t !== 'Flying') : attacker.types;
+		type = types.find(t => t !== '???' && t !== 'Bird') || (types.length ? '???' : 'Normal');
+	} else if (id === 'weatherball') {
+		const weatherTypes: Record<string, string> = { sun: 'Fire', rain: 'Water', sand: 'Rock', hail: 'Ice', snow: 'Ice' };
+		type = weatherTypes[field.weather] || 'Normal';
+	} else if (id === 'terrainpulse' && grounded(attacker, field)) {
+		const terrainTypes: Record<string, string> = {
+			electric: 'Electric', grassy: 'Grass', misty: 'Fairy', psychic: 'Psychic',
+		};
+		type = terrainTypes[field.terrain] || 'Normal';
+	} else if (id === 'ivycudgel') {
+		const species = toID(attacker.species).replace(/tera$/, '');
+		const types: Record<string, string> = {
+			ogerponwellspring: 'Water', ogerponhearthflame: 'Fire', ogerponcornerstone: 'Rock',
+		};
+		type = types[species] || baseType;
+	} else if (id === 'ragingbull') {
+		const types: Record<string, string> = {
+			taurospaldeacombat: 'Fighting', taurospaldeablaze: 'Fire', taurospaldeaaqua: 'Water',
+		};
+		type = types[toID(attacker.species)] || baseType;
+	} else if (id === 'aurawheel') {
+		type = toID(attacker.species) === 'morpekohangry' ? 'Dark' : 'Electric';
+	}
+	const ability = effectiveAbility(attacker, field);
+	const conversion: Record<string, string> = {
+		pixilate: 'Fairy', aerilate: 'Flying', refrigerate: 'Ice', galvanize: 'Electric',
+	};
+	const fixedType = [
+		'judgment', 'multiattack', 'naturalgift', 'revelationdance', 'technoblast', 'terrainpulse', 'weatherball',
+	];
+	let typeChangeBoost = 1;
+	if (!fixedType.includes(id) && !(move.isZMove && move.category !== 'Status')) {
+		if (type === 'Normal' && conversion[ability]) {
+			type = conversion[ability];
+			typeChangeBoost = dex.gen <= 6 ? 1.3 : 1.2;
+		} else if (ability === 'normalize' && !id.startsWith('hiddenpower') && id !== 'struggle') {
+			type = 'Normal';
+			typeChangeBoost = dex.gen <= 6 ? 1 : 1.2;
+		}
+	}
+	if (ability === 'liquidvoice' && move.flags.sound && !attacker.volatiles.has('dynamax')) type = 'Water';
+	return { ...move, baseType, type, typeChangeBoost };
 }
 
 /** Type effectiveness multipliers */
@@ -269,6 +325,8 @@ export function getImmunities(types: string[]): string[] {
 /** Public active allies are needed for team-wide priority protection in doubles and multi. */
 export interface MoveInteractionContext {
 	defenderAllies?: readonly AIPokemon[];
+	/** All active participants, including the attacker's allies, for redirection. */
+	activePokemon?: readonly AIPokemon[];
 	isAllyTarget?: boolean;
 }
 
@@ -278,9 +336,26 @@ export function getMoveInteraction(
 	context: MoveInteractionContext = {}
 ): { effectiveness: number, blockedBy?: string, failed?: boolean } {
 	const dex = rulesDex(field);
-	const data = dex.moves.get(move.id);
+	move = resolveMove(attacker, move, field);
+	const data = dex.moves.get(move.calledMove || move.id);
 	const ability = defensiveAbility(attacker, defender, move, field);
 	const block = (blockedBy: string, failed = false) => ({ effectiveness: 0, blockedBy, ...(failed ? { failed } : {}) });
+	// Redirection is field-wide. Spread moves and Stalwart/Propeller Tail bypass it.
+	if (['normal', 'any', 'randomNormal', 'adjacentFoe'].includes(move.target) &&
+		!['stalwart', 'propellertail'].includes(effectiveAbility(attacker, field)) &&
+		!data.tracksTarget && !move.flags.pledgecombo) {
+		const redirectAbility = move.type === 'Electric' ? 'lightningrod' : move.type === 'Water' ? 'stormdrain' : '';
+		for (const holder of context.activePokemon || context.defenderAllies || []) {
+			if (holder === attacker || holder === defender || holder.fainted || !redirectAbility) continue;
+			if (defensiveAbility(attacker, holder, move, field) === redirectAbility) {
+				return block(`${holder.ability} redirects the move away from this target`);
+			}
+		}
+	}
+	const requiredType = move.id === 'doubleshock' ? 'Electric' : move.id === 'burnup' ? 'Fire' : '';
+	if (requiredType && !attacker.types.includes(requiredType)) {
+		return block(`${move.name} requires the user to be ${requiredType} type`, true);
+	}
 	if (field.weather && move.category !== 'Status' &&
 		((field.weatherId === 'primordialsea' && move.type === 'Fire') ||
 			(field.weatherId === 'desolateland' && move.type === 'Water'))) {
@@ -304,7 +379,8 @@ export function getMoveInteraction(
 		.includes(move.target) &&
 		!(move.id === 'curse' && !attacker.types.includes('Ghost'));
 	const foeTarget = direct && attacker !== defender && !context.isAllyTarget;
-	if (foeTarget && move.category === 'Status' && effectiveAbility(attacker, field) === 'prankster' &&
+	if (foeTarget && (move.category === 'Status' || !!move.calledMove) &&
+		effectiveAbility(attacker, field) === 'prankster' &&
 		!dex.getImmunity('prankster', defender.types)) {
 		return block('Dark target immune to Prankster status move');
 	}
@@ -324,7 +400,7 @@ export function getMoveInteraction(
 		return block('Soundproof blocks sound move');
 	}
 	if (ability === 'bulletproof' && move.flags.bullet) return block('Bulletproof blocks ball/bomb move');
-	if (direct && move.category === 'Status' && attacker !== defender) {
+	if (direct && (move.category === 'Status' || !!move.calledMove) && attacker !== defender) {
 		if (ability === 'goodasgold') return block('Good as Gold blocks status move');
 		if (['disable', 'attract', 'encore', 'torment', 'taunt', 'healblock'].includes(move.id)) {
 			for (const holder of [defender, ...(context.defenderAllies || [])]) {

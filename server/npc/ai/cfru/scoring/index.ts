@@ -22,8 +22,8 @@ import type {
 import { BASE_SCORE } from '../types';
 import { Dex } from '../../../../../sim/dex';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
-import { goesFirst } from '../util/speed';
-import { resolveItemMoveType } from '../util/type-calc';
+import { attacksFirst } from '../util/speed';
+import { resolveMove } from '../util/type-calc';
 import { rulesDex } from '../util/mechanics';
 import { buildAIMove } from '../state-builder';
 
@@ -58,6 +58,9 @@ export interface ScoringContext {
 
 	/** Calculation cache */
 	cache: AICache;
+
+	/** A discouraged action remains selectable but receives no positive rewards. */
+	skipPositiveScoring?: boolean;
 
 	/** Current score */
 	score: number;
@@ -175,7 +178,7 @@ export class ScoringEngine {
 		target: AIPokemon
 	): MoveScore {
 		state = { ...state, field: { ...state.field, formatId: this.config.formatId || state.field.formatId } };
-		move = resolveItemMoveType(attacker, move, state.field);
+		move = resolveMove(attacker, move, state.field);
 		const isTargetingPartner = state.isDoubles && state.self.active.some(p => p === target);
 		const dex = rulesDex(state.field);
 		// Pre-calculate damage for non-status moves
@@ -201,6 +204,7 @@ export class ScoringEngine {
 				attackerSideConditions: state.self.conditions,
 				defenderSideConditions: (isTargetingPartner ? state.self : state.opponent).conditions,
 				isAllyTarget: isTargetingPartner,
+				activePokemon: [...state.self.active, ...state.opponent.active],
 				defenderAllies: (isTargetingPartner ? state.self : state.opponent).active,
 			});
 		}
@@ -213,7 +217,7 @@ export class ScoringEngine {
 		const flags: MoveScoreFlags = {
 			canKO: damageResult?.canKO ?? false,
 			can2HKO: !!damageResult && !dex.moves.get(move.id).selfdestruct && damageResult.hitsToKO <= 2,
-			goesFirst: goesFirst(attacker, target, move, responses, state.field,
+			goesFirst: attacksFirst(attacker, target, move, responses, state.field,
 				state.self.conditions, isTargetingPartner ? state.self.conditions : state.opponent.conditions),
 			isStrongestMove: false,
 			isImmune: damageResult?.effectiveness === 0,
@@ -262,7 +266,7 @@ export class ScoringEngine {
 
 		// Run positive scorers (only if score > 0)
 		let totalPositives = 0;
-		if (ctx.score > 0 && !ctx.flags.hasNoEffect && !ctx.flags.isImmune) {
+		if (ctx.score > 0 && !ctx.skipPositiveScoring && !ctx.flags.hasNoEffect && !ctx.flags.isImmune) {
 			for (const scorer of this.positiveScorers) {
 				const adjustment = scorer(ctx);
 				if (adjustment !== 0) {

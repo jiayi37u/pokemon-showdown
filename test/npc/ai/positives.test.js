@@ -105,7 +105,7 @@ function runPositivesScoringTests() {
 				isDoubles: false,
 				field: { weather: '', terrain: '' },
 				opponent: { conditions: {} },
-				self: { conditions: {} },
+				self: { conditions: {}, active: [] },
 			},
 			attacker: {
 				slot: 0,
@@ -114,6 +114,7 @@ function runPositivesScoringTests() {
 				volatiles: new Set(),
 				ability: '',
 				item: '',
+				baseStats: { spe: overrides.goesFirst === false ? 50 : 200 },
 				types: overrides.attackerTypes || ['Psychic'],
 				status: '',
 			},
@@ -134,6 +135,7 @@ function runPositivesScoringTests() {
 				category: 'Status',
 				type: 'Normal',
 				basePower: 0,
+				priority: 0,
 				flags: {},
 			},
 			flags: { canKO: false, goesFirst: overrides.goesFirst !== false },
@@ -199,14 +201,14 @@ function runPositivesScoringTests() {
 		assertEqual(bonus, 0, 'Encore对持有心灵香草的对手不应有加分');
 	});
 
-	test('后手使用Encore有小加分 / Encore small bonus when slower with status lastMove', () => {
+	test('后手使用Encore不加分 / Encore no bonus when slower', () => {
 		const ctx = createControlContext({
 			moveId: 'encore',
 			targetLastMove: 'swordsdance',
 			goesFirst: false,
 		});
 		const bonus = rewardEncore(ctx);
-		assert(bonus > 0 && bonus < 5, `后手Encore应有小加分, 实际为${bonus}`);
+		assertEqual(bonus, 0, '后手Encore不加分');
 	});
 
 	test('Encore: 对手没有使用过招式时不应有加分 / Encore no bonus if no lastMove', () => {
@@ -219,7 +221,7 @@ function runPositivesScoringTests() {
 		assertEqual(bonus, 0, 'Encore对未使用招式的对手不应有加分');
 	});
 
-	test('Encore: 对手上回合使用免疫招式应有加分 / Encore bonus when lastMove is immune', () => {
+	test('Encore: 对手上回合使用攻击招式不加分 / Encore no bonus for an immune attack', () => {
 		const ctx = createControlContext({
 			moveId: 'encore',
 			targetLastMove: 'earthquake',
@@ -227,7 +229,7 @@ function runPositivesScoringTests() {
 			goesFirst: true,
 		});
 		const bonus = rewardEncore(ctx);
-		assert(bonus >= 4, `Encore免疫招式应有加分, 实际为${bonus}`);
+		assertEqual(bonus, 0, '攻击招式不触发Encore奖励');
 	});
 
 	test('Encore: 对手上回合使用普通攻击招式不应有加分 / Encore no bonus for normal attack lastMove', () => {

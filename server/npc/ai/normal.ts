@@ -36,7 +36,8 @@ import {
 	buildBattleStateWithTracker, buildAIMove, buildPokemonFromRequest,
 } from './cfru/state-builder';
 import { calculateDamage } from './cfru/util/damage-calc';
-import { goesFirst } from './cfru/util/speed';
+import { resolveMove } from './cfru/util/type-calc';
+import { attacksFirst } from './cfru/util/speed';
 import { getOpponentThreatMoves } from './cfru/util/opponent-presets';
 import { createCache, updateCacheTurn } from './cfru/util/cache';
 import { AIDecisionLogger, LogLevel, createBattleLogger, SwitchScoreLog } from './cfru/logger';
@@ -520,6 +521,7 @@ export class NormalAI extends NPCBattleAI {
 	/** Immediate, usable attacks that KO using the existing average-damage estimate. */
 	private canKOWithAverageDamage(attacker: AIPokemon, target: AIPokemon, move: AIMove): boolean {
 		const state = this.battleState!;
+		move = resolveMove(attacker, move, state.field);
 		if (move.disabled || move.category === 'Status' || attacker.volatiles.has('mustrecharge')) return false;
 		if (attacker.status === 'slp' && attacker.sleepTurns !== 1 && move.id !== 'snore') return false;
 		if (attacker.status === 'frz' && !move.flags.defrost) return false;
@@ -535,6 +537,7 @@ export class NormalAI extends NPCBattleAI {
 			(move.target === 'allAdjacent' ? state.self.active.filter(p => !p.fainted && p !== attacker).length : 0);
 		return calculateDamage(attacker, target, move, state.field, undefined,
 			{ isDoubles: state.isDoubles, numAliveTargets, defenderAllies: state.opponent.active,
+				activePokemon: [...state.self.active, ...state.opponent.active],
 				attackerSideConditions: state.self.conditions,
 				defenderSideConditions: state.opponent.conditions }).average >= target.hp;
 	}
@@ -549,12 +552,9 @@ export class NormalAI extends NPCBattleAI {
 		const responses = responseIds.map(id => buildAIMove({ id }, 1, this.cfruConfig.formatId));
 		// No known moves still means an ordinary-priority action, not a free turn.
 		if (!responses.length) responses.push(buildAIMove({ id: 'tackle' }, 1, this.cfruConfig.formatId));
-		if (!goesFirst(attacker, target, move, responses, state.field, state.self.conditions, state.opponent.conditions)) {
+		if (!attacksFirst(attacker, target, move, responses, state.field, state.self.conditions, state.opponent.conditions)) {
 			return false;
 		}
-		// goesFirst includes speed ties; the reverse comparison excludes those 50% ties.
-		if (responses.some(response => goesFirst(target, attacker, response, [move], state.field,
-			state.opponent.conditions, state.self.conditions))) return false;
 		return true;
 	}
 
@@ -615,6 +615,7 @@ export class NormalAI extends NPCBattleAI {
 					const damage = calculateDamage(model.pokemon, defender, move, projected.field, undefined, {
 						isDoubles: state.isDoubles, numAliveTargets,
 						defenderAllies: state.self.active.filter(p => p !== defender),
+						activePokemon: [...projected.self.active, ...projected.opponent.active],
 						attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
 					});
 					threat = Math.max(threat, damage.average / defender.hp);

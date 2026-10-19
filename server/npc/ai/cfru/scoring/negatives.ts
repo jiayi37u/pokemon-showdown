@@ -10,14 +10,136 @@
 
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, NegativeScoringFunction } from './index';
+import { BASE_SCORE, DISCOURAGED_SCORE } from '../types';
 import { getTypeEffectiveness, getMoveInteraction } from '../util/type-calc';
 import { effectiveAbility, defensiveAbility, effectiveItem, rulesDex } from '../util/mechanics';
 import {
 	delayedMoveFailure, fieldEffectFailure, inflictedStatus, statusFailure, volatileEffectFailure,
 } from '../util/move-effects';
 import { itemMoveFailure, itemRemovalFailure } from '../util/items';
-import { calculateDamage } from '../util/damage-calc';
+import { compareSpeedOrder } from '../util/speed';
+import { calculateDamage, willFaintFromSecondaryDamage } from '../util/damage-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
+
+/** A legal but discouraged choice must not recover its baseline through unrelated rewards. */
+function discourageMove(ctx: ScoringContext, reason: string): number {
+	ctx.skipPositiveScoring = true;
+	const amount = Math.min(0, DISCOURAGED_SCORE - (ctx.score ?? BASE_SCORE));
+	ctx.adjustments.push({ reason, amount, category: 'negative' });
+	return amount;
+}
+
+/** Conservative Normal policy for attacks that require the target to select an attack. */
+export const checkConditionalPriority: NegativeScoringFunction = ctx => {
+	if (!['suckerpunch', 'thunderclap'].includes(ctx.move.id)) return 0;
+	const side = ctx.isTargetingPartner ? ctx.state.self : ctx.state.opponent;
+	const slower = compareSpeedOrder(ctx.attacker, ctx.target, ctx.state.field,
+		ctx.state.self.conditions, side.conditions) < 0;
+	const last = ctx.dex.moves.get(ctx.target.lastMove || '');
+	if (slower && last.exists && last.category !== 'Status') return 0;
+	return discourageMove(ctx, 'Conditional priority needs a faster target whose last move was an attack');
+};
+
+/** Conservative opportunities for setup and utility moves, separate from confirmed failures. */
+export const checkStatusOpportunity: NegativeScoringFunction = ctx => {
+	if (ctx.move.category !== 'Status') return 0;
+	const data = ctx.dex.moves.get(ctx.move.id);
+	// Healing and field-clearing moves retain their independent purpose at low HP.
+	const setup = data.target === 'self' && !data.heal && !data.flags.heal && data.id !== 'tidyup' &&
+		(data.boosts && Object.values(data.boosts).some(stages => stages > 0) ||
+			['bellydrum', 'stockpile'].includes(data.id));
+	const nonGhostCurse = data.id === 'curse' && !ctx.attacker.types.includes('Ghost');
+	if ((setup || nonGhostCurse) && ctx.attacker.hpPercent <= 40) {
+		return discourageMove(ctx, 'Setup discouraged at 40% HP or less');
+	}
+	if (setup && data.boosts) {
+		const raised = Object.entries(data.boosts).filter(([, stages]) => stages > 0).map(([stat]) => stat);
+		const indirectBenefit = ctx.attacker.moves.some(id => ['storedpower', 'powertrip', 'batonpass'].includes(toID(id)));
+		const foes = ctx.state.opponent.active.filter(p => !p.fainted);
+		if (!indirectBenefit && raised.length && raised.every(stat => ['atk', 'def', 'spa', 'spd'].includes(stat)) &&
+			foes.length && foes.every(p => effectiveAbility(p, ctx.state.field) === 'unaware' &&
+				ctx.attacker.moves.every(id => {
+					const move = ctx.dex.moves.get(id);
+					return move.category === 'Status' || defensiveAbility(ctx.attacker, p, move, ctx.state.field) === 'unaware';
+				}))) {
+			return discourageMove(ctx, 'Unaware ignores the useful stat boosts in this matchup');
+		}
+		if (!indirectBenefit && raised.length && raised.every(stat => stat === 'spe') &&
+			(ctx.state.field.trickroom || compareSpeedOrder(ctx.attacker, ctx.target, ctx.state.field,
+				ctx.state.self.conditions, ctx.state.opponent.conditions) > 0)) {
+			return discourageMove(ctx, 'Speed-only setup cannot improve the current speed order');
+		}
+		if (!indirectBenefit && raised.length && raised.every(stat => stat === 'atk' || stat === 'spa')) {
+			const usableAttack = ctx.attacker.moves.some(id => {
+				const move = ctx.dex.moves.get(id);
+				// Called attacks can use different stats; do not assume they have no benefit.
+				if (['naturepower', 'metronome', 'copycat', 'assist', 'mirrormove'].includes(move.id)) return true;
+				if (move.category === 'Status' || move.damage || move.damageCallback || move.ohko ||
+					move.overrideOffensivePokemon === 'target') return false;
+				// Every active foe must ignore this boost before we discard its offensive value.
+				if (ctx.state.opponent.active.filter(p => !p.fainted).every(p =>
+					defensiveAbility(ctx.attacker, p, move, ctx.state.field) === 'unaware')) {
+					return false;
+				}
+				const stat = move.overrideOffensiveStat || (move.category === 'Physical' ? 'atk' : 'spa');
+				return raised.some(raisedStat => raisedStat === stat);
+			});
+			if (!usableAttack) return discourageMove(ctx, 'No attack benefits from the offensive boost');
+		}
+	}
+	if (['disable', 'taunt'].includes(data.id) && ctx.dex.gen >= 5 &&
+		effectiveItem(ctx.target, ctx.state.field) === 'mentalherb') {
+		return discourageMove(ctx, 'Mental Herb would immediately cure the disruption');
+	}
+	if (data.id === 'disable' && !ctx.target.lastMove) {
+		return discourageMove(ctx, 'Disable has no observed last move to target');
+	}
+	if (data.id === 'taunt') {
+		const knowledge = ctx.target.moveKnowledge ||
+			getOpponentMoveKnowledge(ctx.target.species, ctx.target.moves, ctx.config.formatId);
+		if (!knowledge.remainingSlots && knowledge.revealedMoves.every(id => ctx.dex.moves.get(id).category !== 'Status')) {
+			return discourageMove(ctx, 'All revealed move slots are attacks; Taunt has no known benefit');
+		}
+	}
+	if (data.id === 'helpinghand') {
+		const partner = ctx.state.self.active.find(mon => mon.slot !== ctx.attacker.slot && !mon.fainted);
+		if (partner?.moves.length && partner.moves.every(id => {
+			const move = ctx.dex.moves.get(id);
+			if (['naturepower', 'metronome', 'copycat', 'assist', 'mirrormove', 'sleeptalk'].includes(move.id)) return false;
+			return move.category === 'Status' || !!(move.damage || move.damageCallback || move.ohko);
+		})) return discourageMove(ctx, 'Helping Hand has no partner attack to amplify');
+	}
+	return 0;
+};
+
+/** Legal utility moves need a concrete benefit; their failure checks remain independent. */
+export const checkUtilityOpportunity: NegativeScoringFunction = ctx => {
+	const { state, attacker, move } = ctx;
+	if (['stealthrock', 'spikes', 'toxicspikes', 'stickyweb'].includes(move.id) &&
+		state.opponent.remaining !== undefined &&
+		state.opponent.remaining <= state.opponent.active.filter(p => !p.fainted).length) {
+		return discourageMove(ctx, 'No opposing reserve remains to hit entry hazards');
+	}
+	if (move.id === 'substitute' && !attacker.volatiles.has('substitute') &&
+		state.self.conditions.wishes?.[attacker.slot] !== 1) {
+		const hp = attacker.hp - Math.floor(attacker.maxHp / 4);
+		if (hp > 0 && willFaintFromSecondaryDamage({ ...attacker, hp, hpPercent: hp / attacker.maxHp * 100 },
+			state.field.weather, effectiveAbility(ctx.target, state.field), state.field)) {
+			return discourageMove(ctx, 'Substitute leaves insufficient HP for residual damage');
+		}
+	}
+	if (move.id === 'defog') {
+		const own = state.self.conditions;
+		const other = state.opponent.conditions;
+		const clears = own.stealthrock || own.spikes || own.toxicspikes || own.stickyweb ||
+			other.reflect || other.lightscreen || other.auroraveil || other.safeguard || other.mist ||
+			(ctx.dex.gen >= 8 && state.field.terrain);
+		if (!clears && ctx.target.boosts.evasion <= 0) {
+			return discourageMove(ctx, 'Defog has no clearing benefit or boosted evasion to remove');
+		}
+	}
+	return 0;
+};
 
 // =============================================================================
 // Type and Ability Immunity Checks
@@ -27,6 +149,7 @@ import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent
 export const checkMoveImmunity: NegativeScoringFunction = ctx => {
 	const result = getMoveInteraction(ctx.attacker, ctx.target, ctx.move, ctx.state.field, {
 		isAllyTarget: ctx.isTargetingPartner,
+		activePokemon: [...ctx.state.self.active, ...ctx.state.opponent.active],
 		defenderAllies: (ctx.isTargetingPartner ? ctx.state.self : ctx.state.opponent).active,
 	});
 	if (!result.blockedBy) return 0;
@@ -101,9 +224,6 @@ export const checkLowDamage: NegativeScoringFunction = (ctx) => {
 	// Only penalize if below the threshold where rewardHighDamage kicks in
 	// This avoids double-penalizing already penalized immune/resisted moves
 	if (ctx.flags.isImmune || ctx.flags.hasNoEffect) return 0;
-
-	// Exempt priority moves - low damage is acceptable for priority
-	if (ctx.move.priority > 0) return 0;
 
 	// CFRU thresholds: < 10% HP = basically no damage, < 20% = very low, < 33% HP = low damage
 	if (damagePercent < 10) {
@@ -616,13 +736,7 @@ export const checkHaze: NegativeScoringFunction = ctx => {
 	if (ctx.move.id !== 'haze') return 0;
 	const { net, hasChanges, reason } = getHazeBenefit(ctx);
 	if (net <= 0) {
-		ctx.flags.hasNoEffect = !hasChanges;
-		ctx.adjustments.push({
-			reason: hasChanges ? `Haze: no net benefit (${reason})` : 'Haze: no stat changes to clear',
-			amount: -100,
-			category: 'negative',
-		});
-		return -100;
+		return discourageMove(ctx, hasChanges ? `Haze: no net benefit (${reason})` : 'Haze: no stat changes to clear');
 	}
 	ctx.adjustments.push({ reason: 'Haze: turn cost', amount: -20, category: 'negative' });
 	return -20;
@@ -634,81 +748,39 @@ export const checkHaze: NegativeScoringFunction = ctx => {
 export const checkStatBoostWasted: NegativeScoringFunction = (ctx) => {
 	if (ctx.move.category !== 'Status') return 0;
 
-	const moveId = toID(ctx.move.id);
-
-	// Map of boost moves to their stats and stages
-	const boostMoves: { [key: string]: { stat: keyof typeof ctx.attacker.boosts; stages: number }[] } = {
-		'swordsdance': [{ stat: 'atk', stages: 2 }],
-		'dragondance': [{ stat: 'atk', stages: 1 }, { stat: 'spe', stages: 1 }],
-		'nastyplot': [{ stat: 'spa', stages: 2 }],
-		'calmmind': [{ stat: 'spa', stages: 1 }, { stat: 'spd', stages: 1 }],
-		'irondefense': [{ stat: 'def', stages: 2 }],
-		'amnesia': [{ stat: 'spd', stages: 2 }],
-		'agility': [{ stat: 'spe', stages: 2 }],
-		'rockpolish': [{ stat: 'spe', stages: 2 }],
-		'autotomize': [{ stat: 'spe', stages: 2 }],
-		'bulkup': [{ stat: 'atk', stages: 1 }, { stat: 'def', stages: 1 }],
-		'workup': [{ stat: 'atk', stages: 1 }, { stat: 'spa', stages: 1 }],
-		'growth': [{ stat: 'atk', stages: 1 }, { stat: 'spa', stages: 1 }],
-		'howl': [{ stat: 'atk', stages: 1 }],
-		'meditate': [{ stat: 'atk', stages: 1 }],
-		'sharpen': [{ stat: 'atk', stages: 1 }],
-		'harden': [{ stat: 'def', stages: 1 }],
-		'withdraw': [{ stat: 'def', stages: 1 }],
-		'tailglow': [{ stat: 'spa', stages: 3 }],
-		'quiverdance': [{ stat: 'spa', stages: 1 }, { stat: 'spd', stages: 1 }, { stat: 'spe', stages: 1 }],
-		'shellsmash': [{ stat: 'atk', stages: 2 }, { stat: 'spa', stages: 2 }, { stat: 'spe', stages: 2 }],
-		'coil': [{ stat: 'atk', stages: 1 }, { stat: 'def', stages: 1 }, { stat: 'accuracy', stages: 1 }],
-		'honeclaws': [{ stat: 'atk', stages: 1 }, { stat: 'accuracy', stages: 1 }],
-	};
-
-	const boostInfo = boostMoves[moveId];
-	if (!boostInfo) return 0;
-
-	let totalPenalty = 0;
-
-	for (const boost of boostInfo) {
-		const currentBoost = ctx.attacker.boosts[boost.stat] || 0;
-
-		// Already at max
-		if (currentBoost >= 6) {
-			ctx.adjustments.push({
-				reason: `${boost.stat} already at max`,
-				amount: -100,
-				category: 'negative',
-			});
-			totalPenalty -= 100;
-		}
-		// Would waste stages
-		else if (currentBoost + boost.stages > 6) {
-			const wastedStages = (currentBoost + boost.stages) - 6;
-			const penalty = -5 * wastedStages;
-			ctx.adjustments.push({
-				reason: `Would waste ${wastedStages} stages of ${boost.stat}`,
-				amount: penalty,
-				category: 'negative',
-			});
-			totalPenalty += penalty;
-		}
-		// Already high (4+)
-		else if (currentBoost >= 4) {
-			ctx.adjustments.push({
-				reason: `${boost.stat} already at +${currentBoost}`,
-				amount: -5,
-				category: 'negative',
-			});
-			totalPenalty -= 5;
-		}
-	}
-
-	// Contrary reverses boosts
-	if (effectiveAbility(ctx.attacker, ctx.state.field) === 'contrary') {
-		ctx.adjustments.push({
-			reason: 'Contrary will reverse boosts',
-			amount: -100,
-			category: 'negative',
+	const data = ctx.dex.moves.get(ctx.move.id);
+	if (data.target !== 'self' || !data.boosts) return 0;
+	const ability = effectiveAbility(ctx.attacker, ctx.state.field);
+	const multiplier = ability === 'contrary' ? -1 : ability === 'simple' ? 2 : 1;
+	const boosts = Object.entries(data.boosts).map(([stat, stages]) => ({
+		stat: stat as keyof typeof ctx.attacker.boosts,
+		stages: stages * multiplier * (data.id === 'growth' && ctx.dex.gen >= 5 && ctx.state.field.weather === 'sun' ? 2 : 1),
+	}));
+	const improvements = boosts.filter(boost => boost.stages > 0);
+	const usable = improvements.filter(boost => ctx.attacker.boosts[boost.stat] < 6);
+	// Moves with additional effects must not be declared useless just because their boosts are capped.
+	const otherEffects = data.onHit || data.onTryHit || data.onAfterHit || data.onAfterMove ||
+		data.volatileStatus || data.heal || data.sideCondition || data.weather || data.terrain;
+	if (!usable.length && !otherEffects) {
+		ctx.skipPositiveScoring = true;
+		ctx.flags.hasNoEffect = boosts.every(boost => {
+			const current = ctx.attacker.boosts[boost.stat];
+			return boost.stages > 0 ? current >= 6 : current <= -6;
 		});
+		if (!ctx.flags.hasNoEffect) return discourageMove(ctx, 'No useful stat increase remains');
+		ctx.adjustments.push({ reason: 'No useful stat increase remains', amount: -100, category: 'negative' });
 		return -100;
+	}
+	let totalPenalty = 0;
+	for (const boost of improvements) {
+		const current = ctx.attacker.boosts[boost.stat];
+		const wasted = Math.max(0, current + boost.stages - 6);
+		const penalty = wasted ? -5 * wasted : current >= 4 ? -5 : 0;
+		if (!penalty) continue;
+		ctx.adjustments.push({
+			reason: `Diminishing ${boost.stat} boost at +${current}`, amount: penalty, category: 'negative',
+		});
+		totalPenalty += penalty;
 	}
 
 	// Choice item locks prevent setup
@@ -925,6 +997,9 @@ export const checkMentalMoveRedundant: NegativeScoringFunction = (ctx) => {
 			ctx.flags.hasNoEffect = true;
 			return -10;
 		}
+		const amount = DISCOURAGED_SCORE - BASE_SCORE;
+		ctx.adjustments.push({ reason: 'Encore needs a useful interruption opportunity', amount, category: 'negative' });
+		return amount;
 	}
 
 	// Taunt - check if target already taunted
@@ -1089,23 +1164,12 @@ export const checkCounterMirrorCoat: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 2225-2230
  *
  * Belly Drum fails if HP <= 50%, and is risky if HP is not high enough
- * Also fails with Contrary ability (would lower Attack instead)
+ * Contrary lowers Attack instead and is discouraged rather than treated as a failed move.
  */
 export const checkBellyDrum: NegativeScoringFunction = (ctx) => {
 	const moveId = toID(ctx.move.id);
 
 	if (moveId !== 'bellydrum') return 0;
-
-	// Contrary makes Belly Drum lower Attack instead of raising
-	if (effectiveAbility(ctx.attacker, ctx.state.field) === 'contrary') {
-		ctx.adjustments.push({
-			reason: 'Contrary will lower Attack instead of raising',
-			amount: -100,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -100;
-	}
 
 	// Belly Drum costs 50% HP to use
 	if (ctx.attacker.hpPercent <= 50) {
@@ -1116,6 +1180,10 @@ export const checkBellyDrum: NegativeScoringFunction = (ctx) => {
 		});
 		ctx.flags.hasNoEffect = true;
 		return -100;
+	}
+
+	if (effectiveAbility(ctx.attacker, ctx.state.field) === 'contrary') {
+		return discourageMove(ctx, 'Contrary will lower Attack instead of raising');
 	}
 
 	// Even if it works, using it at low-ish HP is risky
@@ -1135,7 +1203,7 @@ export const checkBellyDrum: NegativeScoringFunction = (ctx) => {
 /**
  * Check if Protect is overused (consecutive usage penalty)
  *
- * Simplified logic: If last move was a Protect-type move, penalize -20.
+ * Consecutive use receives the shared discouraged score.
  *
  * Note: Quick Guard, Wide Guard, Crafty Shield have infinite usage (not penalized)
  */
@@ -1155,13 +1223,7 @@ export const checkProtectOveruse: NegativeScoringFunction = (ctx) => {
 
 	if (!lastMoveWasProtect) return 0;
 
-	// Consecutive Protect usage - penalize heavily
-	ctx.adjustments.push({
-		reason: 'Consecutive Protect usage (likely to fail)',
-		amount: -20,
-		category: 'negative',
-	});
-	return -20;
+	return discourageMove(ctx, 'Consecutive Protect usage (likely to fail)');
 };
 
 /**
@@ -1177,12 +1239,7 @@ export const checkHealingUnnecessary: NegativeScoringFunction = (ctx) => {
 
 	// Don't heal at high HP
 	if (ctx.attacker.hpPercent > 80) {
-		ctx.adjustments.push({
-			reason: 'Healing unnecessary at high HP',
-			amount: -20,
-			category: 'negative',
-		});
-		return -20;
+		return discourageMove(ctx, 'Healing unnecessary at high HP');
 	}
 
 	if (ctx.attacker.hpPercent > 70) {
@@ -1217,7 +1274,7 @@ export const checkHealingUnnecessary: NegativeScoringFunction = (ctx) => {
 };
 
 /**
- * Check if Sleep Talk or Snore will fail (not asleep or last turn of sleep)
+ * Gate moves by publicly confirmed sleep and wake turns.
  * CFRU: ai_negatives.c lines 1783-1795
  *
  * Sleep Talk and Snore only work while asleep. Additionally, if attacker
@@ -1229,7 +1286,15 @@ export const checkHealingUnnecessary: NegativeScoringFunction = (ctx) => {
 export const checkSleepTalkSnore: NegativeScoringFunction = (ctx) => {
 	const moveId = toID(ctx.move.id);
 
-	if (moveId !== 'sleeptalk' && moveId !== 'snore') return 0;
+	if (moveId !== 'sleeptalk' && moveId !== 'snore') {
+		if (ctx.attacker.status === 'slp' && (ctx.attacker.sleepTurns || 0) > 1 &&
+			!ctx.dex.moves.get(moveId).sleepUsable) {
+			ctx.adjustments.push({ reason: 'Cannot use this move during confirmed sleep', amount: -100, category: 'negative' });
+			ctx.flags.hasNoEffect = true;
+			return -100;
+		}
+		return 0;
+	}
 
 	const attackerAbility = effectiveAbility(ctx.attacker, ctx.state.field);
 
@@ -1369,13 +1434,7 @@ export const checkTargetingPartnerStatus: NegativeScoringFunction = (ctx) => {
 	];
 
 	if (badPartnerMoves.includes(moveId)) {
-		ctx.adjustments.push({
-			reason: 'Using harmful status move on partner',
-			amount: -100,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = true;
-		return -100;
+		return discourageMove(ctx, 'Using harmful status move on partner');
 	}
 
 	// Stat lowering moves on partner
@@ -1388,13 +1447,7 @@ export const checkTargetingPartnerStatus: NegativeScoringFunction = (ctx) => {
 			}
 		}
 		if (anyLower) {
-			ctx.adjustments.push({
-				reason: 'Lowering partner stats',
-				amount: -100,
-				category: 'negative',
-			});
-			ctx.flags.hasNoEffect = true;
-			return -100;
+			return discourageMove(ctx, 'Lowering partner stats');
 		}
 	}
 
@@ -1435,6 +1488,7 @@ export const checkSpreadMoveHitsPartner: NegativeScoringFunction = (ctx) => {
 	const partnerDamage = calculateDamage(ctx.attacker, ctx.partner, ctx.move, ctx.state.field, ctx.cache, {
 		isDoubles: true, numAliveTargets: numAliveOpponents + numAlivePartners,
 		isAllyTarget: true, defenderAllies: ctx.state.self.active,
+		activePokemon: [...ctx.state.self.active, ...ctx.state.opponent.active],
 		attackerSideConditions: ctx.state.self.conditions, defenderSideConditions: ctx.state.self.conditions,
 	});
 
@@ -1911,7 +1965,9 @@ export const checkKnockOff: NegativeScoringFunction = ctx => {
 // =============================================================================
 
 export const allNegativeScorers: NegativeScoringFunction[] = [
+	checkSleepTalkSnore,
 	checkMoveImmunity,
+	checkConditionalPriority,
 	checkFieldEffect,
 	// Partner effects after confirmed immunities
 	checkTargetingPartnerDamage,
@@ -1950,6 +2006,8 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 
 	// Setup moves and stat resets
 	checkStatBoostWasted,
+	checkStatusOpportunity,
+	checkUtilityOpportunity,
 	checkHaze,
 
 	// Magic Bounce
@@ -1968,7 +2026,6 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkExplosion,
 	checkProtectOveruse,
 	checkHealingUnnecessary,
-	checkSleepTalkSnore,  // CFRU: ai_negatives.c 1783-1795
 
 	// Contact move risks (CFRU: ai_util.c 3011-3067)
 	checkContactRisk,

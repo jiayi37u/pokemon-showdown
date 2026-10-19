@@ -391,7 +391,7 @@ describe('Production NPCMultiManager decisions', () => {
 		const ai = game.manager.controllers.p4;
 		const state = ai.battleState;
 		const haze = ai.scoringEngine.scoreMove(state, state.self.active.find(p => p.slot === 2), buildAIMove(Dex.moves.get('haze'), 1), state.opponent.active[0]);
-		assert.equal(haze.score, 0);
+		assert.equal(haze.score, 60);
 	});
 
 	it('should complete a Multi battle through the production request coordinator', () => {

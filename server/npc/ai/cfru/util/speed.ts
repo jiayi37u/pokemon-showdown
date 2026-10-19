@@ -10,8 +10,9 @@
 
 import { toID } from '../../../../../sim/dex';
 import { pokemonCacheId } from './cache';
-import type { AIPokemon, AIMove, AICache, FieldConditions, SideConditions } from '../types';
+import type { AIPokemon, AIMove, AICache, BattleState, FieldConditions, SideConditions } from '../types';
 import { effectiveAbility, effectiveItem, effectivePriority, getEffectiveStat, rulesDex } from './mechanics';
+import { resolveMove } from './type-calc';
 
 /**
  * Speed context for considering side conditions
@@ -116,7 +117,7 @@ export function getEffectiveSpeed(
  * @param cache - Optional cache
  * @param pokemon1SideConditions - Side conditions for pokemon1
  * @param pokemon2SideConditions - Side conditions for pokemon2
- * @returns true if pokemon1 is faster (or ties)
+ * @returns true only if pokemon1 is strictly faster in the current room
  */
 export function isFaster(
 	pokemon1: AIPokemon,
@@ -132,15 +133,7 @@ export function isFaster(
 		return cache.speedComparison.get(cacheKey)!;
 	}
 
-	let speed1 = getEffectiveSpeed(pokemon1, field, pokemon1SideConditions);
-	let speed2 = getEffectiveSpeed(pokemon2, field, pokemon2SideConditions);
-
-	// Trick Room reversal
-	if (field.trickroom) {
-		[speed1, speed2] = [speed2, speed1];
-	}
-
-	const result = speed1 >= speed2;
+	const result = compareSpeedOrder(pokemon1, pokemon2, field, pokemon1SideConditions, pokemon2SideConditions) > 0;
 
 	// Cache result
 	if (cache && !pokemon1SideConditions && !pokemon2SideConditions) {
@@ -150,35 +143,61 @@ export function isFaster(
 	return result;
 }
 
-/**
- * Check if a Pokemon outspeeds another considering move priority
- * @param attacker - Attacking Pokemon
- * @param defender - Defending Pokemon
- * @param attackerMove - Attacker's move
- * @param defenderMoves - Defender's known moves (for prediction)
- * @param field - Field conditions
- * @returns true if attacker goes first
- */
+/** Positive means first, zero means a speed tie, negative means second. */
+export type ActionOrder = -1 | 0 | 1;
+type PriorityMove = Pick<AIMove, 'priority' | 'category' | 'type' | 'flags'> &
+	Partial<Pick<AIMove, 'id' | 'calledMove'>>;
+
+export function compareSpeedOrder(
+	actor: AIPokemon, target: AIPokemon, field: FieldConditions,
+	actorSide?: SideConditions, targetSide?: SideConditions
+): ActionOrder {
+	const a = getEffectiveSpeed(actor, field, actorSide);
+	const b = getEffectiveSpeed(target, field, targetSide);
+	if (a === b) return 0;
+	return (a > b) !== !!field.trickroom ? 1 : -1;
+}
+
+/** Compare actions using the same mechanics for every difficulty and battle mode. */
+export function compareActionOrder(
+	actor: AIPokemon, target: AIPokemon, move: PriorityMove, responses: readonly PriorityMove[],
+	field: FieldConditions, actorSide?: SideConditions, targetSide?: SideConditions
+): ActionOrder {
+	const priority = effectivePriority(actor, move, field);
+	const responsePriority = responses.length ? Math.max(...responses.map(response =>
+		effectivePriority(target, response, field))) : 0;
+	if (priority !== responsePriority) return priority > responsePriority ? 1 : -1;
+	return compareSpeedOrder(actor, target, field, actorSide, targetSide);
+}
+
+/** A tie is not a reliable first strike. */
 export function goesFirst(
-	attacker: AIPokemon,
-	defender: AIPokemon,
-	attackerMove: AIMove,
-	defenderMoves: AIMove[],
-	field: FieldConditions,
-	attackerSideConditions?: SideConditions,
-	defenderSideConditions?: SideConditions
+	attacker: AIPokemon, defender: AIPokemon, attackerMove: AIMove, defenderMoves: AIMove[],
+	field: FieldConditions, attackerSideConditions?: SideConditions, defenderSideConditions?: SideConditions
 ): boolean {
-	const attackerPriority = effectivePriority(attacker, attackerMove, field);
-	const defenderPriority = defenderMoves.length ?
-		Math.max(...defenderMoves.map(move => effectivePriority(defender, move, field))) : 0;
+	return compareActionOrder(attacker, defender, attackerMove, defenderMoves,
+		field, attackerSideConditions, defenderSideConditions) > 0;
+}
 
-	// If priorities differ, higher wins
-	if (attackerPriority !== defenderPriority) {
-		return attackerPriority > defenderPriority;
-	}
+/** Attack races ignore defensive status options such as Protect, but retain attacking priority. */
+export function attacksFirst(
+	attacker: AIPokemon, defender: AIPokemon, move: AIMove, responses: AIMove[],
+	field: FieldConditions, attackerSide?: SideConditions, defenderSide?: SideConditions
+): boolean {
+	const attacks = responses.map(response => resolveMove(defender, response, field))
+		.filter(response => response.category !== 'Status');
+	return goesFirst(attacker, defender, move, attacks,
+		field, attackerSide, defenderSide);
+}
 
-	// Same priority, compare speed
-	return isFaster(attacker, defender, field, undefined, attackerSideConditions, defenderSideConditions);
+/** Order against public/preset responses, without reading the opponent's selected action. */
+export function actsBeforeTarget(state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove): boolean {
+	const knowledge = target.moveKnowledge;
+	const moves = knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] : target.moves;
+	const dex = rulesDex(state.field);
+	const side = state.self.active.includes(target) ? state.self : state.opponent;
+	return compareActionOrder(attacker, target, move, moves.map(id => dex.moves.get(id)),
+		state.field, state.self.conditions, side.conditions) > 0;
 }
 
 /**
@@ -212,7 +231,7 @@ export function canPriorityKO(
  * Get all priority moves for a Pokemon
  */
 export function getPriorityMoves(
-	pokemon: AIPokemon, moves: AIMove[], field: Pick<FieldConditions, 'formatId'> = {}
+	pokemon: AIPokemon, moves: AIMove[], field: Partial<FieldConditions> = {}
 ): AIMove[] {
 	return moves.filter(move => !move.disabled && effectivePriority(pokemon, move, field) > 0);
 }

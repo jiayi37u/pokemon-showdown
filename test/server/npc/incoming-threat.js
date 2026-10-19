@@ -146,6 +146,8 @@ describe('NormalAI incoming threat switching', () => {
 		state.field.trickroom = false;
 		state.self.conditions.tailwind = 3;
 		assert.equal(ai.canKOFirst(actor, target, move), true, 'Faster with Tailwind');
+		target.moveKnowledge = { revealedMoves: ['protect'], presetCandidates: ['tackle'], remainingSlots: 3 };
+		assert.equal(ai.canKOFirst(actor, target, move), true, 'Protect is not an opposing attack');
 		target.moveKnowledge = { revealedMoves: ['suckerpunch'], presetCandidates: [], remainingSlots: 3 };
 		assert.equal(ai.canKOFirst(actor, target, move), false, 'Opponent has priority');
 	});

@@ -12,9 +12,10 @@ import {
 } from '../cfru/scoring/positives';
 import { createCache } from '../cfru/util/cache';
 import { calculateDamage, getSecondaryEffectDamage } from '../cfru/util/damage-calc';
-import { getEffectiveSpeed } from '../cfru/util/speed';
+import { resolveMove } from '../cfru/util/type-calc';
+import { compareActionOrder } from '../cfru/util/speed';
 import {
-	effectiveAbility, effectivePriority, effectiveItem, grounded, replaceActivePokemon,
+	effectiveAbility, effectiveItem, grounded, replaceActivePokemon,
 } from '../cfru/util/mechanics';
 import {
 	fightingStyle, hardMove, inferOpponent, predictOpponent, type OpponentHypothesis, type PredictedAction,
@@ -89,12 +90,8 @@ export class HardEvaluation {
 	/** Priority and speed order, including speed ties (50%, never a guaranteed first strike). */
 	first(actor: AIPokemon, foe: AIPokemon, move: AIMove, response: AIMove): number {
 		const state = this.calculationState(actor, foe);
-		const delta = effectivePriority(actor, move, state.field) - effectivePriority(foe, response, state.field);
-		if (delta) return delta > 0 ? 1 : 0;
-		const a = getEffectiveSpeed(actor, state.field, state[this.sideOf(actor)].conditions);
-		const b = getEffectiveSpeed(foe, state.field, state[this.sideOf(foe)].conditions);
-		if (a === b) return 0.5;
-		return (a > b) !== state.field.trickroom ? 1 : 0;
+		return (compareActionOrder(actor, foe, move, [response], state.field,
+			state[this.sideOf(actor)].conditions, state[this.sideOf(foe)].conditions) + 1) / 2;
 	}
 
 	damage(actor: AIPokemon, target: AIPokemon, move: AIMove, defenderAllies?: readonly AIPokemon[]) {
@@ -111,6 +108,7 @@ export class HardEvaluation {
 
 	private rawDamage(actor: AIPokemon, target: AIPokemon, move: AIMove, defenderAllies?: readonly AIPokemon[]) {
 		const state = this.calculationState(actor, target);
+		move = resolveMove(actor, move, state.field);
 		const actorSide = this.sideOf(actor);
 		const targetSide = this.sideOf(target);
 		const spread = ['allAdjacent', 'allAdjacentFoes'].includes(move.target);
@@ -124,6 +122,7 @@ export class HardEvaluation {
 				defenderSideConditions: state[targetSide].conditions,
 				defenderAllies: defenderAllies || state[targetSide].active,
 				isAllyTarget: actorSide === targetSide,
+				activePokemon: [...state.self.active, ...state.opponent.active],
 			});
 		return result;
 	}

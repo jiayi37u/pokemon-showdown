@@ -70,7 +70,7 @@ export function effectiveItem(pokemon: AIPokemon, field: Partial<FieldConditions
 
 /** Ability Shield protects its holder; Mold Breaker only suppresses breakable defending abilities. */
 export function defensiveAbility(
-	attacker: AIPokemon, defender: AIPokemon, move: AIMove, field: FieldConditions
+	attacker: AIPokemon, defender: AIPokemon, move: Pick<AIMove, 'id'>, field: FieldConditions
 ): string {
 	const ability = effectiveAbility(defender, field);
 	const dex = rulesDex(field);
@@ -81,7 +81,7 @@ export function defensiveAbility(
 	return ability;
 }
 
-export function grounded(pokemon: AIPokemon, field: FieldConditions, ignoreLevitate = false): boolean {
+export function grounded(pokemon: AIPokemon, field: Partial<FieldConditions>, ignoreLevitate = false): boolean {
 	if (field.gravity || pokemon.volatiles.has('smackdown') ||
 		(pokemon.volatiles.has('ingrain') && rulesDex(field).gen >= 4) ||
 		effectiveItem(pokemon, field) === 'ironball') return true;
@@ -91,13 +91,19 @@ export function grounded(pokemon: AIPokemon, field: FieldConditions, ignoreLevit
 		effectiveItem(pokemon, field) !== 'airballoon';
 }
 
-export function effectivePriority(pokemon: AIPokemon, move: AIMove, field: AbilityField): number {
+export function effectivePriority(
+	pokemon: AIPokemon,
+	move: Pick<AIMove, 'priority' | 'category' | 'type' | 'flags'> & Partial<Pick<AIMove, 'id' | 'calledMove'>>,
+	field: Partial<FieldConditions>
+): number {
 	const ability = effectiveAbility(pokemon, field);
+	if (move.calledMove) move = rulesDex(field).moves.get(move.id);
 	let priority = move.priority;
 	if (ability === 'prankster' && move.category === 'Status') priority++;
 	if (ability === 'galewings' && move.type === 'Flying' &&
 		(rulesDex(field).gen === 6 || pokemon.hpPercent === 100)) priority++;
 	if (ability === 'triage' && move.flags.heal) priority += 3;
+	if (move.id === 'grassyglide' && field.terrain === 'grassy' && grounded(pokemon, field)) priority++;
 	return priority;
 }
 

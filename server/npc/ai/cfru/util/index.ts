@@ -37,6 +37,9 @@ export {
 // Speed calculation utilities
 export {
 	getEffectiveSpeed,
+	compareSpeedOrder,
+	compareActionOrder,
+	type ActionOrder,
 	isFaster,
 	goesFirst,
 	canPriorityKO,

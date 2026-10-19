@@ -75,10 +75,11 @@ function runNegativesScoringTests() {
 		assertEqual(penalty, -100, '低HP时腹鼓应失败');
 	});
 
-	test('唱反调时腹鼓应大扣分 / Belly Drum fails with Contrary', () => {
+	test('唱反调腹鼓应被策略降分 / Belly Drum discouraged with Contrary', () => {
 		const ctx = createBellyDrumContext({ attackerAbility: 'Contrary', attackerHp: 100 });
 		const penalty = checkBellyDrum(ctx);
-		assertEqual(penalty, -100, '唱反调时腹鼓应失败');
+		assertEqual(penalty, -40, '唱反调腹鼓降到60分');
+		assert(!ctx.flags.hasNoEffect, '降低攻击不应标记为无效');
 	});
 
 	test('高HP时腹鼓应正常 / Belly Drum OK at high HP', () => {
@@ -670,11 +671,11 @@ function runNegativesScoringTests() {
 		assertEqual(penalty, 0, '高伤害不应扣分');
 	});
 
-	test('先制招式不应因低伤害扣分 / Priority move should not deduct for low damage', () => {
+	test('先制招式同样按低伤害扣分 / Priority move also receives low damage penalty', () => {
 		const ctx = createMockScoringContext('Normal', ['Normal'], 'Physical', 10);
 		ctx.move.priority = 1;
 		const penalty = checkLowDamage(ctx);
-		assertEqual(penalty, 0, '先制招式不应扣分');
+		assertEqual(penalty, -8, '先制招式没有伤害扣分豁免');
 	});
 
 	test('免疫招式不应重复扣分 / Immune move should not double penalize', () => {
@@ -784,22 +785,22 @@ function runNegativesScoringTests() {
 		assertEqual(penalty, 0, '上回合非 Protect 后不应扣分');
 	});
 
-	test('连续使用 Protect 应扣 20 分 / Consecutive Protect should deduct 20', () => {
+	test('连续使用 Protect 应扣 40 分 / Consecutive Protect should deduct 40', () => {
 		const ctx = createProtectContext('protect', false);
 		const penalty = checkProtectOveruse(ctx);
-		assertEqual(penalty, -20, '连续使用应扣 20 分');
+		assertEqual(penalty, -40, '连续使用应扣 40 分');
 	});
 
-	test('Detect 与 Protect 连用应扣 20 分 / Detect after Protect should deduct 20', () => {
+	test('Detect 与 Protect 连用应扣 40 分 / Detect after Protect should deduct 40', () => {
 		const ctx = createProtectContext('protect', false, 'detect');
 		const penalty = checkProtectOveruse(ctx);
-		assertEqual(penalty, -20, 'Detect 与 Protect 连用应扣 20 分');
+		assertEqual(penalty, -40, 'Detect 与 Protect 连用应扣 40 分');
 	});
 
-	test("King's Shield 连续使用应扣 20 分 / Consecutive King's Shield should deduct 20", () => {
+	test("King's Shield 连续使用应扣 40 分 / Consecutive King's Shield should deduct 40", () => {
 		const ctx = createProtectContext('kingsshield', false, 'kingsshield');
 		const penalty = checkProtectOveruse(ctx);
-		assertEqual(penalty, -20, "King's Shield 连续使用应扣 20 分");
+		assertEqual(penalty, -40, "King's Shield 连续使用应扣 40 分");
 	});
 
 	test('Quick Guard 不应受连续使用惩罚 / Quick Guard should not be penalized for consecutive use', () => {
@@ -1188,7 +1189,7 @@ function runNegativesScoringTests() {
 			sleepTurns: 2,
 		});
 		const bonus = rewardSleepTalkSnore(ctx);
-		assertEqual(bonus, 10, '睡眠状态使用梦话应加 10 分');
+		assertEqual(bonus, 30, '确定仍会睡眠时使用梦话应加 30 分');
 	});
 
 	test('梦话：非睡眠状态不应获得正面加分 / Sleep Talk not asleep no positive bonus', () => {

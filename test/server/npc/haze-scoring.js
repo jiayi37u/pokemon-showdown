@@ -34,7 +34,7 @@ function score(self, opponents, targetIndex = 0, reserve = []) {
 
 describe('Haze scoring', () => {
 	for (const [name, enemy, own, expected, noEffect] of [
-		['no stat changes', {}, {}, 0, true],
+		['no stat changes', {}, {}, 60, false],
 		['one Attack stage', { atk: 1 }, {}, 85, false],
 		['one Dragon Dance', { atk: 1, spe: 1 }, {}, 90, false],
 		['one Swords Dance', { atk: 2 }, {}, 100, false],
@@ -42,9 +42,9 @@ describe('Haze scoring', () => {
 		['three Dragon Dances', { atk: 3, spe: 3 }, {}, 136, false],
 		['maximum boosts', { atk: 6, spe: 6 }, {}, 140, false],
 		['own stat drops without enemy boosts', {}, { spa: -2, spe: -2 }, 120, false],
-		['enemy stat drops', { def: -2 }, {}, 0, false],
-		['own boosts', {}, { spa: 2 }, 0, false],
-		['equal benefits and costs', { atk: 2 }, { spa: 2 }, 0, false],
+		['enemy stat drops', { def: -2 }, {}, 60, false],
+		['own boosts', {}, { spa: 2 }, 60, false],
+		['equal benefits and costs', { atk: 2 }, { spa: 2 }, 60, false],
 		['mixed boosts and drops', { atk: 2, def: -1 }, { spa: -2, spe: 1 }, 110, false],
 		['accuracy and evasion', { accuracy: 2, evasion: 2 }, {}, 120, false],
 	]) {
@@ -70,7 +70,7 @@ describe('Haze scoring', () => {
 	it('should ignore fainted Pokemon and reserves', () => {
 		const fainted = { ...pokemon({ atk: 6 }, 2), fainted: true };
 		const reserve = { ...pokemon({ spa: -6 }, 3), active: false };
-		assert.equal(score([pokemon()], [pokemon(), fainted], 0, [reserve]).score, 0);
+		assert.equal(score([pokemon()], [pokemon(), fainted], 0, [reserve]).score, 60);
 	});
 
 	it('should not treat Haze as a targeted status move blocked by abilities', () => {
@@ -121,8 +121,8 @@ describe('NormalAI Haze decisions from public battle protocol', () => {
 				assert(afterHaze.startsWith('move 2'), afterHaze);
 				for (const target of ai.battleState.opponent.active) {
 					const result = ai.scoringEngine.scoreMove(ai.battleState, ai.battleState.self.active[0], buildAIMove(Dex.moves.get('haze'), 1), target);
-					assert.equal(result.score, 0);
-					assert.equal(result.flags.hasNoEffect, true);
+					assert.equal(result.score, 60);
+					assert.equal(result.flags.hasNoEffect, false);
 				}
 				assert(battle.choose('p2', afterHaze), battle.p2.choice.error);
 			} finally {

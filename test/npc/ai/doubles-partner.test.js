@@ -84,7 +84,7 @@ function runDoublesPartnerTests() {
 			move: { category: 'Status', type: 'Electric', id: 'thunderwave', flags: {} },
 		});
 		const penalty = checkTargetingPartnerStatus(ctx);
-		assert(penalty <= -100, `应有大负分, 实际为${penalty}`);
+		assertEqual(penalty, -40, '有害状态招式降到60分');
 	});
 
 	// 对队友用帮助不扣分

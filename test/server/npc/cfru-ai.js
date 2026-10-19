@@ -6,7 +6,7 @@ const { buildAIMove, trackedPokemonToAIPokemon } = require('../../../dist/server
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 const { makeAIPokemonSkeleton } = require('../../../dist/server/npc/ai/cfru/util/pokemon-builder');
 const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
-const { rewardSetupMove, rewardEncore } = require('../../../dist/server/npc/ai/cfru/scoring/positives');
+const { rewardSetupMove, rewardDefensiveSetup, rewardEncore } = require('../../../dist/server/npc/ai/cfru/scoring/positives');
 const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
 const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { getBestKOMove } = require('../../../dist/server/npc/ai/cfru/util/knockout');
@@ -24,13 +24,13 @@ function pokemon(overrides = {}) {
 }
 
 function score(id, {
-	actor = pokemon(), target = pokemon(), partner = false, field = {}, conditions = {}, positive, formatId = '',
+	actor = pokemon(), target = pokemon(), partner = false, field = {}, conditions = {}, positive, formatId = '', reserve = [],
 } = {}) {
 	const own = partner ? [actor, target] : [actor];
 	const foes = partner ? [pokemon()] : [target];
 	const state = {
 		turn: 1, isDoubles: partner,
-		self: { active: own, reserve: [], team: own, conditions },
+		self: { active: own, reserve, team: [...own, ...reserve], conditions },
 		opponent: { active: foes, reserve: [], team: foes, conditions },
 		field: { weather: '', terrain: '', trickroom: false, ...field },
 	};
@@ -42,6 +42,148 @@ function score(id, {
 const hasReason = (result, reason) => result.breakdown.details.some(detail => detail.reason.includes(reason));
 
 describe('CFRU scoring with production move metadata', () => {
+	it('separates speed benefits from Protect and attacking priority', () => {
+		const actor = pokemon();
+		actor.boosts.spe = 2;
+		for (const response of ['protect', 'bulletpunch']) {
+			const target = pokemon({ moves: [response, 'tackle'] });
+			assert.equal(score('agility', { actor, target }).score, 60, response);
+			assert(!hasReason(score('thunderwave', { actor, target }), 'Paralysis on faster target'), response);
+			assert.equal(score('psychic', { actor, target }).flags.goesFirst, response === 'protect');
+		}
+		assert.equal(score('psychic', { actor, target: pokemon({ ability: 'Prankster', moves: ['naturepower'] }) })
+			.flags.goesFirst, false, 'Nature Power is an attack with its source move priority');
+		const slow = pokemon();
+		slow.baseStats.spe = 100;
+		assert(score('agility', { actor: slow }).score > 100);
+		assert(hasReason(score('thunderwave', { actor: slow }), 'Paralysis on faster target'));
+		assert.equal(score('agility', { actor: slow, field: { trickroom: true } }).score, 60);
+		assert(!hasReason(score('thunderwave', { actor: slow, field: { trickroom: true } }), 'Paralysis on faster target'));
+	});
+
+	it('only rewards priority for an average-damage KO that overtakes a faster attacker', () => {
+		const slow = pokemon();
+		slow.baseStats.spe = 100;
+		const target = pokemon({ hp: 1, hpPercent: 100 / 300, moves: ['protect', 'tackle'] });
+		assert(hasReason(score('quickattack', { actor: slow, target }), 'Priority KO'));
+		assert(!hasReason(score('quickattack', { target }), 'Priority KO'), 'A speed tie is not slower');
+		const fast = pokemon();
+		fast.baseStats.spe = 300;
+		assert(!hasReason(score('quickattack', { actor: fast, target }), 'Priority KO'));
+		assert(!hasReason(score('quickattack', { actor: slow, target: { ...target, moves: ['extremespeed'] } }), 'Priority KO'));
+		const healthy = pokemon({ moves: ['tackle'] });
+		assert(hasReason(score('quickattack', { actor: slow, target: healthy }), 'Low damage'));
+		const damage = calculateDamage(slow, healthy, buildAIMove({ id: 'quickattack' }, 1), {});
+		const hp = Math.floor(damage.average) + 1;
+		const notReliable = { ...healthy, hp, hpPercent: hp / healthy.maxHp * 100 };
+		assert(!hasReason(score('quickattack', { actor: slow, target: notReliable }), 'Priority KO'));
+		const remaining = Math.ceil(damage.average * 1.5);
+		const twoHits = score('quickattack', { actor: slow, target: { ...healthy, hp: remaining,
+			hpPercent: remaining / healthy.maxHp * 100 } });
+		assert(twoHits.flags.can2HKO);
+		assert(!hasReason(twoHits, 'favorable 2HKO'), 'Priority alone gives no 2HKO speed reward');
+	});
+
+	it('rewards every setup stage with a nonincreasing curve', () => {
+		for (const [id, stat, positive] of [
+			['swordsdance', 'atk', rewardSetupMove], ['calmmind', 'spa', rewardSetupMove],
+			['irondefense', 'def', rewardDefensiveSetup], ['amnesia', 'spd', rewardDefensiveSetup],
+			['cosmicpower', 'def', rewardDefensiveSetup],
+		]) {
+			let previous = Infinity;
+			for (const stage of [-6, -3, -1, 0, 1, 2, 3, 4, 5, 6]) {
+				const actor = pokemon();
+				actor.boosts[stat] = stage;
+				const result = score(id, { actor, positive });
+				assert(result.score <= previous, `${id} at ${stage}`);
+				if (stage < 6) assert(result.score > 100, `${id} at ${stage}`);
+				assert.equal(100 + result.breakdown.details.reduce((sum, detail) => sum + detail.amount, 0), result.score);
+				previous = result.score;
+			}
+		}
+	});
+
+	it('only rewards pivoting into an available reserve owned by the acting trainer', () => {
+		const actor = pokemon({ ownerSide: 'p2' });
+		for (const id of ['uturn', 'voltswitch', 'flipturn']) {
+			assert(!hasReason(score(id, { actor }), 'Pivot move'));
+			for (const overrides of [{ ownerSide: 'p4' }, { fainted: true, hp: 0 }, { active: true }]) {
+				const reserve = [pokemon({ slot: 2, active: false, ownerSide: 'p2', ...overrides })];
+				assert(!hasReason(score(id, { actor, reserve }), 'Pivot move'));
+			}
+			const reserve = [pokemon({ slot: 2, active: false, ownerSide: 'p2' })];
+			assert(hasReason(score(id, { actor, reserve }), 'Pivot move'));
+		}
+	});
+
+	it('uses 60 for tactical discouragement and zero for confirmed failures', () => {
+		for (const [id, options] of [
+			['recover', {}], ['protect', { actor: pokemon({ lastMove: 'protect' }) }], ['haze', {}],
+			['bellydrum', { actor: pokemon({ ability: 'Contrary' }) }],
+			['swordsdance', { actor: pokemon({ ability: 'Contrary' }) }],
+		]) {
+			const result = score(id, options);
+			assert.equal(result.score, 60, id);
+			assert.equal(result.flags.hasNoEffect, false, id);
+			assert.equal(result.breakdown.positives, 0, id);
+		}
+		assert.equal(score('bellydrum', { actor: pokemon({ hp: 120, hpPercent: 40, ability: 'Contrary' }) }).score, 0);
+		assert.equal(score('toxic', { target: pokemon({ status: 'tox' }) }).score, 0);
+		assert.equal(score('earthquake', { target: pokemon({ types: ['Flying'] }) }).score, 0);
+	});
+
+	it('discourages low-HP setup without declaring it ineffective or rewarding it again', () => {
+		for (const id of ['swordsdance', 'nastyplot', 'dragondance', 'quiverdance', 'irondefense', 'cosmicpower', 'stockpile']) {
+			for (const hpPercent of [20, 40]) {
+				const result = score(id, { actor: pokemon({ hp: hpPercent * 3, hpPercent }) });
+				assert.equal(result.score, 60, id);
+				assert.equal(result.breakdown.positives, 0, id);
+				assert.equal(result.flags.hasNoEffect, false, id);
+				assert.equal(100 + result.breakdown.details.reduce((sum, detail) => sum + detail.amount, 0), result.score);
+			}
+		}
+		assert(score('swordsdance', { actor: pokemon({ hp: 123, hpPercent: 41 }) }).score > 60);
+		const actor = pokemon({ hp: 60, hpPercent: 20 });
+		actor.boosts.atk = 6;
+		assert.equal(score('swordsdance', { actor }).score, 0, 'Confirmed failure still scores zero');
+		assert(!hasReason(score('recover', { actor }), 'Setup discouraged'));
+		assert(!hasReason(score('tidyup', { actor }), 'Setup discouraged'), 'Clearing the field has independent value');
+		assert(hasReason(score('curse', { actor: { ...actor, types: ['Normal'] } }), 'Setup discouraged'));
+		assert(!hasReason(score('curse', { actor: { ...actor, types: ['Ghost'] } }), 'Setup discouraged'));
+	});
+
+	it('discourages offensive boosts without a matching attack, preserving indirect and variable-power benefits', () => {
+		for (const [id, attack] of [['swordsdance', 'psychic'], ['nastyplot', 'psychocut'],
+			['swordsdance', 'bodypress'], ['swordsdance', 'seismictoss'], ['swordsdance', 'foulplay']]) {
+			assert.equal(score(id, { actor: pokemon({ moves: [id, attack] }) }).score, 60, attack);
+		}
+		for (const attack of ['lowkick', 'return', 'storedpower', 'powertrip', 'batonpass', 'naturepower']) {
+			assert(!hasReason(score('swordsdance', { actor: pokemon({ moves: ['swordsdance', attack] }) }),
+				'No attack benefits'), attack);
+		}
+		assert(!hasReason(score('calmmind', { actor: pokemon({ moves: ['calmmind', 'bodypress'] }) }),
+			'No attack benefits'), 'Special Defense still has value');
+	});
+
+	it('discourages utility with no useful target without assuming unrevealed moves are absent', () => {
+		assert.equal(score('disable').score, 60);
+		assert(score('disable', { actor: pokemon({ ability: 'Prankster' }), target: pokemon({ lastMove: 'tackle' }) }).score > 100);
+		for (const id of ['disable', 'taunt']) {
+			assert.equal(score(id, { target: pokemon({ item: 'Mental Herb', lastMove: 'tackle' }), formatId: 'gen9customgame' }).score, 60);
+			assert(!hasReason(score(id, { target: pokemon({ item: 'Mental Herb', lastMove: 'tackle' }),
+				formatId: 'gen4customgame' }), 'Mental Herb'));
+		}
+		assert.equal(score('taunt', { target: pokemon({ moves: ['tackle', 'psychic', 'icebeam', 'thunderbolt'] }) }).score, 60);
+		assert(score('taunt', { target: pokemon({ moves: ['tackle'] }) }).score >= 100);
+		assert(score('taunt', { target: pokemon({ moves: ['tackle', 'psychic', 'recover', 'thunderbolt'] }) }).score > 100);
+		for (const moves of [['recover', 'protect'], ['seismictoss', 'nightshade']]) {
+			assert.equal(score('helpinghand', { partner: true, target: pokemon({ slot: 2, moves }) }).score, 60);
+		}
+		for (const moves of [['lowkick'], ['bulletseed'], ['naturepower']]) {
+			assert(!hasReason(score('helpinghand', { partner: true, target: pokemon({ slot: 2, moves }) }), 'no partner attack'));
+		}
+	});
+
 	it('assigns zero damage and no KO rewards to Ground attacks blocked by Air Balloon', () => {
 		const actor = pokemon({ types: ['Ground'], moves: ['earthquake'], baseStats: {
 			hp: 300, atk: 400, def: 200, spa: 200, spd: 200, spe: 300,
@@ -152,7 +294,7 @@ describe('CFRU scoring with production move metadata', () => {
 
 	it('logs every paralysis bonus and does not reward burning or paralyzing immune targets', () => {
 		const result = score('thunderwave');
-		assert.equal(result.breakdown.positives, 6);
+		assert.equal(result.breakdown.positives, 6); // A speed tie is not a faster target.
 		assert(hasReason(result, 'Reliable accuracy for paralysis'));
 		assert.equal(100 + result.breakdown.details.reduce((sum, d) => sum + d.amount, 0), result.score);
 		for (const [id, target] of [
@@ -225,7 +367,7 @@ describe('CFRU scoring with production move metadata', () => {
 	it('rejects stat-lowering moves on a partner while allowing Coaching', () => {
 		const target = pokemon({ slot: 2 });
 		const harmful = score('tickle', { target, partner: true });
-		assert.equal(harmful.score, 0);
+		assert.equal(harmful.score, 60);
 		assert(hasReason(harmful, 'Lowering partner stats'));
 		const helpful = score('coaching', { target, partner: true });
 		assert(helpful.score > 0);
@@ -286,7 +428,7 @@ describe('CFRU scoring with production move metadata', () => {
 		}).score > rewards[0]);
 	});
 
-	it('recognizes type immunity when rewarding Encore', () => {
+	it('does not reward Encore for an attacking last move, even if immune', () => {
 		for (const [move, type] of [
 			['earthquake', 'Flying'], ['thunderbolt', 'Ground'], ['tackle', 'Ghost'], ['shadowball', 'Normal'],
 			['psychic', 'Dark'], ['dragonclaw', 'Fairy'], ['sludgebomb', 'Steel'], ['nightshade', 'Normal'],
@@ -294,8 +436,32 @@ describe('CFRU scoring with production move metadata', () => {
 			const target = pokemon({ lastMove: move });
 			const neutral = score('encore', { target, actor: pokemon({ types: ['Water'] }), positive: rewardEncore });
 			const immune = score('encore', { target, actor: pokemon({ types: [type] }), positive: rewardEncore });
-			assert(immune.score > neutral.score, `${move} into ${type}`);
+			assert.equal(immune.score, neutral.score, `${move} into ${type}`);
 		}
+	});
+
+	it('requires strict speed or priority advantage to reward Encore', () => {
+		const target = pokemon({ lastMove: 'swordsdance' });
+		assert.equal(score('encore', { target }).score, 60, 'A speed tie is not reliable');
+		const actor = pokemon({ ability: 'Prankster' });
+		assert.equal(score('encore', { actor, target }).score, 120);
+		assert.equal(score('encore', { actor, target, field: { trickroom: true } }).score, 120,
+			'Trick Room does not reverse priority');
+		assert.equal(score('encore', { actor, target: { ...target, moves: ['extremespeed', 'swordsdance'] } }).score, 60,
+			'An opposing priority move can change the last move first');
+		assert.equal(score('encore', { actor, target: { ...target, lastMove: 'encore' } }).score, 0,
+			'Encore cannot lock Encore');
+		const slow = pokemon({ baseStats: { ...actor.baseStats, spe: 100 } });
+		assert.equal(score('encore', { actor: slow, target: { ...target, lastMove: '' } }).score, 60,
+			'A slower Encore can succeed after the target acts');
+	});
+
+	it('does not invent a known remaining sleep duration for random sleep or Comatose', () => {
+		const asleep = pokemon({ status: 'slp', sleepTurns: 0 });
+		assert(score('psychic', { actor: asleep }).score > 0);
+		assert.equal(score('sleeptalk', { actor: asleep }).score, 110);
+		assert(score('psychic', { actor: pokemon({ ability: 'Comatose' }) }).score > 0);
+		assert.equal(score('sleeptalk', { actor: pokemon({ ability: 'Comatose' }) }).score, 110);
 	});
 
 	it('uses recoil metadata for Reckless damage and reliable KO selection', () => {
@@ -308,5 +474,152 @@ describe('CFRU scoring with production move metadata', () => {
 		assert(reckless.average > normal.average);
 		const best = getBestKOMove(actor, { ...target, hp: 1, hpPercent: 100 / target.maxHp }, [move, buildAIMove({ id: 'return' }, 2)], field);
 		assert.equal(best.id, 'return');
+	});
+});
+
+describe('NPC public mechanics and utility regressions from random battles', () => {
+	const field = { formatId: 'gen9customgame', weather: '', terrain: '', trickroom: false };
+	const move = id => buildAIMove({ id }, 1, field.formatId);
+	const damage = (actor, target, id, context) => calculateDamage(actor, target, move(id), field, undefined, context);
+	const util = require('../../../dist/server/npc/ai/cfru/util/type-calc');
+	const { effectivePriority } = require('../../../dist/server/npc/ai/cfru/util/mechanics');
+
+	for (const [species, id, type] of [
+		['Ogerpon', 'ivycudgel', 'Grass'], ['Ogerpon-Wellspring', 'ivycudgel', 'Water'],
+		['Ogerpon-Wellspring-Tera', 'ivycudgel', 'Water'], ['Ogerpon-Hearthflame', 'ivycudgel', 'Fire'],
+		['Ogerpon-Cornerstone', 'ivycudgel', 'Rock'], ['Tauros', 'ragingbull', 'Normal'],
+		['Tauros-Paldea-Combat', 'ragingbull', 'Fighting'], ['Tauros-Paldea-Blaze', 'ragingbull', 'Fire'],
+		['Tauros-Paldea-Aqua', 'ragingbull', 'Water'],
+	]) {
+		it(`resolves ${id} from the public ${species} forme`, () => {
+			const actor = pokemon({ species });
+			const resolved = util.resolveMove(actor, move(id), field);
+			assert.equal(resolved.type, type);
+			assert.equal(util.resolveMove(actor, resolved, field).type, type);
+			if (type === 'Water') assert.equal(damage(actor, pokemon({ ability: 'Water Absorb' }), id).average, 0);
+		});
+	}
+
+	it('Grassy Glide gains priority only while grounded in Grassy Terrain', () => {
+		const actor = pokemon({ ability: '' });
+		assert.equal(effectivePriority(actor, move('grassyglide'), field), 0);
+		assert.equal(effectivePriority(actor, move('grassyglide'), { ...field, terrain: 'grassy' }), 1);
+		assert.equal(effectivePriority({ ...actor, item: 'Air Balloon' }, move('grassyglide'), { ...field, terrain: 'grassy' }), 0);
+		assert.equal(effectivePriority({ ...actor, item: 'Air Balloon' }, move('grassyglide'),
+			{ ...field, terrain: 'grassy', gravity: true }), 1);
+	});
+
+	it('Unaware ignores both positive and negative relevant stages, while Mold Breaker bypasses it', () => {
+		const actor = pokemon();
+		const target = pokemon({ ability: 'Unaware' });
+		const neutral = damage(actor, target, 'psychocut').average;
+		for (const stage of [-4, 4]) {
+			const boosted = { ...actor, boosts: { ...actor.boosts, atk: stage } };
+			assert.equal(damage(boosted, target, 'psychocut').average, neutral);
+			assert.notEqual(damage({ ...boosted, ability: 'Mold Breaker' }, target, 'psychocut').average, neutral);
+			const defensive = { ...target, ability: '', boosts: { ...target.boosts, def: stage } };
+			assert.equal(damage({ ...actor, ability: 'Unaware' }, defensive, 'psychocut').average, neutral);
+			const press = { ...actor, boosts: { ...actor.boosts, def: stage } };
+			assert.equal(damage(press, target, 'bodypress').average, damage(actor, target, 'bodypress').average);
+		}
+		assert.equal(score('swordsdance', { actor, target }).score, 60);
+		assert.equal(score('calmmind', { actor, target }).score, 60);
+		assert(score('swordsdance', { actor: { ...actor, ability: 'Mold Breaker' }, target }).score > 60);
+		const indirect = { ...actor, moves: ['swordsdance', 'storedpower'] };
+		assert(score('swordsdance', { actor: indirect, target }).score > 60);
+	});
+
+	it('Foul Play borrows target Attack and stages, but retains user ability and item modifiers', () => {
+		const actor = pokemon();
+		const target = pokemon({ types: ['Normal'] });
+		const neutral = damage(actor, target, 'foulplay').average;
+		assert.equal(damage({ ...actor, baseStats: { ...actor.baseStats, atk: 400 }, boosts: { ...actor.boosts, atk: 4 } },
+			target, 'foulplay').average, neutral);
+		assert(damage(actor, { ...target, baseStats: { ...target.baseStats, atk: 400 } }, 'foulplay').average > neutral * 1.8);
+		assert(damage(actor, { ...target, boosts: { ...target.boosts, atk: 2 } }, 'foulplay').average > neutral * 1.8);
+		assert.equal(damage(actor, { ...target, ability: 'Huge Power', item: 'Choice Band' }, 'foulplay').average, neutral);
+		assert(damage({ ...actor, ability: 'Huge Power' }, target, 'foulplay').average > neutral * 1.8);
+		assert.equal(damage(actor, { ...target, ability: 'Unaware' }, 'foulplay').average, neutral);
+	});
+
+	for (const id of ['tripleaxel', 'triplekick']) {
+		it(`${id} sums increasing per-hit powers including Technician and first-hit protection`, () => {
+			for (const ability of ['', 'Technician']) {
+				const actor = pokemon({ ability });
+				const target = pokemon({ types: ['Normal'] });
+				const raw = move(id);
+				const hits = [1, 2, 3].map(hit => calculateDamage(actor, target,
+					{ ...raw, basePower: raw.basePower * hit, multihit: null }, field));
+				const result = damage(actor, target, id);
+				assert.equal(result.max, hits.reduce((n, h) => n + h.max, 0));
+				const shield = damage(actor, { ...target, ability: 'Multiscale' }, id);
+				assert.equal(shield.max, Math.floor(hits[0].max / 2) + hits[1].max + hits[2].max);
+			}
+		});
+	}
+
+	it('redirection respects suppression, bypass abilities, spread targets and the user itself', () => {
+		const actor = pokemon();
+		const target = pokemon({ types: ['Normal'] });
+		const holder = pokemon({ ability: 'Lightning Rod' });
+		const context = { isDoubles: true, numAliveTargets: 2, activePokemon: [actor, target, holder] };
+		assert.equal(damage(actor, target, 'thunderbolt', context).average, 0);
+		for (const ability of ['Mold Breaker', 'Stalwart', 'Propeller Tail']) {
+			assert(damage({ ...actor, ability }, target, 'thunderbolt', context).average > 0);
+		}
+		assert(damage(actor, target, 'discharge', context).average > 0);
+		assert(damage(actor, target, 'thunderbolt', { ...context, activePokemon: [actor, target,
+			{ ...holder, volatiles: new Set(['gastroacid']) }] }).average > 0);
+		assert(damage(actor, target, 'thunderbolt', { ...context, activePokemon: [actor, target,
+			{ ...holder, fainted: true }] }).average > 0);
+		const user = { ...actor, ability: 'Lightning Rod' };
+		assert(damage(user, target, 'thunderbolt', { ...context, activePokemon: [user, target] }).average > 0);
+	});
+
+	it('Substitute is discouraged when its HP cost makes residual damage lethal, but immunity/recovery can save it', () => {
+		const actor = pokemon({ hp: 85, maxHp: 272, hpPercent: 85 / 272 * 100, status: 'psn', item: 'Leftovers' });
+		assert.equal(score('substitute', { actor }).score, 60);
+		assert(score('substitute', { actor: { ...actor, ability: 'Magic Guard' } }).score > 60);
+		assert(score('substitute', { actor: { ...actor, ability: 'Poison Heal' } }).score > 60);
+		assert(score('substitute', { actor, field: { terrain: 'grassy' } }).score > 60);
+		assert.equal(score('substitute', { actor: { ...actor, hp: 68, hpPercent: 25 } }).score, 0);
+	});
+
+	it('hazards are discouraged only with publicly confirmed absence of replacements, including Multi', () => {
+		for (const count of [1, 2]) {
+			const actor = pokemon();
+			const foes = Array.from({ length: count }, () => pokemon());
+			const state = { turn: 1, isDoubles: count === 2, field,
+				self: { active: [actor], reserve: [], team: [actor], conditions: {} },
+				opponent: { remaining: count, active: foes, reserve: [], team: foes, conditions: {} } };
+			const engine = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache());
+			for (const id of ['stealthrock', 'spikes', 'toxicspikes', 'stickyweb']) {
+				assert.equal(engine.scoreMove(state, actor, move(id), foes[0]).score, 60);
+				for (const remaining of [undefined, count + 1]) {
+					assert(engine.scoreMove({ ...state, opponent: { ...state.opponent, remaining } }, actor, move(id), foes[0]).score > 60);
+				}
+			}
+		}
+	});
+
+	it('Defog with no immediate clearing benefit is discouraged, while hazards and evasion preserve its value', () => {
+		assert.equal(score('defog').score, 60);
+		assert(score('defog', { conditions: { stealthrock: true } }).score > 60);
+		const target = pokemon(); target.boosts.evasion = 1;
+		assert(score('defog', { target }).score > 60);
+	});
+
+	it('spread double-KO safety checks both targets independently', () => {
+		const actor = pokemon({ baseStats: { ...pokemon().baseStats, spe: 200 } });
+		const slow = pokemon({ hp: 1, hpPercent: 1 / 3, baseStats: { ...actor.baseStats, spe: 100 } });
+		const fast = pokemon({ hp: 1, hpPercent: 1 / 3, baseStats: { ...actor.baseStats, spe: 300 } });
+		const state = { turn: 1, isDoubles: true, field,
+			self: { active: [actor], reserve: [], team: [actor], conditions: {} },
+			opponent: { active: [slow, fast], reserve: [], team: [slow, fast], conditions: {} } };
+		const engine = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache());
+		assert(!hasReason(engine.scoreMove(state, actor, move('sludgewave'), slow), 'Outspeeds for double KO'));
+		const slower = { ...fast, baseStats: { ...fast.baseStats, spe: 150 } };
+		assert(hasReason(engine.scoreMove({ ...state, opponent: { ...state.opponent, active: [slow, slower] } },
+			actor, move('sludgewave'), slow), 'Outspeeds for double KO'));
 	});
 });

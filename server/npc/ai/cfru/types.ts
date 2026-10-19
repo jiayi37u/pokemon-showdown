@@ -90,6 +90,14 @@ export interface AIPokemon {
 	toxicCounter: number;
 	/** Public attack hits received, retained across switches and transformations. */
 	timesAttacked?: number;
+	/** Public faint events for this owner's party, including repeated faints after revival. */
+	faintedAllies?: number;
+	/** Moves used during the current stay, for Last Resort. Undefined means unobserved. */
+	usedMoves?: string[];
+	/** Revealed Terastallization only; never the unrevealed team configuration. */
+	terastallized?: string;
+	stellarBoostedTypes?: string[];
+	originalTypes?: string[];
 
 	/** Types */
 	types: string[];
@@ -281,6 +289,7 @@ export interface BattleState {
 	opponent: {
 		/** Public team size minus observed fainted members. */
 		remaining?: number;
+		remainingByOwner?: Record<string, number | undefined>,
 		/** Active Pokemon */
 		active: AIPokemon[];
 		/** Previously observed opposing party members. */

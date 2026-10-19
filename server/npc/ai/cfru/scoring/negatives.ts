@@ -15,7 +15,8 @@ import { getTypeEffectiveness, getMoveInteraction, resolveMove } from '../util/t
 import { buildAIMove } from '../state-builder';
 import { effectiveAbility, defensiveAbility, effectiveItem, rulesDex } from '../util/mechanics';
 import {
-	delayedMoveFailure, fieldEffectFailure, inflictedStatus, isImmediateRecovery, statusFailure, volatileEffectFailure,
+	delayedMoveFailure, fieldEffectFailure, inflictedStatus, statusFailure, volatileEffectFailure,
+	beneficialTargets, recoveryRecipients, recoveryCuresStatus, boostRecipients, boostChanges, boostsCanChange,
 } from '../util/move-effects';
 import { itemMoveFailure, itemRemovalFailure } from '../util/items';
 import { compareSpeedOrder } from '../util/speed';
@@ -82,7 +83,8 @@ export const checkStatusOpportunity: NegativeScoringFunction = ctx => {
 					defensiveAbility(ctx.attacker, p, move, ctx.state.field) === 'unaware')) {
 					return false;
 				}
-				const resolved = resolveMove(ctx.attacker, buildAIMove({ id }, 1, ctx.state.field.formatId), ctx.state.field);
+				const resolved = resolveMove(ctx.attacker, buildAIMove({ id }, 1, ctx.state.field.formatId),
+					ctx.state.field, ctx.target);
 				const stat = move.overrideOffensiveStat || (resolved.category === 'Physical' ? 'atk' : 'spa');
 				return raised.some(raisedStat => raisedStat === stat);
 			});
@@ -751,6 +753,19 @@ export const checkStatBoostWasted: NegativeScoringFunction = (ctx) => {
 	if (ctx.move.category !== 'Status') return 0;
 
 	const data = ctx.dex.moves.get(ctx.move.id);
+	const recipientBoosts = boostChanges(ctx.move, ctx.state);
+	if (recipientBoosts && (['gearup', 'magneticflux', 'acupressure', 'decorate', 'coaching'].includes(ctx.move.id) ||
+		['adjacentAlly', 'adjacentAllyOrSelf'].includes(data.target))) {
+		const recipients = boostRecipients(ctx.state, ctx.attacker, ctx.target, ctx.move);
+		if (!recipients.some(p => boostsCanChange(p, recipientBoosts, ctx.state))) {
+			ctx.flags.hasNoEffect = true;
+			ctx.adjustments.push({ reason: 'No recipient can receive these stat changes', amount: -100, category: 'negative' });
+			return -100;
+		}
+		if (recipients.every(p => effectiveAbility(p, ctx.state.field) === 'contrary')) {
+			return discourageMove(ctx, 'Contrary turns beneficial boosts into stat drops');
+		}
+	}
 	if (data.target !== 'self' || !data.boosts) return 0;
 	const ability = effectiveAbility(ctx.attacker, ctx.state.field);
 	const multiplier = ability === 'contrary' ? -1 : ability === 'simple' ? 2 : 1;
@@ -874,27 +889,18 @@ export const checkRoar: NegativeScoringFunction = (ctx) => {
 	if (!phazingMoves.includes(moveId)) return 0;
 
 	const targetAbility = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
-
-	// Suction Cups prevents phazing
-	if (targetAbility === 'suctioncups') {
-		ctx.adjustments.push({
-			reason: 'Suction Cups prevents phazing',
-			amount: -10,
-			category: 'negative',
-		});
+	const owner = ctx.target.ownerSide;
+	const remaining = owner ? ctx.state.opponent.remainingByOwner?.[owner] : ctx.state.opponent.remaining;
+	const active = ctx.state.opponent.active.filter(p => !p.fainted && (!owner || p.ownerSide === owner)).length;
+	const noReserve = remaining !== undefined && remaining <= active;
+	const reason = targetAbility === 'suctioncups' ? 'Suction Cups prevents phazing' :
+		ctx.target.volatiles.has('ingrain') ? 'Ingrain prevents phazing' :
+		noReserve ? "No reserve in the target owner's party" : '';
+	if (reason) {
+		const amount = ctx.move.category === 'Status' ? -100 : -10;
 		ctx.flags.hasNoEffect = ctx.move.category === 'Status';
-		return -10;
-	}
-
-	// Ingrain (rooted) prevents phazing
-	if (ctx.target.volatiles.has('ingrain')) {
-		ctx.adjustments.push({
-			reason: 'Ingrain prevents phazing',
-			amount: -10,
-			category: 'negative',
-		});
-		ctx.flags.hasNoEffect = ctx.move.category === 'Status';
-		return -10;
+		ctx.adjustments.push({ reason, amount, category: 'negative' });
+		return amount;
 	}
 
 	return 0;
@@ -1041,18 +1047,6 @@ export const checkExplosion: NegativeScoringFunction = (ctx) => {
 
 	if (!['explosion', 'selfdestruct', 'mindblown', 'mistyexplosion'].includes(moveId)) {
 		return 0;
-	}
-
-	// Damp prevents explosion
-	// Would need to check all Pokemon on field for Damp
-	const defAbility = effectiveAbility(ctx.target, ctx.state.field);
-	if (defAbility === 'damp') {
-		ctx.adjustments.push({
-			reason: 'Damp prevents Explosion',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
 	}
 
 	// Don't explode if we have healthy Pokemon and won't KO
@@ -1237,31 +1231,15 @@ export const checkProtectOveruse: NegativeScoringFunction = (ctx) => {
  * Check if healing is unnecessary
  */
 export const checkHealingUnnecessary: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-
-	if (!isImmediateRecovery(ctx.dex.moves.get(moveId))) return 0;
-
-	// Don't heal at high HP
-	if (ctx.attacker.hpPercent > 80) {
-		return discourageMove(ctx, 'Healing unnecessary at high HP');
-	}
-
-	if (ctx.attacker.hpPercent > 70) {
-		ctx.adjustments.push({
-			reason: 'Healing less effective at moderate HP',
-			amount: -5,
-			category: 'negative',
-		});
-		return -5;
-	}
-
-	if (ctx.attacker.hpPercent > 60) {
-		ctx.adjustments.push({
-			reason: 'Healing less effective at moderate HP',
-			amount: -2,
-			category: 'negative',
-		});
-		return -2;
+	const recipients = recoveryRecipients(ctx.state, ctx.attacker, ctx.target, ctx.move);
+	if (!recipients.length) return 0;
+	if (recoveryCuresStatus(ctx.move) && recipients.some(p => p.status)) return 0;
+	const hp = Math.min(...recipients.map(p => p.hpPercent));
+	if (hp > 80) return discourageMove(ctx, 'Healing unnecessary: recipients have high HP');
+	const amount = hp > 70 ? -5 : hp > 60 ? -2 : 0;
+	if (amount) {
+		ctx.adjustments.push({ reason: 'Healing less effective at moderate HP', amount, category: 'negative' });
+		return amount;
 	}
 
 	// Whether the user wakes before acting belongs to the shared sleep gate.
@@ -1408,7 +1386,7 @@ export const checkTargetingPartnerStatus: NegativeScoringFunction = (ctx) => {
 		'decorate', // Boost partner stats
 	];
 
-	if (goodPartnerMoves.includes(moveId)) {
+	if (goodPartnerMoves.includes(moveId) || beneficialTargets(ctx.state, ctx.attacker, ctx.move)?.includes(ctx.target)) {
 		return 0; // Don't penalize
 	}
 

@@ -81,6 +81,26 @@ let game;
 afterEach(() => { game?.destroy(); game = undefined; });
 
 describe('Production NPCMultiManager decisions', () => {
+	for (const side of ['p2', 'p4']) for (const move of ['healpulse', 'floralhealing', 'decorate', 'acupressure']) {
+		it(`Normal ${side} issues ${move} to an allied field position`, () => {
+			const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
+			const support = { ...passive, moves: [move] };
+			game = createMulti([[passive], [side === 'p2' ? support : passive],
+				[passive], [side === 'p4' ? support : passive]], false, 'normal');
+			const recipient = game.battle[side === 'p2' ? 'p4' : 'p2'].active[0];
+			recipient.hp = Math.floor(recipient.maxhp / 4);
+			game.battle.add('-damage', recipient, recipient.getHealth);
+			game.battle.makeRequest('move');
+			game.decide();
+			const choice = game.choices.find(c => c.side === side).choice;
+			if (move === 'acupressure') assert(/^move 1 -[12]$/.test(choice), choice);
+			else assert.equal(choice, side === 'p2' ? 'move 1 -2' : 'move 1 -1');
+			game.play(['move 1', null, 'move 1', null]);
+			assert(!game.battle.log.some(line => /^\|-boost\|p[13]/.test(line)));
+			if (['healpulse', 'floralhealing'].includes(move)) assert(recipient.hp > recipient.maxhp / 2);
+		});
+	}
+
 	for (const difficulty of ['normal', 'hard']) {
 		for (const side of ['p3', 'p4']) for (const move of ['batonpass', 'shedtail']) {
 			it(`${difficulty}: ${side} ${move} shares inherited state with both production controllers`, () => {

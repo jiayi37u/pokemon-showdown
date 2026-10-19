@@ -13,6 +13,7 @@
  * @license MIT
  */
 
+import { moveTargets } from './cfru/util/move-effects';
 import { effectiveAbility, effectiveItem, replaceActivePokemon } from './cfru/util/mechanics';
 
 import type { ObjectReadWriteStream } from '../../../lib/streams';
@@ -308,7 +309,8 @@ export class NormalAI extends NPCBattleAI {
 					const opponents = this.battleState.opponent.active.filter(p => !p.fainted);
 
 					for (const [slot, scores] of this.lastMoveScoresByTarget) {
-						const target = opponents.find(p => p.slot === slot);
+						const target = slot < 0 ? this.battleState.self.active.find(p => p.slot === -slot) :
+							opponents.find(p => p.slot === slot);
 						const targetName = target ? target.species : `Slot ${slot}`;
 						scoresByTargetName.set(targetName, scores);
 
@@ -401,94 +403,47 @@ export class NormalAI extends NPCBattleAI {
 			};
 		}
 
-		// In doubles, evaluate moves against each opponent and find the best move+target combo
-		let bestScore = -Infinity;
-		let bestMoves: { move: MoveChoice; aiMove: AIMove; targetSlot: number }[] = [];
-		const allScoresByTarget: Map<number, MoveScore[]> = new Map(); // slot -> scores
-
-		// First pass: collect all scores for all targets
-		for (const target of opponents) {
-			const targetSlot = target.slot;
-
-			// Score all moves against this target
-			const scores = this.scoringEngine.scoreMoves(
-				this.battleState,
-				attacker,
-				aiMoves,
-				target
-			);
+		const allScoresByTarget = new Map<number, MoveScore[]>();
+		let candidates: { choice: MoveChoice, score: MoveScore, position: number }[] = [];
+		for (const target of [...opponents, ...this.battleState.self.active.filter(p => !p.fainted)]) {
+			const eligible = aiMoves.filter(move => moveTargets(this.battleState!, attacker, move).includes(target));
+			if (!eligible.length) continue;
+			const scores = this.scoringEngine.scoreMoves(this.battleState, attacker, eligible, target);
 			this.preferReliableKOs(attacker, target, scores);
-
-			// Store scores for this target (for logging)
-			allScoresByTarget.set(targetSlot, scores);
-		}
-
-		// Second pass: find best move
-		// - For spread moves: use maximum score across all targets
-		// - For single-target moves: compare against each target separately
-		for (let i = 0; i < aiMoves.length; i++) {
-			const moveTarget = moves[i].target;
-			const isSpreadMove = moveTarget === 'allAdjacentFoes' || moveTarget === 'allAdjacent' || moveTarget === 'all';
-
-			if (isSpreadMove) {
-				// For spread moves, use the maximum score across all targets
-				let maxScore = -Infinity;
-				let maxTargetSlot = opponents[0].slot;
-				for (const [slot, scores] of allScoresByTarget) {
-					if (scores[i].score > maxScore) {
-						maxScore = scores[i].score;
-						maxTargetSlot = slot;
-					}
-				}
-
-				if (maxScore > bestScore) {
-					bestScore = maxScore;
-					bestMoves = [{ move: moves[i], aiMove: aiMoves[i], targetSlot: maxTargetSlot }];
-				} else if (maxScore === bestScore) {
-					bestMoves.push({ move: moves[i], aiMove: aiMoves[i], targetSlot: maxTargetSlot });
-				}
-			} else {
-				// For single-target moves, check each target separately
-				for (const [slot, scores] of allScoresByTarget) {
-					const score = scores[i].score;
-					if (score > bestScore) {
-						bestScore = score;
-						bestMoves = [{ move: moves[i], aiMove: aiMoves[i], targetSlot: slot }];
-					} else if (score === bestScore) {
-						bestMoves.push({ move: moves[i], aiMove: aiMoves[i], targetSlot: slot });
-					}
-				}
+			const position = this.battleState.self.active.includes(target) ? -target.slot : target.slot;
+			allScoresByTarget.set(position, scores);
+			for (let i = 0; i < eligible.length; i++) {
+				candidates.push({ choice: moves[aiMoves.indexOf(eligible[i])], score: scores[i], position });
 			}
 		}
-
-		// Store scores for logging - combine scores from all targets
-		// For now, store the scores for the best target (or first if single target)
-		const chosenTargetSlot = bestMoves.length > 0 ? bestMoves[0].targetSlot : opponents[0].slot;
-		this.lastMoveScores = allScoresByTarget.get(chosenTargetSlot) || [];
-
-		// Also store all scores by target for detailed logging
+		// Keep a legal fallback for an entire set of unusable ally-only moves.
+		if (!candidates.length) {
+			const bestMove = this.prng.sample(moves);
+			this.lastMoveScores = this.scoringEngine.scoreMoves(this.battleState, attacker, aiMoves, opponents[0]);
+			return { bestMove, chosenMove: aiMoves[moves.indexOf(bestMove)] };
+		}
+		// Preserve one candidate per spread move and stable move order for seeded tie-breaking.
+		candidates = candidates.filter(candidate => {
+			if (!['allAdjacent', 'allAdjacentFoes', 'all'].includes(candidate.score.move.target)) return true;
+			const sameMove = candidates.filter(c => c.choice === candidate.choice);
+			const maximum = Math.max(...sameMove.map(c => c.score.score));
+			return sameMove.find(c => c.score.score === maximum) === candidate;
+		});
+		candidates.sort((a, b) => moves.indexOf(a.choice) - moves.indexOf(b.choice));
+		const bestScore = Math.max(...candidates.map(c => c.score.score));
+		const chosen = this.prng.sample(candidates.filter(c => c.score.score === bestScore));
+		this.lastMoveScores = moves.flatMap(choice => {
+			const options = candidates.filter(c => c.choice === choice);
+			const best = options.sort((a, b) => b.score.score - a.score.score)[0];
+			return best ? [best.score] : [];
+		});
 		this.lastMoveScoresByTarget = allScoresByTarget;
-
-		// Even at zero score, retain the evaluated target slot and the move's targeting rules.
-		const chosen = this.prng.sample(bestMoves);
-
-		// Determine target position (1 or 2 for opponents, in PS doubles format)
-		// Use the actual slot from the target Pokemon
-		let bestTargetPos: string | undefined;
-		if (this.cfruConfig.isDoubles) {
-			const moveTarget = chosen.move.target;
-			const isSpreadMove = moveTarget === 'allAdjacentFoes' || moveTarget === 'allAdjacent' || moveTarget === 'all';
-
-			if (!isSpreadMove && (moveTarget === 'normal' || moveTarget === 'any')) {
-				// Single-target move: use the target's actual slot
-				bestTargetPos = String(chosen.targetSlot);
-			}
-		}
-
+		// Use the request's targeting contract: dynamic spread moves still accept their original target input.
+		const targeted = ['normal', 'any', 'adjacentFoe', 'adjacentAlly', 'adjacentAllyOrSelf'].includes(chosen.choice.target);
 		return {
-			bestMove: chosen.move,
-			chosenMove: chosen.aiMove,
-			bestTargetPos,
+			bestMove: chosen.choice,
+			chosenMove: chosen.score.move,
+			bestTargetPos: this.cfruConfig.isDoubles && targeted ? String(chosen.position) : undefined,
 		};
 	}
 
@@ -521,7 +476,7 @@ export class NormalAI extends NPCBattleAI {
 	/** Immediate, usable attacks that KO using the existing average-damage estimate. */
 	private canKOWithAverageDamage(attacker: AIPokemon, target: AIPokemon, move: AIMove): boolean {
 		const state = this.battleState!;
-		move = resolveMove(attacker, move, state.field);
+		move = resolveMove(attacker, move, state.field, target);
 		if (move.disabled || move.category === 'Status' || attacker.volatiles.has('mustrecharge')) return false;
 		if (attacker.status === 'slp' && attacker.sleepTurns !== 1 && move.id !== 'snore') return false;
 		if (attacker.status === 'frz' && !move.flags.defrost) return false;

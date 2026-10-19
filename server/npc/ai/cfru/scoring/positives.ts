@@ -17,7 +17,7 @@ import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, PositiveScoringFunction } from './index';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
 import { actsBeforeTarget, attacksFirst, compareSpeedOrder } from '../util/speed';
-import { isImmediateRecovery, secondaryEffectFailure, statusFailure } from '../util/move-effects';
+import { recoveryRecipients, recoveryCuresStatus, secondaryEffectFailure, statusFailure } from '../util/move-effects';
 import { getTypeEffectiveness, resolveMove } from '../util/type-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
 import { getHazeBenefit } from './negatives';
@@ -166,7 +166,8 @@ export const rewardSTAB: PositiveScoringFunction = (ctx) => {
 	const data = ctx.dex.moves.get(ctx.move.id);
 	if (data.damage || data.damageCallback) return 0;
 
-	if (ctx.attacker.types.includes(ctx.move.type)) {
+	if (ctx.attacker.types.includes(ctx.move.type) ||
+		(ctx.attacker.terastallized && ctx.attacker.originalTypes?.includes(ctx.move.type))) {
 		ctx.adjustments.push({
 			reason: 'STAB bonus',
 			amount: 3,
@@ -516,7 +517,8 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	if (atkBoostMoves.includes(moveId)) {
 		// Check if we have physical moves (CFRU: RealPhysicalMoveInMoveset)
 		const hasPhysicalMove = ctx.attacker.moves.some(m => {
-			const dexMove = resolveMove(ctx.attacker, buildAIMove({ id: m }, 1, ctx.state.field.formatId), ctx.state.field);
+			const dexMove = resolveMove(ctx.attacker, buildAIMove({ id: m }, 1, ctx.state.field.formatId),
+				ctx.state.field, ctx.target);
 			return dexMove.category === 'Physical' && dexMove.basePower > 0;
 		});
 
@@ -552,7 +554,8 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	// Special Attack boost moves
 	if (spaBoostMoves.includes(moveId)) {
 		const hasSpecialMove = ctx.attacker.moves.some(m => {
-			const dexMove = resolveMove(ctx.attacker, buildAIMove({ id: m }, 1, ctx.state.field.formatId), ctx.state.field);
+			const dexMove = resolveMove(ctx.attacker, buildAIMove({ id: m }, 1, ctx.state.field.formatId),
+				ctx.state.field, ctx.target);
 			return dexMove.category === 'Special' && dexMove.basePower > 0;
 		});
 
@@ -1037,38 +1040,15 @@ export const rewardDrainMove: PositiveScoringFunction = (ctx) => {
  * Reward healing moves when appropriate
  */
 export const rewardHealing: PositiveScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
-	if (!isImmediateRecovery(ctx.dex.moves.get(moveId))) return 0;
-
-	let bonus = 0;
-
-	// More valuable at low HP
-	if (ctx.attacker.hpPercent <= 30) {
-		bonus = 12;
-		ctx.adjustments.push({
-			reason: 'Healing at critical HP',
-			amount: 12,
-			category: 'positive',
-		});
-	} else if (ctx.attacker.hpPercent <= 50) {
-		bonus = 8;
-		ctx.adjustments.push({
-			reason: 'Healing at low HP',
-			amount: 8,
-			category: 'positive',
-		});
-	} else if (ctx.attacker.hpPercent <= 70) {
-		bonus = 4;
-		ctx.adjustments.push({
-			reason: 'Healing at moderate HP',
-			amount: 4,
-			category: 'positive',
-		});
+	const recipients = recoveryRecipients(ctx.state, ctx.attacker, ctx.target, ctx.move);
+	if (!recipients.length) return 0;
+	const hp = Math.min(...recipients.map(p => p.hpPercent));
+	let bonus = hp <= 30 ? 12 : hp <= 50 ? 8 : hp <= 70 ? 4 : 0;
+	if (bonus) ctx.adjustments.push({ reason: 'Healing an injured recipient', amount: bonus, category: 'positive' });
+	if (recoveryCuresStatus(ctx.move) && recipients.some(p => p.status)) {
+		bonus += 5;
+		ctx.adjustments.push({ reason: "Recovery cures a recipient's status", amount: 5, category: 'positive' });
 	}
-
-	// Less valuable if opponent can OHKO anyway
-	// Would need damage calc from opponent's perspective
-
 	return bonus;
 };
 

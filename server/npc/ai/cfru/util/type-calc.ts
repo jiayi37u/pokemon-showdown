@@ -15,7 +15,7 @@ import {
 import { itemMoveFailure } from './items';
 
 /** Resolve public move effects while retaining the selected move's identity and slot. */
-export function resolveMove(attacker: AIPokemon, move: AIMove, field: FieldConditions): AIMove {
+export function resolveMove(attacker: AIPokemon, move: AIMove, field: FieldConditions, target?: AIPokemon): AIMove {
 	const dex = rulesDex(field);
 	let id = move.id;
 	if (id === 'naturepower') {
@@ -30,14 +30,50 @@ export function resolveMove(attacker: AIPokemon, move: AIMove, field: FieldCondi
 			status: called.status, boosts: called.boosts, recoil: called.recoil,
 			secondaryChance: called.secondary?.chance || 0, multihit: called.multihit || null };
 	}
-	const baseType = move.baseType || move.type;
-	if (['photongeyser', 'lightthatburnsthesky'].includes(id)) {
+	if (['photongeyser', 'lightthatburnsthesky'].includes(id) ||
+		(attacker.terastallized && (id === 'terablast' ||
+			id === 'terastarstorm' && toID(attacker.species) === 'terapagosstellar'))) {
 		// The engine compares staged stats before item/ability multipliers, not damage against this target.
 		const physical = getEffectiveStat(attacker.baseStats.atk, attacker.boosts.atk) >
 			getEffectiveStat(attacker.baseStats.spa, attacker.boosts.spa);
 		move = { ...move, category: physical ? 'Physical' : 'Special' };
 	}
+	if (id === 'shellsidearm' && target) {
+		const power = (atk: 'atk' | 'spa', def: 'def' | 'spd') => {
+			const attack = getEffectiveStat(attacker.baseStats[atk], attacker.boosts[atk]);
+			const defense = getEffectiveStat(target.baseStats[def], target.boosts[def]);
+			return Math.floor(Math.floor(Math.floor(2 * attacker.level / 5 + 2) * 90 * attack / defense) / 50);
+		};
+		// Ties are random in battle; use the default special category for estimates.
+		const physical = power('atk', 'def') > power('spa', 'spd');
+		const flags = { ...move.flags };
+		if (physical) flags.contact = 1;
+		else delete flags.contact;
+		move = { ...move, category: physical ? 'Physical' : 'Special', flags };
+	}
+	if (id === 'expandingforce' && field.terrain === 'psychic' && grounded(attacker, field)) {
+		move = { ...move, target: 'allAdjacentFoes' };
+	}
+	if (id === 'terastarstorm' && toID(attacker.species) === 'terapagosstellar') {
+		move = { ...move, target: 'allAdjacentFoes' };
+	}
+	return { ...move, ...resolveMoveType(attacker, { ...move, id }, field) };
+}
+
+/** Type-changing effects also resolve public Stellar type consumption without constructing a scoring context. */
+export function resolveMoveType(
+	attacker: AIPokemon,
+	move: Pick<AIMove, 'id' | 'type' | 'category' | 'flags'> & Partial<Pick<AIMove, 'baseType' | 'isZMove'>>,
+	field: FieldConditions
+): { baseType: string, type: string, typeChangeBoost: number } {
+	const dex = rulesDex(field);
+	const id = move.id;
+	const baseType = move.baseType || move.type;
 	let type = baseType;
+	if (id === 'terablast' && attacker.terastallized) type = attacker.terastallized;
+	if (id === 'terastarstorm' && toID(attacker.species) === 'terapagosstellar') {
+		type = 'Stellar';
+	}
 	if (['judgment', 'multiattack', 'technoblast', 'naturalgift'].includes(id)) {
 		type = 'Normal';
 		const item = dex.items.get(effectiveItem(attacker, field));
@@ -77,7 +113,8 @@ export function resolveMove(attacker: AIPokemon, move: AIMove, field: FieldCondi
 		'judgment', 'multiattack', 'naturalgift', 'revelationdance', 'technoblast', 'terrainpulse', 'weatherball',
 	];
 	let typeChangeBoost = 1;
-	if (!fixedType.includes(id) && !(move.isZMove && move.category !== 'Status')) {
+	if (!fixedType.includes(id) && !(attacker.terastallized && ['terablast', 'terastarstorm'].includes(id)) &&
+		!(move.isZMove && move.category !== 'Status')) {
 		if (type === 'Normal' && conversion[ability]) {
 			type = conversion[ability];
 			typeChangeBoost = dex.gen <= 6 ? 1.3 : 1.2;
@@ -87,7 +124,7 @@ export function resolveMove(attacker: AIPokemon, move: AIMove, field: FieldCondi
 		}
 	}
 	if (ability === 'liquidvoice' && move.flags.sound && !attacker.volatiles.has('dynamax')) type = 'Water';
-	return { ...move, baseType, type, typeChangeBoost };
+	return { baseType, type, typeChangeBoost };
 }
 
 /** Type effectiveness multipliers */
@@ -163,20 +200,20 @@ export function hasSTAB(moveType: string, attackerTypes: string[]): boolean {
  * @returns STAB multiplier (1, 1.5, or 2 for Adaptability)
  */
 export function getSTABMultiplier(
-	moveType: string,
-	attackerTypes: string[],
-	ability: string
+	moveType: string, attackerTypes: string[], ability: string, pokemon?: AIPokemon
 ): number {
-	if (!hasSTAB(moveType, attackerTypes)) {
-		return 1;
+	const original = pokemon?.terastallized ? pokemon.originalTypes || attackerTypes : attackerTypes;
+	const isSTAB = attackerTypes.includes(moveType) || original.includes(moveType);
+	let stab = isSTAB ? 1.5 : 1;
+	if (pokemon?.terastallized === 'Stellar') {
+		if (toID(pokemon.species) === 'terapagosstellar' || !pokemon.stellarBoostedTypes?.includes(moveType)) {
+			return isSTAB ? 2 : 4915 / 4096;
+		}
+		return stab;
 	}
-
-	// Adaptability increases STAB from 1.5x to 2x
-	if (toID(ability) === 'adaptability') {
-		return 2;
-	}
-
-	return 1.5;
+	if (pokemon?.terastallized === moveType && original.includes(moveType)) stab = 2;
+	if (toID(ability) === 'adaptability' && attackerTypes.includes(moveType)) return stab === 2 ? 2.25 : 2;
+	return stab;
 }
 
 /**
@@ -344,10 +381,26 @@ export function getMoveInteraction(
 	context: MoveInteractionContext = {}
 ): { effectiveness: number, blockedBy?: string, failed?: boolean } {
 	const dex = rulesDex(field);
-	move = resolveMove(attacker, move, field);
+	move = resolveMove(attacker, move, field, defender);
 	const data = dex.moves.get(move.calledMove || move.id);
 	const ability = defensiveAbility(attacker, defender, move, field);
 	const block = (blockedBy: string, failed = false) => ({ effectiveness: 0, blockedBy, ...(failed ? { failed } : {}) });
+	if (['explosion', 'selfdestruct', 'mindblown', 'mistyexplosion'].includes(move.id) &&
+		[attacker, defender, ...(context.activePokemon || context.defenderAllies || [])].some(p =>
+			!p.fainted && defensiveAbility(attacker, p, move, field) === 'damp')) {
+		return block('Damp prevents explosive moves', true);
+	}
+	if (move.id === 'steelroller' && !field.terrain) return block('Steel Roller requires terrain', true);
+	if (move.id === 'lastresort' && attacker.usedMoves) {
+		const others = attacker.moves.map(toID).filter(id => id !== 'lastresort');
+		if (!others.length || !attacker.moves.some(id => toID(id) === 'lastresort') ||
+			others.some(id => !attacker.usedMoves!.includes(id))) {
+			return block('Last Resort requires all other moves to be used', true);
+		}
+	}
+	if (move.id === 'spitup' && ![...attacker.volatiles].some(v => /^stockpile[1-3]$/.test(v))) {
+		return block('Spit Up requires Stockpile', true);
+	}
 	// Redirection is field-wide. Spread moves and Stalwart/Propeller Tail bypass it.
 	if (['normal', 'any', 'randomNormal', 'adjacentFoe'].includes(move.target) &&
 		!['stalwart', 'propellertail'].includes(effectiveAbility(attacker, field)) &&
@@ -432,6 +485,7 @@ export function getMoveInteraction(
 		return { effectiveness: 1 };
 	}
 
+	if (move.type === 'Stellar') return { effectiveness: defender.terastallized ? 2 : 1 };
 	let types = defender.volatiles.has('roost') ? defender.types.filter(t => t !== 'Flying') : defender.types;
 	if (!types.length) types = [dex.gen >= 5 ? 'Normal' : '???'];
 	const item = effectiveItem(defender, field);

@@ -5,15 +5,74 @@ import { effectiveAbility, defensiveAbility, effectiveItem, grounded, normalizeW
 import { getMoveInteraction } from './type-calc';
 import { actsBeforeTarget } from './speed';
 
-/** Immediate self recovery shares one eligibility rule for rewards and unnecessary-healing penalties. */
+/** Immediate recovery shares recipient rules for rewards and unnecessary-healing penalties. */
 export function isImmediateRecovery(move: Pick<AIMove, 'id'>): boolean {
 	return ['recover', 'softboiled', 'milkdrink', 'slackoff', 'roost', 'healorder',
-		'synthesis', 'moonlight', 'morningsun', 'shoreup', 'rest'].includes(move.id);
+		'synthesis', 'moonlight', 'morningsun', 'shoreup', 'rest', 'swallow',
+		'lifedew', 'junglehealing', 'lunarblessing', 'healpulse', 'floralhealing'].includes(move.id);
+}
+
+/** Beneficial targeted effects must be evaluated and issued against the same recipient. */
+export function beneficialTargets(state: BattleState, attacker: AIPokemon, move: AIMove): AIPokemon[] | undefined {
+	const allyOnly = move.target === 'adjacentAlly' || ['healpulse', 'floralhealing', 'decorate'].includes(move.id);
+	if (!allyOnly && move.target !== 'adjacentAllyOrSelf') return;
+	return state.self.active.filter(p => !p.fainted && (!allyOnly || p !== attacker));
+}
+
+export function moveTargets(state: BattleState, attacker: AIPokemon, move: AIMove): AIPokemon[] {
+	return beneficialTargets(state, attacker, move) ?? state.opponent.active.filter(p => !p.fainted);
+}
+
+export function recoveryRecipients(
+	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove
+): AIPokemon[] {
+	if (!isImmediateRecovery(move)) return [];
+	if (move.target === 'allies') return state.self.active.filter(p => !p.fainted);
+	if (['healpulse', 'floralhealing'].includes(move.id)) return target === attacker ? [] : [target];
+	return [attacker];
+}
+
+export function recoveryCuresStatus(move: AIMove): boolean {
+	return ['junglehealing', 'lunarblessing'].includes(move.id);
+}
+
+export function stockpileLayers(pokemon: AIPokemon): number {
+	return Number([...pokemon.volatiles].find(v => /^stockpile[1-3]$/.test(v))?.slice(-1) || 0);
+}
+
+/** Static boosts and the few randomized/ability-filtered effects share cap checks. */
+export function boostRecipients(state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove): AIPokemon[] {
+	if (['gearup', 'magneticflux'].includes(move.id)) {
+		return state.self.active.filter(p => !p.fainted && ['plus', 'minus'].includes(effectiveAbility(p, state.field)));
+	}
+	return move.target === 'self' ? [attacker] : [target];
+}
+
+export function boostChanges(move: AIMove, state: BattleState): SparseBoostsTable | undefined {
+	const special: Record<string, SparseBoostsTable> = {
+		gearup: { atk: 1, spa: 1 }, magneticflux: { def: 1, spd: 1 },
+		acupressure: { atk: 2, def: 2, spa: 2, spd: 2, spe: 2, accuracy: 2, evasion: 2 },
+	};
+	return special[move.id] || rulesDex(state.field).moves.get(move.id).boosts;
+}
+
+export function boostsCanChange(pokemon: AIPokemon, boosts: SparseBoostsTable, state: BattleState): boolean {
+	const contrary = effectiveAbility(pokemon, state.field) === 'contrary';
+	return Object.entries(boosts).some(([stat, value]) => {
+		const stages = contrary ? -value : value;
+		const current = pokemon.boosts[stat as keyof typeof pokemon.boosts];
+		return stages > 0 ? current < 6 : stages < 0 && current > -6;
+	});
 }
 
 /** Existing field/side effects that make a status move fail, independent of tactical value. */
 export function fieldEffectFailure(state: BattleState, attacker: AIPokemon, move: AIMove): string | undefined {
 	if (move.category !== 'Status') return;
+	if (move.id === 'swallow' && !stockpileLayers(attacker)) return 'Swallow requires Stockpile';
+	if (move.id === 'stockpile' && stockpileLayers(attacker) >= 3) return 'Stockpile already at three layers';
+	if (['gearup', 'magneticflux'].includes(move.id) && !boostRecipients(state, attacker, attacker, move).length) {
+		return 'No active ally with Plus or Minus';
+	}
 	if (move.id === 'rest') {
 		const failure = statusFailure(state, attacker, attacker, move, 'slp');
 		if (failure) return failure;
@@ -29,8 +88,7 @@ export function fieldEffectFailure(state: BattleState, attacker: AIPokemon, move
 		if (gameType === 'triples' && attacker.slot === 2) return 'Ally Switch cannot move the middle position';
 		if (!state.self.active.some(p => p.slot !== attacker.slot && !p.fainted)) return 'No ally available to swap with';
 	}
-	if (move.target === 'adjacentAlly' &&
-		!state.self.active.some(p => p.slot !== attacker.slot && !p.fainted)) {
+	if (beneficialTargets(state, attacker, move)?.length === 0) {
 		return 'No ally available for this move';
 	}
 	const data = rulesDex(state.field).moves.get(move.id);
@@ -83,7 +141,9 @@ export function volatileEffectFailure(
 	if (transfer === 'copyvolatile' || transfer === 'shedtail') {
 		if (attacker.volatiles.has('commanded')) return 'Commanded Pokemon cannot pass effects';
 		if (state.self.active.some(p => p.slot === attacker.slot) &&
-			!state.self.reserve.some(p => !p.fainted)) return 'No reserve available to receive effects';
+			!state.self.reserve.some(p => !p.fainted && p.ownerSide === attacker.ownerSide)) {
+			return 'No reserve available to receive effects';
+		}
 		if (transfer === 'shedtail') {
 			if (attacker.volatiles.has('substitute')) return 'Already has Substitute';
 			if (attacker.hp <= Math.ceil(attacker.maxHp / 2)) return 'Not enough HP for Shed Tail';

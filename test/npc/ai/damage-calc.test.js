@@ -149,7 +149,7 @@ function runDamageCalcTests() {
 	test('应正确判断额外伤害致死 / Should correctly determine death from secondary damage', () => {
 		const pokemon = createMockPokemon({
 			maxHp: 100,
-			hpPercent: 5, // 5 HP
+			hp: 5, hpPercent: 5, // 5 HP
 			status: 'psn',
 		});
 		const willDie = willFaintFromSecondaryDamage(pokemon, '', '');
@@ -161,7 +161,7 @@ function runDamageCalcTests() {
 	test('Leftovers 应减少有效额外伤害 / Leftovers should reduce effective secondary damage', () => {
 		const pokemon = createMockPokemon({
 			maxHp: 160,
-			hpPercent: 10, // 16 HP
+			hp: 16, hpPercent: 10, // 16 HP
 			status: 'psn',
 			item: 'Leftovers',
 		});

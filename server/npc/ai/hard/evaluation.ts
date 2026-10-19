@@ -108,7 +108,7 @@ export class HardEvaluation {
 
 	private rawDamage(actor: AIPokemon, target: AIPokemon, move: AIMove, defenderAllies?: readonly AIPokemon[]) {
 		const state = this.calculationState(actor, target);
-		move = resolveMove(actor, move, state.field);
+		move = resolveMove(actor, move, state.field, target);
 		const actorSide = this.sideOf(actor);
 		const targetSide = this.sideOf(target);
 		const spread = ['allAdjacent', 'allAdjacentFoes'].includes(move.target);

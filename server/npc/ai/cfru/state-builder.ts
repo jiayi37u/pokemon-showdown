@@ -167,7 +167,7 @@ export function buildBattleStateFromRequests(
 	const selfReserve: AIPokemon[] = [];
 	for (const { mon, pokemon, position, active } of entries) {
 		if (!active) {
-			selfReserve.push(pokemon);
+			selfReserve.push(applyPublicMechanics(pokemon, mon.ident, tracker, formatId));
 		} else if (!pokemon.fainted) {
 			pokemon.boosts = tracker.getOurActiveBoosts(position);
 			pokemon.abilityStatMod = tracker.getOurAbilityStatMod(position);
@@ -175,10 +175,10 @@ export function buildBattleStateFromRequests(
 			pokemon.volatiles = tracker.getVolatiles(position);
 			pokemon.activeMoveActions = tracker.hasActed(position) ? 1 : 0;
 			const transformed = applyTransformation(pokemon, tracker.getTransformation(position), formatId, true);
-			transformed.types = tracker.getTypes(position, transformed.types);
+
 			// Newer requests expose the current ability, including changes after Transform.
 			if (mon.ability !== undefined) transformed.ability = mon.ability;
-			selfActive.push(transformed);
+			selfActive.push(applyPublicMechanics(transformed, position, tracker, formatId));
 		}
 	}
 	const opponentActive = tracker.getActiveOpponents().map(({ position, pokemon }) => {
@@ -187,8 +187,7 @@ export function buildBattleStateFromRequests(
 				activeMoveActions: tracker.hasActed(position) ? 1 : 0,
 				timesAttacked: tracker.getTimesAttacked(position), toxicCounter: tracker.getToxicCounter(position),
 			});
-		result.types = tracker.getTypes(position, result.types);
-		return result;
+		return applyPublicMechanics(result, position, tracker, formatId);
 	});
 	const opponentReserve = buildOpponentReserveFromTracker(tracker, opponentActive, formatId);
 	const field = fieldWithActivePokemon({ ...buildFieldConditionsFromTracker(tracker), formatId },
@@ -206,7 +205,9 @@ export function buildBattleStateFromRequests(
 		turn, isDoubles,
 		self: { active: selfActive, reserve: selfReserve, team: [...selfActive, ...selfReserve],
 			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(), futureMoves: tracker.getFutureMoves() } },
-		opponent: { remaining: tracker.getRemainingOpponents(), active: opponentActive, reserve: opponentReserve,
+		opponent: { remaining: tracker.getRemainingOpponents(),
+			remainingByOwner: Object.fromEntries(opponentActive.map(p =>
+				[p.ownerSide!, tracker.getRemainingOpponents(p.ownerSide)])), active: opponentActive, reserve: opponentReserve,
 			team: [...opponentActive, ...opponentReserve], conditions: buildOpponentConditionsFromTracker(tracker) },
 		field,
 	};
@@ -218,6 +219,21 @@ export function buildBattleStateWithTracker(
 ): BattleState {
 	return buildBattleStateFromRequests([{ side: request.side?.id || tracker.getOurSide(), request }],
 		tracker, config, battle?.turn ?? tracker.getTurn());
+}
+
+/** Identity history and public types are identical for either team and every battle mode. */
+function applyPublicMechanics(
+	pokemon: AIPokemon, identity: string, tracker: BattleTracker, formatId: string
+): AIPokemon {
+	pokemon.faintedAllies = tracker.getFaintCount(pokemon.ownerSide || identity.slice(0, 2));
+	pokemon.terastallized = tracker.getTerastallized(identity);
+	pokemon.stellarBoostedTypes = tracker.getStellarBoostedTypes(identity);
+	const types = speciesDefaults(pokemon.species, formatId).types;
+	pokemon.originalTypes = pokemon.active ? tracker.getTypes(identity, types, true) : types;
+	pokemon.types = pokemon.terastallized && pokemon.terastallized !== 'Stellar' ?
+		[pokemon.terastallized] : pokemon.originalTypes;
+	if (pokemon.active) pokemon.usedMoves = tracker.getUsedMoves(identity);
+	return pokemon;
 }
 
 /**
@@ -232,10 +248,12 @@ function buildOpponentReserveFromTracker(tracker: BattleTracker, active: AIPokem
 		if (mon.active) continue;
 		if (mon.hpPercent <= 0) continue; // Skip fainted
 
-		reserve.push(trackedPokemonToAIPokemon(
-			mon, slot++, false, formatId, tracker.getSleepTurns(mon.ident || mon.position, mon.ability),
-			{ timesAttacked: tracker.getTimesAttacked(mon.ident || mon.position) }
-		));
+		const identity = mon.ident || mon.position;
+		const pokemon = trackedPokemonToAIPokemon(
+			mon, slot++, false, formatId, tracker.getSleepTurns(identity, mon.ability),
+			{ timesAttacked: tracker.getTimesAttacked(identity) }
+		);
+		reserve.push(applyPublicMechanics(pokemon, identity, tracker, formatId));
 	}
 
 	return reserve;

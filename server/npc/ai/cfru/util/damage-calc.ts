@@ -577,6 +577,11 @@ export function getModifiedBasePower(
 		basePower = Math.floor(basePower * 0.5);
 	}
 
+	const data = rulesDex(field).moves.get(move.id);
+	if (attacker.terastallized && (attacker.terastallized === 'Stellar' ?
+		!attacker.stellarBoostedTypes?.includes(move.type) : attacker.types.includes(move.type)) &&
+		basePower < 60 && data.priority <= 0 && !data.multihit &&
+		!((data.basePower === 0 || data.basePower === 150) && data.basePowerCallback)) basePower = 60;
 	return basePower;
 }
 
@@ -598,6 +603,15 @@ function getVariableBasePower(
 	const defenderMaxHp = defender.maxHp || 100;
 
 	if (moveId === 'ragefist') return Math.min(350, 50 * (1 + (attacker.timesAttacked || 0)));
+	if (moveId === 'lastrespects') return 50 * (1 + Math.min(100, attacker.faintedAllies || 0));
+	if (moveId === 'spitup') {
+		const layers = [...attacker.volatiles].find(v => /^stockpile[1-3]$/.test(v));
+		return 100 * Number(layers?.slice(-1) || 0);
+	}
+	if (moveId === 'terablast' && attacker.terastallized === 'Stellar') return 100;
+	if (moveId === 'risingvoltage' && field.terrain === 'electric' && grounded(defender, field)) return basePower * 2;
+	if (moveId === 'expandingforce' && field.terrain === 'psychic' && grounded(attacker, field)) return basePower * 1.5;
+	if (moveId === 'psyblade' && field.terrain === 'electric') return basePower * 1.5;
 
 	// Resolve current HP at decision time, including damage already taken on switching in.
 	if (moveId === 'waterspout' || moveId === 'eruption' || moveId === 'dragonenergy') {
@@ -623,22 +637,22 @@ function getVariableBasePower(
 
 	// Facade excludes sleep, unlike Guts and Hex.
 	if (moveId === 'facade' && attacker.status && attacker.status !== 'slp') {
-		return 140;
+		return basePower * 2;
 	}
 
 	// Hex: doubles when target is statused
 	if (moveId === 'hex' && defender.status) {
-		return 130;
+		return basePower * 2;
 	}
 
 	// Venoshock: doubles when target is poisoned
 	if (moveId === 'venoshock' && (defender.status === 'psn' || defender.status === 'tox')) {
-		return 130;
+		return basePower * 2;
 	}
 
 	// Brine: doubles when target is below 50% HP
 	if (moveId === 'brine' && defenderHp * 2 <= defenderMaxHp) {
-		return 130;
+		return basePower * 2;
 	}
 
 	// Low Kick / Grass Knot: based on target's weight
@@ -863,7 +877,7 @@ export function calculateDamage(
 	cache?: AICache,
 	spreadInfo?: DamageContext
 ): DamageResult {
-	move = resolveMove(attacker, move, field);
+	move = resolveMove(attacker, move, field, defender);
 	// HP-dependent power, fixed damage and KO flags must reflect the current snapshot.
 	const spreadKey = spreadInfo?.isDoubles ? `-spread${spreadInfo.numAliveTargets}` : '';
 	const protectionKey = `${spreadInfo?.isAllyTarget}-${spreadInfo?.defenderAllies?.map(pokemonCacheId).join(',')}` +
@@ -973,7 +987,7 @@ export function calculateDamage(
 		let baseDamage = Math.floor(Math.floor(Math.floor(2 * level / 5 + 2) * power * attack / defense) / 50 + 2);
 
 		// STAB
-		const stabMultiplier = getSTABMultiplier(move.type, attacker.types, effectiveAbility(attacker, field));
+		const stabMultiplier = getSTABMultiplier(move.type, attacker.types, effectiveAbility(attacker, field), attacker);
 		baseDamage = Math.floor(baseDamage * stabMultiplier);
 
 		// Type effectiveness
@@ -1029,7 +1043,8 @@ export function calculateDamage(
 
 		// Burn penalty (physical moves, except Guts/Facade)
 		if (attacker.status === 'brn' && move.category === 'Physical' &&
-			effectiveAbility(attacker, field) !== 'guts' && toID(move.id) !== 'facade') {
+			effectiveAbility(attacker, field) !== 'guts' &&
+			!(move.id === 'facade' && (rulesDex(field).gen >= 6 || rulesDex(field).currentMod === 'mmo'))) {
 			baseDamage = Math.floor(baseDamage * 0.5);
 		}
 
@@ -1186,7 +1201,7 @@ export function findStrongestMove(
 	let best: { move: AIMove; damage: DamageResult } | null = null;
 
 	for (const candidate of moves) {
-		const move = resolveMove(attacker, candidate, field);
+		const move = resolveMove(attacker, candidate, field, defender);
 		if (move.category === 'Status' || move.disabled) continue;
 
 		const damage = calculateDamage(attacker, defender, move, field, cache);
@@ -1392,9 +1407,9 @@ export function getTrapDamage(pokemon: AIPokemon, field?: FieldConditions): numb
 
 	const maxHp = pokemon.maxHp || Math.floor(pokemon.hp / (pokemon.hpPercent / 100));
 
-	// Trap damage: 1/8 max HP (Binding Band increases to 1/6)
-	// Simplified to 1/8 for now
-	return Math.max(1, Math.floor(maxHp / 8));
+	// Use the ruleset baseline when no trapping-item modifier has been observed.
+	const dex = rulesDex(field || {});
+	return Math.max(1, Math.floor(maxHp / (dex.gen <= 5 && dex.currentMod !== 'mmo' ? 16 : 8)));
 }
 
 /**
@@ -1522,34 +1537,53 @@ export function getSecondaryEffectDamage(
 	opponentAbility = '',
 	field?: FieldConditions
 ): number {
-	const abilityId = effectiveAbility(pokemon, field);
+	return residualEvents(pokemon, weather, opponentAbility, field)
+		.reduce((sum, event) => sum + Math.max(0, event.damage), 0);
+}
 
-	// Magic Guard prevents all secondary effect damage
-	if (abilityId === 'magicguard') {
-		return 0;
+/** Signed HP changes in simulator residual order; healing cannot revive an earlier KO. */
+function residualEvents(pokemon: AIPokemon, weather: string, opponentAbility: string, field?: FieldConditions) {
+	const dex = rulesDex(field || {});
+	const ability = effectiveAbility(pokemon, field);
+	const item = effectiveItem(pokemon, field);
+	const maxHp = pokemon.maxHp || 100;
+	const portion = (divisor: number) => Math.max(1, Math.floor(maxHp / divisor));
+	const events: { order: number, subOrder: number, damage: number }[] = [];
+	const add = (damage: number,
+		effect: { id?: string, onResidualOrder?: number, onResidualSubOrder?: number }, order = 0) => {
+		if (!damage || damage > 0 && ability === 'magicguard') return;
+		if (damage < 0 && pokemon.volatiles.has('healblock')) return;
+		events.push({ damage, order: effect.onResidualOrder ?? order, subOrder: effect.onResidualSubOrder || 0 });
+	};
+	add(getSandstormDamage(pokemon, weather, field) + getHailDamage(pokemon, weather, field), {}, 1);
+	if (weather === 'rain' && item !== 'utilityumbrella') {
+		if (ability === 'raindish') add(-portion(16), {}, 1);
+		if (ability === 'dryskin') add(-portion(8), {}, 1);
 	}
-
-	let totalDamage = 0;
-
-	// Weather damage
-	totalDamage += getSandstormDamage(pokemon, weather, field);
-	totalDamage += getHailDamage(pokemon, weather, field);
-
-	// Status damage
-	totalDamage += getPoisonDamage(pokemon, true, field);
-	totalDamage += getBurnDamage(pokemon, field);
-
-	// Volatile damage
-	totalDamage += getLeechSeedDamage(pokemon, field);
-	totalDamage += getTrapDamage(pokemon, field);
-	totalDamage += getCurseDamage(pokemon, field);
-	totalDamage += getNightmareDamage(pokemon, field);
-	totalDamage += getSaltCureDamage(pokemon, field);
-
-	// Ability damage
-	totalDamage += getBadDreamsDamage(pokemon, opponentAbility, field);
-
-	return totalDamage;
+	if (weather === 'hail' && ability === 'icebody') add(-portion(16), {}, 1);
+	if (weather === 'sun' && ['dryskin', 'solarpower'].includes(ability) && item !== 'utilityumbrella') {
+		add(portion(8), {}, 1);
+	}
+	if (field?.terrain === 'grassy' && grounded(pokemon, field)) {
+		add(-portion(16), dex.moves.get('grassyterrain').condition!);
+	}
+	if (item === 'leftovers' || item === 'blacksludge' && pokemon.types.includes('Poison')) {
+		add(-portion(16), dex.items.get(item));
+	} else if (item === 'blacksludge' || item === 'stickybarb') {
+		add(portion(8), dex.items.get(item));
+	}
+	add(getPoisonDamage(pokemon, true, field), dex.conditions.get(pokemon.status));
+	if (ability === 'poisonheal' && ['psn', 'tox'].includes(pokemon.status)) {
+		add(-portion(8), dex.conditions.get(pokemon.status));
+	}
+	add(getBurnDamage(pokemon, field), dex.conditions.get('brn'));
+	add(getTrapDamage(pokemon, field), dex.conditions.get('partiallytrapped'));
+	for (const [id, damage] of [
+		['leechseed', getLeechSeedDamage(pokemon, field)], ['curse', getCurseDamage(pokemon, field)],
+		['nightmare', getNightmareDamage(pokemon, field)], ['saltcure', getSaltCureDamage(pokemon, field)],
+	] as const) add(damage, dex.moves.get(id).condition!);
+	add(getBadDreamsDamage(pokemon, opponentAbility, field), dex.abilities.get('baddreams'));
+	return events.sort((a, b) => a.order - b.order || a.subOrder - b.subOrder);
 }
 
 /**
@@ -1593,33 +1627,7 @@ export function willFaintFromSecondaryDamage(
 	opponentAbility = '',
 	field?: FieldConditions
 ): boolean {
-	// Check perish song
-	if (pokemon.volatiles.has('perishsong')) {
-		// Would need to check perish count, but if it's at 0 they will faint
-		// For simplicity, assume they're at risk
-		return true;
-	}
-
-	const currentHp = Math.floor((pokemon.maxHp || 100) * pokemon.hpPercent / 100);
-	const secondaryDamage = getSecondaryEffectDamage(pokemon, weather, opponentAbility, field);
-
-	// Consider Leftovers/Black Sludge recovery
-	const itemId = effectiveItem(pokemon, field);
-	let recovery = 0;
-	if (itemId === 'leftovers' || (itemId === 'blacksludge' && pokemon.types.includes('Poison'))) {
-		const maxHp = pokemon.maxHp || Math.floor(pokemon.hp / (pokemon.hpPercent / 100));
-		recovery = Math.floor(maxHp / 16);
-	}
-
-	const ability = effectiveAbility(pokemon, field);
-	const maxHp = pokemon.maxHp || 100;
-	if (field?.terrain === 'grassy' && grounded(pokemon, field)) recovery += Math.floor(maxHp / 16);
-	if ((weather === 'rain' && ability === 'raindish') || (weather === 'hail' && ability === 'icebody')) {
-		recovery += Math.floor(maxHp / 16);
-	}
-	if (weather === 'rain' && ability === 'dryskin') recovery += Math.floor(maxHp / 8);
-	if (ability === 'poisonheal' && ['psn', 'tox'].includes(pokemon.status)) recovery += Math.floor(maxHp / 8);
-	return secondaryDamage - recovery >= currentHp;
+	return getEffectiveHpAfterSecondary(pokemon, weather, opponentAbility, field) <= 0;
 }
 
 /**
@@ -1636,10 +1644,13 @@ export function getEffectiveHpAfterSecondary(
 	attackerAbility = '',
 	field?: FieldConditions
 ): number {
-	const currentHp = Math.floor((defender.maxHp || 100) * defender.hpPercent / 100);
-	const secondaryDamage = getSecondaryEffectDamage(defender, weather, attackerAbility, field);
-
-	return Math.max(0, currentHp - secondaryDamage);
+	if (defender.hp <= 0 || defender.volatiles.has('perish0')) return 0;
+	let hp = defender.hp;
+	for (const event of residualEvents(defender, weather, attackerAbility, field)) {
+		hp = Math.min(defender.maxHp || 100, hp - event.damage);
+		if (hp <= 0) return 0;
+	}
+	return hp;
 }
 
 /**
@@ -1660,8 +1671,7 @@ export function canKnockOutWithSecondary(
 	cache?: AICache
 ): boolean {
 	const damage = calculateDamage(attacker, defender, move, field, cache);
-	const secondaryDamage = getSecondaryEffectDamage(defender, field.weather, effectiveAbility(attacker, field), field);
-	const currentHp = Math.floor((defender.maxHp || 100) * defender.hpPercent / 100);
-
-	return damage.average + secondaryDamage >= currentHp;
+	const hp = Math.max(0, defender.hp - damage.average);
+	return willFaintFromSecondaryDamage({ ...defender, hp, hpPercent: hp / (defender.maxHp || 100) * 100 },
+		field.weather, effectiveAbility(attacker, field), field);
 }

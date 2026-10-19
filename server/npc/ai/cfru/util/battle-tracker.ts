@@ -9,6 +9,9 @@
  * @license MIT
  */
 
+import { resolveMoveType } from './type-calc';
+import { makeAIPokemonSkeleton, speciesDefaults } from './pokemon-builder';
+import type { FieldConditions } from '../types';
 import { Dex, toID } from '../../../../../sim/dex';
 import { abilityStatModifier, effectiveAbility, formeAbility, hasNeutralizingGas, normalizeWeather } from './mechanics';
 import { defaultBoosts, type AIPokemon } from '../types';
@@ -100,6 +103,8 @@ export interface TrackedPokemon {
 
 /** Identity-bound facts; position-bound effects remain in the active maps. */
 interface IdentityMemory {
+	terastallized?: string;
+	stellarBoostedTypes?: string[];
 	timesAttacked?: number;
 	restSleep?: number;
 	sleepSource?: boolean;
@@ -111,6 +116,7 @@ interface IdentityMemory {
 
 /** Bounded to one stay, so an Illusion reveal can reassign observations without replaying the battle. */
 interface EntryObservations {
+	species: string;
 	receivedHits?: number;
 	toxicTicks?: number;
 	ident: string;
@@ -160,13 +166,14 @@ export class BattleTracker {
 	private pendingFutureMove?: { source: string, target: string };
 	private pendingWishPosition = '';
 	private teamSizes = new Map<string, number>();
+	private faintCounts = new Map<string, number>();
 	private formatId = '';
 	private activeIdentities = new Map<string, string>();
 	private identityMemory = new Map<string, IdentityMemory>();
 	private entries = new Map<string, EntryObservations>();
 	private yawnSources = new Map<string, string>();
 	private lastMoveSource = '';
-	private currentAttack?: { source: string, damaging: boolean, hits: Map<string, number> };
+	private currentAttack?: { source: string, damaging: boolean, stellarType?: string, hits: Map<string, number> };
 	private transformations = new Map<string, TrackedTransformation>();
 	private ourPokemon = new Map<string, { ident: string, pokemon: RequestPokemonFacts }>();
 	private activeAbilities = new Map<string, string>();
@@ -351,6 +358,16 @@ export class BattleTracker {
 		}
 		this.handleAbilityEvent(parts);
 		this.recordAttackHit(parts);
+		if (this.currentAttack?.stellarType &&
+			((command === '-damage' && !parts.some(p => p.startsWith('[from]'))) ||
+				command === '-activate' && parts[2] === 'Substitute' && parts.includes('[damage]') ||
+				command === '-end' && parts[2] === 'Substitute')) {
+			const source = this.currentAttack.source;
+			const memory = this.getIdentityMemory(source);
+			this.updateIdentityMemory(this.activeIdentities.get(source) || source, {
+				stellarBoostedTypes: [...new Set([...(memory.stellarBoostedTypes || []), this.currentAttack.stellarType])],
+			}, source);
+		}
 		const entry = this.entries.get(parts[1]?.split(':')[0].trim());
 		if (entry && parts[0] === '-damage' && parts.includes('[from] psn')) entry.toxicTicks = (entry.toxicTicks || 0) + 1;
 		if (entry && ['-status', '-curestatus'].includes(parts[0])) entry.toxicTicks = 0;
@@ -377,6 +394,9 @@ export class BattleTracker {
 			break;
 		case 'faint':
 			this.handleFaint(parts);
+			break;
+		case '-terastallize':
+			this.updateIdentityMemory(this.publicIdentity(parts[1]), { terastallized: parts[2] }, parts[1].split(':')[0]);
 			break;
 		case '-transform':
 			this.handleTransform(parts);
@@ -415,6 +435,10 @@ export class BattleTracker {
 			break;
 		case '-block':
 		case '-activate':
+			const effectDex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
+			if (effectDex.moves.get(parts[2]?.replace(/^move: /, '')).volatileStatus === 'partiallytrapped') {
+				this.handleVolatileStatus(['-start', parts[1], 'partiallytrapped']);
+			}
 			if (parts[2]?.startsWith('item: ')) this.handleItem(['-item', parts[1], parts[2].slice(6)], true);
 			break;
 		case '-status':
@@ -440,7 +464,8 @@ export class BattleTracker {
 			break;
 		case 'move':
 			this.currentAttack = { source: parts[1].split(':')[0].trim(),
-				damaging: (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(parts[2]).category !== 'Status', hits: new Map() };
+				damaging: (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(parts[2]).category !== 'Status',
+				stellarType: this.stellarAttackType(parts[1].split(':')[0].trim(), parts[2]), hits: new Map() };
 			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
 			this.pendingWishPosition = '';
@@ -528,6 +553,7 @@ export class BattleTracker {
 		const outgoingEntry = this.entries.get(position);
 		if (outgoingEntry) this.identityMemory.set(outgoingEntry.ident, { ...outgoingEntry.memory });
 		const entry: EntryObservations = {
+			species: parts[2].split(',')[0],
 			ident: sleepIdent, memory: { ...this.identityMemory.get(sleepIdent) }, memoryUpdates: {},
 			sleeping: !!parts[3]?.split(' ').includes('slp'), sleepChecks: 0, moves: new Set(),
 			copyEffectsPending: transfer.copyEffects,
@@ -878,6 +904,7 @@ export class BattleTracker {
 
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
+		this.faintCounts.set(side, (this.faintCounts.get(side) || 0) + 1);
 		this.activeAbilities.delete(position);
 		this.ourPokemon.delete(position);
 
@@ -1185,6 +1212,9 @@ export class BattleTracker {
 		if (!move) return;
 
 		const moveId = toID(move);
+		if (this.isOurTeamSide(side) && !parts.some(p => p.startsWith('[from]'))) {
+			this.entries.get(position)?.moves.add(moveId);
+		}
 		if (moveId === 'naturalgift') {
 			this.updateIdentityMemory(this.sleepIdentity(positionPart),
 				{ naturalGift: { item: this.ourPokemon.get(position)?.pokemon.item } }, position);
@@ -1380,6 +1410,10 @@ export class BattleTracker {
 		}
 		let effects = this.activeVolatiles.get(position);
 		if (!effects) this.activeVolatiles.set(position, effects = new Set());
+		if (command === '-end' && parts.includes('[partiallytrapped]')) effects.delete('partiallytrapped');
+		if (/^stockpile[1-3]$/.test(effect) || effect === 'stockpile') {
+			for (const old of effects) if (/^stockpile[1-3]$/.test(old)) effects.delete(old);
+		}
 		if (/^perish[0-3]$/.test(effect)) {
 			for (const old of effects) if (/^perish[0-3]$/.test(old)) effects.delete(old);
 		}
@@ -1623,11 +1657,12 @@ export class BattleTracker {
 	/**
 	 * Get all known opponent team members
 	 */
-	getRemainingOpponents(): number | undefined {
-		if ([...this.opponentSides].some(side => !this.teamSizes.has(side))) return undefined;
-		const known = this.getOpponentTeam();
-		const size = [...this.teamSizes].reduce((n, [side, count]) => n + (this.isOpponentSide(side) ? count : 0), 0);
-		return size ? Math.max(0, size - known.filter(p => p.hpPercent <= 0).length) : undefined;
+	getRemainingOpponents(owner?: string): number | undefined {
+		const sides = owner ? [owner] : [...this.opponentSides];
+		if (sides.some(side => !this.teamSizes.has(side))) return undefined;
+		const known = this.getOpponentTeam().filter(p => sides.includes((p.ident || p.position).slice(0, 2)));
+		const size = sides.reduce((n, side) => n + (this.teamSizes.get(side) || 0), 0);
+		return Math.max(0, size - known.filter(p => p.hpPercent <= 0).length);
 	}
 
 	getOpponentTeam(): TrackedPokemon[] {
@@ -2031,6 +2066,43 @@ export class BattleTracker {
 		return this.getIdentityEntry(pokemon)?.toxicTicks || 0;
 	}
 
+	private stellarAttackType(position: string, moveName: string): string | undefined {
+		if (this.getTerastallized(position) !== 'Stellar') return;
+		const known = this.ourPokemon.get(position)?.pokemon || this.opponentPokemon.get(position);
+		const species = this.activeFormes.get(position) || known?.species || this.entries.get(position)?.species;
+		if (!species) return;
+		if (toID(species) === 'terapagosstellar') return;
+		const data = speciesDefaults(species, this.formatId);
+		const attacker = makeAIPokemonSkeleton({ slot: this.getFieldSlot(position), species,
+			hp: 100, maxHp: 100, hpPercent: 100, status: '', fainted: false, active: true, level: 100, gender: 'N',
+			types: this.getTypes(position, known?.types || data.types), ability: this.getEffectiveAbility(position),
+			item: known?.item || '', moves: [], baseStats: data.baseStats });
+		attacker.volatiles = this.getVolatiles(position);
+		attacker.terastallized = 'Stellar';
+		const move = (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(moveName);
+		if (move.category === 'Status') return;
+		const field: FieldConditions = { ...this.fieldConditions, formatId: this.formatId, weatherTurns: 0, terrainTurns: 0,
+			trickroom: this.fieldConditions.trickRoom, trickroomTurns: 0,
+			magicroom: this.fieldConditions.magicRoom, wonderroom: this.fieldConditions.wonderRoom };
+		return resolveMoveType(attacker, move, field).type;
+	}
+
+	getStellarBoostedTypes(pokemon: string): string[] {
+		return [...(this.getIdentityMemory(pokemon).stellarBoostedTypes || [])];
+	}
+
+	getFaintCount(side: string): number {
+		return this.faintCounts.get(side) || 0;
+	}
+
+	getUsedMoves(position: string): string[] {
+		return [...(this.entries.get(position)?.moves || [])].map(toID);
+	}
+
+	getTerastallized(pokemon: string): string | undefined {
+		return this.getIdentityMemory(pokemon).terastallized;
+	}
+
 	getTimesAttacked(pokemon: string): number {
 		return this.getIdentityMemory(pokemon).timesAttacked || 0;
 	}
@@ -2114,7 +2186,9 @@ export class BattleTracker {
 	}
 
 	/** Public type changes apply to either team and last until switching. */
-	getTypes(position: string, fallback: readonly string[]): string[] {
+	getTypes(position: string, fallback: readonly string[], beforeTera = false): string[] {
+		const tera = this.getTerastallized(position);
+		if (!beforeTera && tera && tera !== 'Stellar') return [tera];
 		const current = this.activeTypes.get(position);
 		const transformation = this.transformations.get(position);
 		const copied = transformation?.target?.types || transformation?.pokemon?.types;
@@ -2129,6 +2203,7 @@ export class BattleTracker {
 		this.pendingFutureMove = undefined;
 		this.pendingWishPosition = '';
 		this.teamSizes.clear();
+		this.faintCounts.clear();
 		this.currentAttack = undefined;
 		this.activeIdentities.clear();
 		this.yawnSources.clear();

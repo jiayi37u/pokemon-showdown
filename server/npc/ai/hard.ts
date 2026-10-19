@@ -1,4 +1,5 @@
 /** Hard NPC controller. CFRU strategy lives in hard/, shared mechanics remain in cfru/. */
+import { moveTargets } from './cfru/util/move-effects';
 import type { ObjectReadWriteStream } from '../../../lib/streams';
 import type { ChoiceRequest } from '../../../sim/side';
 import type { PRNG, PRNGSeed } from '../../../sim/prng';
@@ -110,9 +111,7 @@ export class HardAI extends NPCBattleAI {
 				// Status Z effects need their own resource valuation; don't spend the crystal for the base effect.
 				if (move.category === 'Status') continue;
 			}
-			const allyTarget = ['adjacentAlly', 'adjacentAllyOrSelf'].includes(move.target);
-			const targets = allyTarget ? state.self.active.filter(p => !p.fainted &&
-				(p !== actor || move.target === 'adjacentAllyOrSelf')) : state.opponent.active.filter(p => !p.fainted);
+			const targets = moveTargets(state, actor, move);
 			for (const target of targets) {
 				const result = variant.evaluator.scoreMoves(variant.actor, [move], target, variant.predictions)[0];
 				const adjust = (amount: number, reason: string) => {
@@ -130,7 +129,7 @@ export class HardAI extends NPCBattleAI {
 				if (variant.transform && result.score > 0) adjust(2, 'Mega evolution improves future turns');
 				const targeted = ['normal', 'any', 'adjacentFoe', 'adjacentAlly', 'adjacentAllyOrSelf'].includes(move.target);
 				const targetPos = state.isDoubles && targeted ?
-					String(allyTarget ? -target.slot : target.slot) : undefined;
+					String(state.self.active.includes(target) ? -target.slot : target.slot) : undefined;
 				candidates.push({ choice, result, targetPos, targetName: target.species, variant });
 			}
 		}

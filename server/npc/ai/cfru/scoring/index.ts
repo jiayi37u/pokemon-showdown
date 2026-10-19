@@ -8,6 +8,7 @@
  * @license MIT
  */
 
+import { beneficialTargets } from '../util/move-effects';
 import type {
 	AIPokemon,
 	AIMove,
@@ -178,12 +179,10 @@ export class ScoringEngine {
 		target: AIPokemon
 	): MoveScore {
 		state = { ...state, field: { ...state.field, formatId: this.config.formatId || state.field.formatId } };
-		move = resolveMove(attacker, move, state.field);
-		// Ally-only moves have one actual recipient even when a strategy enumerates opposing matchups.
-		if (move.target === 'adjacentAlly') {
-			target = state.self.active.find(p => p !== attacker && !p.fainted) || attacker;
-		}
-		const isTargetingPartner = state.isDoubles && state.self.active.some(p => p === target);
+		const recipients = beneficialTargets(state, attacker, move);
+		if (recipients && !recipients.includes(target)) target = recipients[0] || attacker;
+		move = resolveMove(attacker, move, state.field, target);
+		const isTargetingPartner = state.self.active.includes(target);
 		const dex = rulesDex(state.field);
 		// Pre-calculate damage for non-status moves
 		let damageResult = null;

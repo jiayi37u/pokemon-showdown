@@ -28,6 +28,19 @@ function roleNames(pokemon) {
 describe('Shared random-battle configuration inference', function () {
 	this.timeout(20000);
 
+	it('uses the current Terapagos ability throughout random hypotheses after a public forme change', () => {
+		const { pokemon, tracker } = observation('Terapagos', 77, 'gen9randombattle', [], [
+			'|-activate|p1a: Foe|ability: Tera Shift',
+			'|detailschange|p1a: Foe|Terapagos-Terastal, L77',
+		]);
+		assert.equal(tracker.getActiveOpponent().ability, 'Tera Shell');
+		assert(pokemon.presetModels.some(model => model.matched));
+		assert(pokemon.presetModels.every(model => Dex.toID(model.pokemon.ability) === 'terashell'));
+		const direct = observation('Terapagos-Terastal', 77, 'gen9randombattle').pokemon;
+		assert.equal(Dex.toID(direct.ability), 'terashell');
+		assert(direct.presetModels.every(model => Dex.toID(model.pokemon.ability) === 'terashell'));
+	});
+
 	for (const AI of [NormalAI, HardAI]) {
 		it(`${AI.name} narrows Gen5 Charizard to the Swords Dance role using only public information`, () => {
 			const ai = new AI({ write() {} }, { seed: [1, 2, 3, 4] });

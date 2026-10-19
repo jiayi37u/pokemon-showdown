@@ -295,6 +295,65 @@ describe('Shared public state pipeline across game types', () => {
 	}
 
 	for (const gameType of ['singles', 'doubles', 'multi']) {
+		it(`${gameType}: public temporary formes override stale request details and reset on switching`, () => {
+			const game = fixture(gameType,
+				{ species: 'Pelipper', ability: 'Keen Eye', moves: ['splash'] },
+				{ species: 'Morpeko', ability: 'Hunger Switch', moves: ['protect', 'aurawheel'] },
+				undefined, gameType === 'multi' ? { species: 'Morpeko', ability: 'Hunger Switch', moves: ['protect'] } : undefined,
+				{ species: 'Snorlax', ability: 'Immunity', moves: ['splash'] });
+			try {
+				game.build();
+				game.play('move 1', 'move 1');
+				let state = game.build();
+				assert(game.battle.p2.activeRequest.side.pokemon[0].details.startsWith('Morpeko,'));
+				assert.equal(state.self.active[0].species, game.battle.p2.active[0].species.name);
+				assert.equal(resolveMove(state.self.active[0], buildAIMove({ id: 'aurawheel' }, 2), state.field).type, 'Dark');
+				if (gameType === 'multi') assert.equal(state.self.active[1].species, 'Morpeko-Hangry');
+				game.play('move 1', `switch ${gameType === 'doubles' ? 3 : 2}`);
+				state = game.build();
+				assert.equal(state.self.active[0].species, 'Snorlax');
+				assert.equal(game.tracker.getForme('p2a'), undefined);
+			} finally { game.battle.destroy(); }
+		});
+
+		it(`${gameType}: public Terapagos transformation updates the opposing ability`, () => {
+			const game = fixture(gameType,
+				{ species: 'Terapagos', ability: 'Tera Shift', moves: ['splash'] },
+				{ species: 'Mew', ability: 'Synchronize', moves: ['tackle'] });
+			try {
+				const state = game.build();
+				const target = state.opponent.active[0];
+				assert.equal(target.species, 'Terapagos-Terastal');
+				assert.equal(toID(target.ability), game.battle.p1.active[0].ability);
+				assert.equal(toID(target.ability), 'terashell');
+				assert.equal(calculateDamage(state.self.active[0], target, buildAIMove({ id: 'tackle' }, 1), state.field).effectiveness, 0.5);
+			} finally { game.battle.destroy(); }
+		});
+
+		if (gameType !== 'singles') {
+			it(`${gameType}: Helping Hand checks its actual ally rather than either Dark opponent`, () => {
+				const game = fixture(gameType,
+					{ species: 'Houndoom', ability: 'Early Bird', moves: ['splash'] },
+					{ species: 'Whimsicott', ability: 'Prankster', moves: ['helpinghand'] },
+					{ species: 'Umbreon', ability: 'Synchronize', moves: ['splash'] },
+					{ species: 'Dewgong', ability: 'Thick Fat', moves: ['surf'] });
+				try {
+					const state = game.build();
+					const engine = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(1));
+					const move = buildAIMove({ id: 'helpinghand' }, 1);
+					for (const foe of state.opponent.active) {
+						const result = engine.scoreMove(state, state.self.active[0], move, foe);
+						assert.equal(result.target, state.self.active[1]);
+						assert(result.score > 100);
+					}
+					game.play('move 1', 'move 1 -2');
+					assert(game.battle.log.some(line => line.includes('|Helping Hand|[of]')));
+					state.self.active[1].ability = 'Good as Gold';
+					assert.equal(engine.scoreMove(state, state.self.active[0], move, state.opponent.active[0]).score, 0);
+				} finally { game.battle.destroy(); }
+			});
+		}
+
 		it(`${gameType}: opposing hit counts match PS when a multihit move breaks through Substitute`, () => {
 			const game = fixture(gameType,
 				{ species: 'Annihilape', ability: 'Vital Spirit', evs: { spe: 252 }, moves: ['substitute', 'ragefist'] },

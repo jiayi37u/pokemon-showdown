@@ -10,7 +10,7 @@
  */
 
 import { Dex, toID } from '../../../../../sim/dex';
-import { abilityStatModifier, effectiveAbility, hasNeutralizingGas, normalizeWeather } from './mechanics';
+import { abilityStatModifier, effectiveAbility, formeAbility, hasNeutralizingGas, normalizeWeather } from './mechanics';
 import { defaultBoosts, type AIPokemon } from '../types';
 
 /** Only facts available in our request; never store inferred models or scoring state here. */
@@ -176,6 +176,7 @@ export class BattleTracker {
 
 	/** Temporary types revealed by battle protocol, shared by both teams. */
 	private activeTypes = new Map<string, { types?: string[], added?: string }>();
+	private activeFormes = new Map<string, string>();
 
 	/** Field conditions */
 	private fieldConditions: {
@@ -383,14 +384,16 @@ export class BattleTracker {
 		case 'detailschange':
 		case '-formechange': {
 			const position = parts[1]?.split(':')[0].trim();
+			const species = (this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(parts[2].split(',')[0]);
+			this.activeFormes.set(position, species.name);
 			this.activeTypes.delete(position);
 			const tracked = this.opponentPokemon.get(position);
 			if (tracked) {
-				const species = (this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(parts[2].split(',')[0]);
 				tracked.species = species.name;
 				tracked.types = species.types;
-				if (species.isMega || species.id === 'greninjaash') {
-					tracked.ability = species.abilities[0];
+				const ability = formeAbility(species);
+				if (ability) {
+					tracked.ability = ability;
 					this.activeAbilities.set(position, tracked.ability);
 					tracked.baseAbility = tracked.ability;
 					tracked.abilityChanged = false;
@@ -542,6 +545,7 @@ export class BattleTracker {
 		this.activeVolatiles.set(position, transfer.volatiles);
 		this.transientEffects.set(position, transfer.transient);
 		this.activeTypes.delete(position);
+		this.activeFormes.delete(position);
 		this.acted.delete(position);
 		this.transformations.delete(position);
 		this.ourPokemon.delete(position);
@@ -718,6 +722,7 @@ export class BattleTracker {
 		swap(this.activeVolatiles);
 		swap(this.transientEffects);
 		swap(this.activeTypes);
+		swap(this.activeFormes);
 		swap(this.activeAbilities);
 		swap(this.activeIdentities);
 		swap(this.entries);
@@ -2104,6 +2109,10 @@ export class BattleTracker {
 		return !!this.getIdentityMemory(ident).knockedOff;
 	}
 
+	getForme(position: string): string | undefined {
+		return this.activeFormes.get(position);
+	}
+
 	/** Public type changes apply to either team and last until switching. */
 	getTypes(position: string, fallback: readonly string[]): string[] {
 		const current = this.activeTypes.get(position);
@@ -2133,6 +2142,7 @@ export class BattleTracker {
 		this.activeVolatiles.clear();
 		this.transientEffects.clear();
 		this.activeTypes.clear();
+		this.activeFormes.clear();
 		this.opponentPokemon.clear();
 		this.opponentTeam.clear();
 		this.ourActiveBoosts.clear();

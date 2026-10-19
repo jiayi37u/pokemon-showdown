@@ -12,7 +12,9 @@ import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions, SideConditions } from '../types';
 import { getSTABMultiplier, getMoveInteraction, resolveMove, type MoveInteractionContext } from './type-calc';
 import { compareSpeedOrder, getEffectiveSpeed } from './speed';
-import { effectiveAbility, getEffectiveStat, effectiveItem, grounded, rulesDex, defensiveAbility } from './mechanics';
+import {
+	activatesGem, effectiveAbility, getEffectiveStat, effectiveItem, grounded, rulesDex, defensiveAbility,
+} from './mechanics';
 import { flingFailure, itemAllowsRemoval } from './items';
 import { pokemonCacheId } from './cache';
 import { canHaveOpponentMoves } from './opponent-presets';
@@ -619,8 +621,8 @@ function getVariableBasePower(
 		return Math.max(1, Math.floor(Math.floor((maxPower * 100 * hp + 2047) / 4096) / 100));
 	}
 
-	// Facade: doubles when statused
-	if (moveId === 'facade' && attacker.status) {
+	// Facade excludes sleep, unlike Guts and Hex.
+	if (moveId === 'facade' && attacker.status && attacker.status !== 'slp') {
 		return 140;
 	}
 
@@ -686,7 +688,8 @@ function getVariableBasePower(
 	}
 
 	// Acrobatics: doubles without item
-	if (moveId === 'acrobatics' && !attacker.item && (attacker.itemKnown || attacker.itemLost || attacker.itemAssumed)) {
+	if (moveId === 'acrobatics' && (activatesGem(attacker, move, field) ||
+		!attacker.item && (attacker.itemKnown || attacker.itemLost || attacker.itemAssumed))) {
 		return 110;
 	}
 
@@ -961,6 +964,10 @@ export function calculateDamage(
 	}
 
 	const hitDamage = (power: number): number => {
+		if (activatesGem(attacker, move, field)) {
+			const dex = rulesDex(field);
+			power = Math.round(power * (dex.gen <= 5 || dex.currentMod === 'mmo' ? 1.5 : 5325 / 4096));
+		}
 		// Base damage formula
 		const level = attacker.level || 100;
 		let baseDamage = Math.floor(Math.floor(Math.floor(2 * level / 5 + 2) * power * attack / defense) / 50 + 2);

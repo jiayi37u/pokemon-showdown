@@ -5,9 +5,23 @@ import { effectiveAbility, defensiveAbility, effectiveItem, grounded, normalizeW
 import { getMoveInteraction } from './type-calc';
 import { actsBeforeTarget } from './speed';
 
+/** Immediate self recovery shares one eligibility rule for rewards and unnecessary-healing penalties. */
+export function isImmediateRecovery(move: Pick<AIMove, 'id'>): boolean {
+	return ['recover', 'softboiled', 'milkdrink', 'slackoff', 'roost', 'healorder',
+		'synthesis', 'moonlight', 'morningsun', 'shoreup', 'rest'].includes(move.id);
+}
+
 /** Existing field/side effects that make a status move fail, independent of tactical value. */
 export function fieldEffectFailure(state: BattleState, attacker: AIPokemon, move: AIMove): string | undefined {
 	if (move.category !== 'Status') return;
+	if (move.id === 'rest') {
+		const failure = statusFailure(state, attacker, attacker, move, 'slp');
+		if (failure) return failure;
+	}
+	if (move.id === 'revivalblessing' &&
+		!state.self.team.some(p => p.fainted && p.ownerSide === attacker.ownerSide)) {
+		return 'No fainted party member to revive';
+	}
 	if (move.id === 'allyswitch') {
 		const gameType = state.field.formatId ? Dex.formats.get(state.field.formatId).gameType :
 			state.isDoubles ? 'doubles' : 'singles';

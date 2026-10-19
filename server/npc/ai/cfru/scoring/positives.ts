@@ -17,8 +17,8 @@ import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, PositiveScoringFunction } from './index';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
 import { actsBeforeTarget, attacksFirst, compareSpeedOrder } from '../util/speed';
-import { secondaryEffectFailure, statusFailure } from '../util/move-effects';
-import { getTypeEffectiveness } from '../util/type-calc';
+import { isImmediateRecovery, secondaryEffectFailure, statusFailure } from '../util/move-effects';
+import { getTypeEffectiveness, resolveMove } from '../util/type-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
 import { getHazeBenefit } from './negatives';
 
@@ -516,7 +516,7 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	if (atkBoostMoves.includes(moveId)) {
 		// Check if we have physical moves (CFRU: RealPhysicalMoveInMoveset)
 		const hasPhysicalMove = ctx.attacker.moves.some(m => {
-			const dexMove = ctx.dex.moves.get(m);
+			const dexMove = resolveMove(ctx.attacker, buildAIMove({ id: m }, 1, ctx.state.field.formatId), ctx.state.field);
 			return dexMove.category === 'Physical' && dexMove.basePower > 0;
 		});
 
@@ -552,7 +552,7 @@ export const rewardSetupMove: PositiveScoringFunction = (ctx) => {
 	// Special Attack boost moves
 	if (spaBoostMoves.includes(moveId)) {
 		const hasSpecialMove = ctx.attacker.moves.some(m => {
-			const dexMove = ctx.dex.moves.get(m);
+			const dexMove = resolveMove(ctx.attacker, buildAIMove({ id: m }, 1, ctx.state.field.formatId), ctx.state.field);
 			return dexMove.category === 'Special' && dexMove.basePower > 0;
 		});
 
@@ -1038,10 +1038,7 @@ export const rewardDrainMove: PositiveScoringFunction = (ctx) => {
  */
 export const rewardHealing: PositiveScoringFunction = (ctx) => {
 	const moveId = toID(ctx.move.id);
-	const healingMoves = ['recover', 'softboiled', 'milkdrink', 'slackoff', 'roost',
-		'synthesis', 'moonlight', 'morningsun', 'shoreup'];
-
-	if (!healingMoves.includes(moveId)) return 0;
+	if (!isImmediateRecovery(ctx.dex.moves.get(moveId))) return 0;
 
 	let bonus = 0;
 

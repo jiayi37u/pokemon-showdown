@@ -8,6 +8,7 @@ import { Dex, toID } from '../../../../../sim/dex';
 import { Teams } from '../../../../../sim/teams';
 import type { AIPokemon, OpponentModel, OpponentMoveKnowledge } from '../types';
 import { compatibleMoveSlots, computeStatsFromPreset, canHaveOpponentMoves } from './opponent-presets';
+import { formeAbility } from './mechanics';
 
 type RandomSet = RandomTeamsTypes.RandomSet;
 interface RandomGenerator {
@@ -195,6 +196,7 @@ export function inferRandomBattle(opponent: AIPokemon, formatId: string): Oppone
 	if (!source) return null;
 	const dex = source.generator.dex;
 	const species = dex.species.get(opponent.species);
+	const currentFormeAbility = formeAbility(species);
 	const previousForms = species.isMega ? [] :
 		(typeof species.battleOnly === 'string' ? [species.battleOnly] : species.battleOnly || []).map(toID);
 	const revealed: string[] = [...new Set(opponent.moves.map(toID))];
@@ -206,7 +208,7 @@ export function inferRandomBattle(opponent: AIPokemon, formatId: string): Oppone
 		const moveKnowledge = knowledge(revealed, [pool], source.generator.maxMoveCount);
 		const item = opponent.itemKnown || opponent.itemLost ? opponent.item : preset.item || '';
 		const ability = opponent.abilityChanged || nativeAbility ? opponent.ability :
-			species.isMega ? species.abilities[0] : preset.ability || '';
+			currentFormeAbility || preset.ability || '';
 		const pokemon: AIPokemon = {
 			...opponent, presetModels: undefined, moveKnowledge, baseStats: stats, maxHp: stats.hp,
 			hp: opponent.fainted ? 0 : Math.max(1, Math.floor(stats.hp * opponent.hpPercent / 100)),
@@ -226,14 +228,14 @@ export function inferRandomBattle(opponent: AIPokemon, formatId: string): Oppone
 		for (const [index, role] of data.sets.entries()) {
 			const pool = role.movepool.map(toID);
 			if (!compatibleMoveSlots(pool.map(move => [move]), revealed)) continue;
-			const abilities = species.isMega ? Object.values(species.abilities) : role.abilities || [];
+			const abilities = currentFormeAbility ? [currentFormeAbility] : role.abilities || [];
 			if (nativeAbility && !abilities.some(ability => toID(ability) === nativeAbility)) continue;
 			if (nativeItem && entry.requiredItems && !entry.requiredItems.some(item => toID(item) === nativeItem)) continue;
 			const expansion = expand(source, id, index);
 			const compatible = expansion.sets.filter(set =>
 				compatibleMoveSlots(set.moves.map(move => [move]), revealed) &&
 				(!nativeItem || toID(set.item) === nativeItem) &&
-				(!nativeAbility || species.isMega || toID(set.ability) === nativeAbility));
+				(!nativeAbility || !!currentFormeAbility || toID(set.ability) === nativeAbility));
 			const name = `random:${id}:${role.role}`;
 			if (expansion.complete) {
 				const variants = compatible.map(set => create(name, set.moves, set, true));

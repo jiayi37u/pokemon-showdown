@@ -11,10 +11,11 @@
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, NegativeScoringFunction } from './index';
 import { BASE_SCORE, DISCOURAGED_SCORE } from '../types';
-import { getTypeEffectiveness, getMoveInteraction } from '../util/type-calc';
+import { getTypeEffectiveness, getMoveInteraction, resolveMove } from '../util/type-calc';
+import { buildAIMove } from '../state-builder';
 import { effectiveAbility, defensiveAbility, effectiveItem, rulesDex } from '../util/mechanics';
 import {
-	delayedMoveFailure, fieldEffectFailure, inflictedStatus, statusFailure, volatileEffectFailure,
+	delayedMoveFailure, fieldEffectFailure, inflictedStatus, isImmediateRecovery, statusFailure, volatileEffectFailure,
 } from '../util/move-effects';
 import { itemMoveFailure, itemRemovalFailure } from '../util/items';
 import { compareSpeedOrder } from '../util/speed';
@@ -81,7 +82,8 @@ export const checkStatusOpportunity: NegativeScoringFunction = ctx => {
 					defensiveAbility(ctx.attacker, p, move, ctx.state.field) === 'unaware')) {
 					return false;
 				}
-				const stat = move.overrideOffensiveStat || (move.category === 'Physical' ? 'atk' : 'spa');
+				const resolved = resolveMove(ctx.attacker, buildAIMove({ id }, 1, ctx.state.field.formatId), ctx.state.field);
+				const stat = move.overrideOffensiveStat || (resolved.category === 'Physical' ? 'atk' : 'spa');
 				return raised.some(raisedStat => raisedStat === stat);
 			});
 			if (!usableAttack) return discourageMove(ctx, 'No attack benefits from the offensive boost');
@@ -1216,6 +1218,11 @@ export const checkProtectOveruse: NegativeScoringFunction = (ctx) => {
 
 	// Quick Guard, Wide Guard, Crafty Shield have infinite usage
 	if (!protectMoves.includes(moveId)) return 0;
+	if (ctx.state.self.conditions.wishes?.[ctx.attacker.slot] !== 1 &&
+		willFaintFromSecondaryDamage(ctx.attacker, ctx.state.field.weather,
+			effectiveAbility(ctx.target, ctx.state.field), ctx.state.field)) {
+		return discourageMove(ctx, 'Protection cannot prevent lethal residual damage');
+	}
 
 	// Check if last move was a Protect-type move
 	const lastMoveId = ctx.attacker.lastMove;
@@ -1232,10 +1239,7 @@ export const checkProtectOveruse: NegativeScoringFunction = (ctx) => {
 export const checkHealingUnnecessary: NegativeScoringFunction = (ctx) => {
 	const moveId = toID(ctx.move.id);
 
-	const healingMoves = ['recover', 'softboiled', 'milkdrink', 'slackoff', 'roost',
-		'synthesis', 'moonlight', 'morningsun', 'shoreup', 'rest'];
-
-	if (!healingMoves.includes(moveId)) return 0;
+	if (!isImmediateRecovery(ctx.dex.moves.get(moveId))) return 0;
 
 	// Don't heal at high HP
 	if (ctx.attacker.hpPercent > 80) {
@@ -1260,16 +1264,7 @@ export const checkHealingUnnecessary: NegativeScoringFunction = (ctx) => {
 		return -2;
 	}
 
-	// Rest when already asleep
-	if (moveId === 'rest' && ctx.attacker.status === 'slp') {
-		ctx.adjustments.push({
-			reason: 'Already asleep, Rest fails',
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
+	// Whether the user wakes before acting belongs to the shared sleep gate.
 	return 0;
 };
 

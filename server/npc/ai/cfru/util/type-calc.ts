@@ -9,7 +9,9 @@
 
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, AICache, FieldConditions } from '../types';
-import { effectiveAbility, defensiveAbility, effectiveItem, effectivePriority, grounded, rulesDex } from './mechanics';
+import {
+	effectiveAbility, defensiveAbility, effectiveItem, effectivePriority, getEffectiveStat, grounded, rulesDex,
+} from './mechanics';
 import { itemMoveFailure } from './items';
 
 /** Resolve public move effects while retaining the selected move's identity and slot. */
@@ -29,6 +31,12 @@ export function resolveMove(attacker: AIPokemon, move: AIMove, field: FieldCondi
 			secondaryChance: called.secondary?.chance || 0, multihit: called.multihit || null };
 	}
 	const baseType = move.baseType || move.type;
+	if (['photongeyser', 'lightthatburnsthesky'].includes(id)) {
+		// The engine compares staged stats before item/ability multipliers, not damage against this target.
+		const physical = getEffectiveStat(attacker.baseStats.atk, attacker.boosts.atk) >
+			getEffectiveStat(attacker.baseStats.spa, attacker.boosts.spa);
+		move = { ...move, category: physical ? 'Physical' : 'Special' };
+	}
 	let type = baseType;
 	if (['judgment', 'multiattack', 'technoblast', 'naturalgift'].includes(id)) {
 		type = 'Normal';
@@ -445,7 +453,7 @@ export function getMoveInteraction(
 	// Iron Ball alone makes Ground neutral against Flying dual types, unlike Gravity/Smack Down.
 	const ironBallNeutral = move.type === 'Ground' && item === 'ironball' && types.includes('Flying') &&
 		!field.gravity && !defender.volatiles.has('ingrain') && !defender.volatiles.has('smackdown');
-	const effectiveness = ironBallNeutral || (arrows && types.includes('Flying') && !isGrounded) ? 1 : 2 ** exponent;
+	let effectiveness = ironBallNeutral || (arrows && types.includes('Flying') && !isGrounded) ? 1 : 2 ** exponent;
 	if (move.type === 'Ground' && !arrows && !isGrounded &&
 		(item === 'airballoon' || defender.volatiles.has('magnetrise') || defender.volatiles.has('telekinesis'))) {
 		return block('Airborne target immune to Ground');
@@ -454,5 +462,7 @@ export function getMoveInteraction(
 		return block(`Ability immunity: ${defender.ability}`);
 	}
 	if (ability === 'wonderguard' && effectiveness <= 1) return block('Wonder Guard blocks non-super-effective move');
+	if (ability === 'terashell' && toID(defender.species) === 'terapagosterastal' &&
+		defender.hp >= defender.maxHp && effectiveness >= 1 && move.id !== 'struggle') effectiveness = 0.5;
 	return { effectiveness };
 }

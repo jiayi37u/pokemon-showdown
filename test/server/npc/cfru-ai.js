@@ -10,6 +10,7 @@ const { rewardSetupMove, rewardDefensiveSetup, rewardEncore } = require('../../.
 const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
 const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { getBestKOMove } = require('../../../dist/server/npc/ai/cfru/util/knockout');
+const { resolveMove } = require('../../../dist/server/npc/ai/cfru/util/type-calc');
 
 function pokemon(overrides = {}) {
 	return {
@@ -42,6 +43,95 @@ function score(id, {
 const hasReason = (result, reason) => result.breakdown.details.some(detail => detail.reason.includes(reason));
 
 describe('CFRU scoring with production move metadata', () => {
+	it('resolves Photon Geyser using staged stats, with special winning ties and no item/ability bias', () => {
+		const actor = pokemon({ ability: 'Huge Power', item: 'Choice Band' });
+		const target = pokemon();
+		const field = { weather: '', terrain: '', formatId: 'gen9customgame' };
+		const move = buildAIMove({ id: 'photongeyser' }, 1);
+		assert.equal(resolveMove(actor, move, field).category, 'Special');
+		const initial = calculateDamage(actor, target, move, field).average;
+		actor.boosts.atk = 2;
+		assert.equal(resolveMove(actor, move, field).category, 'Physical');
+		assert(calculateDamage(actor, target, move, field).average > initial * 2);
+		actor.moves = ['photongeyser', 'swordsdance'];
+		assert(score('swordsdance', { actor: { ...actor, item: '' } }).score > 100,
+			'Physical Photon Geyser benefits from Attack setup');
+		actor.boosts.spa = 2;
+		assert.equal(resolveMove(actor, resolveMove(actor, move, field), field).category, 'Special');
+	});
+
+	it('applies Tera Shell to all hits at full HP, retaining immunities, fixed damage and ability bypass', () => {
+		const actor = pokemon();
+		const target = pokemon({ species: 'Terapagos-Terastal', types: ['Normal'], ability: 'Tera Shell' });
+		const field = { weather: '', terrain: '', formatId: 'gen9customgame' };
+		const damage = (id, a = actor, d = target) => calculateDamage(a, d, buildAIMove({ id }, 1), field);
+		assert.equal(damage('closecombat').effectiveness, 0.5);
+		assert.equal(damage('shadowsneak').max, 0);
+		assert.equal(damage('seismictoss').average, 100);
+		assert.equal(damage('struggle').effectiveness, 1);
+		assert.equal(damage('tackle', { ...actor, ability: 'Mold Breaker' }).effectiveness, 1);
+		assert.equal(damage('tackle', actor, { ...target, hp: 299, hpPercent: 99.67 }).effectiveness, 1);
+		const multi = damage('bulletseed');
+		const noAbility = damage('bulletseed', actor, { ...target, ability: '' });
+		assert(multi.average < noAbility.average * 0.55);
+	});
+
+	for (const formatId of ['gen5customgame', 'gen5pokemmorandombattle', 'gen9customgame']) {
+		it(`${formatId}: Facade excludes sleep and gems apply before Acrobatics power`, () => {
+			const field = { weather: '', terrain: '', formatId };
+			const target = pokemon();
+			const damage = (id, actor, extraField = {}) => calculateDamage(actor, target,
+				buildAIMove({ id }, 1, formatId), { ...field, ...extraField }).average;
+			const healthy = damage('facade', pokemon());
+			assert.equal(damage('facade', pokemon({ status: 'slp' })), healthy);
+			assert(damage('facade', pokemon({ status: 'par' })) > healthy * 1.9);
+			const gem = pokemon({ item: 'Flying Gem', itemKnown: true });
+			const held = damage('acrobatics', pokemon({ item: 'Leftovers' }));
+			const empty = damage('acrobatics', pokemon({ itemKnown: true }));
+			const boosted = damage('acrobatics', gem);
+			assert(boosted > empty * (formatId === 'gen9customgame' ? 1.25 : 1.4));
+			assert.equal(damage('acrobatics', gem, { magicroom: true }), held);
+			assert.equal(damage('acrobatics', { ...gem, ability: 'Klutz' }), held);
+			assert.equal(damage('acrobatics', { ...gem, item: 'Water Gem' }), held);
+			assert.equal(damage('firepledge', { ...gem, item: 'Fire Gem' }), damage('firepledge', pokemon()),
+				'Pledge moves are exempt from gems in the engine');
+			assert.equal(gem.item, 'Flying Gem', 'Estimation must not consume the snapshot item');
+		});
+	}
+
+	it('rewards Rest recovery at low HP while keeping delayed and sacrificial healing separate', () => {
+		for (const [hp, expected] of [[144, 108], [57, 112], [300, 60]]) {
+			const actor = pokemon({ hp, hpPercent: hp / 3, moves: ['rest', 'sleeptalk'] });
+			assert.equal(score('rest', { actor }).score, expected);
+		}
+		assert(!hasReason(score('wish', { actor: pokemon({ hp: 60, hpPercent: 20 }) }), 'Healing at'));
+		assert(!hasReason(score('healingwish', { actor: pokemon({ hp: 60, hpPercent: 20 }) }), 'Healing at'));
+		const injured = pokemon({ hp: 60, hpPercent: 20 });
+		assert.equal(score('rest', { actor: injured, field: { terrain: 'electric' } }).score, 0);
+		assert.equal(score('rest', { actor: { ...injured, ability: 'Insomnia' } }).score, 0);
+		assert.equal(score('rest', { actor: { ...injured, status: 'slp', sleepTurns: 1 } }).score, 112);
+		assert.equal(score('rest', { actor: { ...injured, status: 'slp', sleepTurns: 2 } }).score, 0);
+	});
+
+	it('discourages Protect only when known residual damage remains lethal after recovery', () => {
+		const actor = pokemon({ hp: 13, maxHp: 364, hpPercent: 13 / 364 * 100, status: 'psn', item: 'Leftovers' });
+		assert.equal(score('protect', { actor }).score, 60);
+		assert.equal(score('endure', { actor }).score, 60);
+		assert(!hasReason(score('protect', { actor, conditions: { wishes: { 1: 1 } } }), 'lethal residual'));
+		for (const ability of ['Magic Guard', 'Poison Heal']) {
+			assert(!hasReason(score('protect', { actor: { ...actor, ability } }), 'lethal residual'));
+		}
+		assert(!hasReason(score('protect', { actor: { ...actor, hp: 100, hpPercent: 100 / 364 * 100 } }), 'lethal residual'));
+	});
+
+	it('Revival Blessing requires a fainted member belonging to this trainer', () => {
+		const actor = pokemon({ ownerSide: 'p2' });
+		const fainted = pokemon({ active: false, hp: 0, hpPercent: 0, fainted: true, ownerSide: 'p4' });
+		assert.equal(score('revivalblessing', { actor }).score, 0);
+		assert.equal(score('revivalblessing', { actor, reserve: [fainted] }).score, 0);
+		assert(score('revivalblessing', { actor, reserve: [{ ...fainted, ownerSide: 'p2' }] }).score > 0);
+	});
+
 	it('separates speed benefits from Protect and attacking priority', () => {
 		const actor = pokemon();
 		actor.boosts.spe = 2;

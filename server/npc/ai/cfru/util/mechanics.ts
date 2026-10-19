@@ -59,6 +59,19 @@ export function rulesDex(field: Pick<FieldConditions, 'formatId'>) {
 	return field.formatId ? Dex.forFormat(field.formatId) : Dex;
 }
 
+/** These public battle formes replace the native ability, rather than inheriting the original set's ability. */
+export function formeAbility(species: Species): string | undefined {
+	if (species.isMega || species.isPrimal ||
+		['greninjaash', 'terapagosterastal', 'terapagosstellar'].includes(species.id)) return species.abilities[0];
+}
+
+/** A matching gem is consumed before base power is evaluated, including Acrobatics. */
+export function activatesGem(pokemon: AIPokemon, move: AIMove, field: FieldConditions): boolean {
+	const item = rulesDex(field).items.get(effectiveItem(pokemon, field));
+	return !!item.isGem && item.id === `${toID(move.type)}gem` && move.category !== 'Status' &&
+		!move.flags.pledgecombo;
+}
+
 export function effectiveItem(pokemon: AIPokemon, field: Partial<FieldConditions> = {}): string {
 	const item = rulesDex(field).items.get(pokemon.item);
 	if (pokemon.itemLost) return '';

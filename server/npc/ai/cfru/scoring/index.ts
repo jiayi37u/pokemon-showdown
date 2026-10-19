@@ -179,6 +179,10 @@ export class ScoringEngine {
 	): MoveScore {
 		state = { ...state, field: { ...state.field, formatId: this.config.formatId || state.field.formatId } };
 		move = resolveMove(attacker, move, state.field);
+		// Ally-only moves have one actual recipient even when a strategy enumerates opposing matchups.
+		if (move.target === 'adjacentAlly') {
+			target = state.self.active.find(p => p !== attacker && !p.fainted) || attacker;
+		}
 		const isTargetingPartner = state.isDoubles && state.self.active.some(p => p === target);
 		const dex = rulesDex(state.field);
 		// Pre-calculate damage for non-status moves

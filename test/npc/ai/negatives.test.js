@@ -759,6 +759,7 @@ function runNegativesScoringTests() {
 				types: ['Grass', 'Steel'],
 				ability: 'Iron Barbs',
 				lastMove: lastMove,
+				hp: 300, maxHp: 300, hpPercent: 100, status: '', item: '',
 				boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 },
 				volatiles: new Set(),
 			},
@@ -766,8 +767,9 @@ function runNegativesScoringTests() {
 				species: 'Garchomp',
 				types: ['Dragon', 'Ground'],
 				ability: 'Rough Skin',
+				item: '', volatiles: new Set(),
 			},
-			state: { isDoubles: isDoubles, field: { weather: '', terrain: '' } },
+			state: { isDoubles, field: { weather: '', terrain: '' }, self: { conditions: {} } },
 			flags: {},
 			adjustments: [],
 		};

@@ -988,6 +988,10 @@ export class BattleTracker {
 
 		const direct = effect?.startsWith('ability: ') ? effect.slice('ability: '.length) : '';
 		switch (command) {
+		case 'move':
+			// Ability-called moves (for example Magic Bounce) are used by the ability holder.
+			if (from) this.recordAbility(pokemon, from);
+			break;
 		case '-immune':
 		case '-fail':
 			if (from) this.recordAbility(of || pokemon, from);

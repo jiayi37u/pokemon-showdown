@@ -169,6 +169,7 @@ export function volatileEffectFailure(
 /** Includes damaging moves' secondary status without treating their damage as ineffective. */
 export function inflictedStatus(move: AIMove, state: BattleState, attacker?: AIPokemon): string {
 	const data = rulesDex(state.field).moves.get(move.id);
+	if (move.id === 'psychoshift') return attacker?.status || '';
 	if (move.id === 'fling' && attacker) return rulesDex(state.field).items.get(attacker.item).fling?.status || '';
 	if (move.id === 'yawn') return 'slp';
 	if (data.volatileStatus === 'confusion') return 'confusion';
@@ -179,6 +180,7 @@ export function statusFailure(
 	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove,
 	status = inflictedStatus(move, state, attacker)
 ): string | undefined {
+	if (move.id === 'psychoshift' && !attacker.status) return 'Psycho Shift requires a status to transfer';
 	if (!status) return;
 	const field = state.field;
 	const dex = rulesDex(field);

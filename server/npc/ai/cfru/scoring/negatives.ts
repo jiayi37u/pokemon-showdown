@@ -31,8 +31,12 @@ function discourageMove(ctx: ScoringContext, reason: string): number {
 	return amount;
 }
 
-/** Conservative Normal policy for attacks that require the target to select an attack. */
-export const checkConditionalPriority: NegativeScoringFunction = ctx => {
+/** Conservative opportunities for attacks that depend on the opponent's action. */
+export const checkConditionalAttack: NegativeScoringFunction = ctx => {
+	if (ctx.move.id === 'focuspunch') {
+		if (ctx.attacker.volatiles.has('substitute') || ctx.target.status === 'slp') return 0;
+		return discourageMove(ctx, 'Focus Punch needs our substitute or a sleeping target');
+	}
 	if (!['suckerpunch', 'thunderclap'].includes(ctx.move.id)) return 0;
 	const side = ctx.isTargetingPartner ? ctx.state.self : ctx.state.opponent;
 	const slower = compareSpeedOrder(ctx.attacker, ctx.target, ctx.state.field,
@@ -58,7 +62,8 @@ export const checkStatusOpportunity: NegativeScoringFunction = ctx => {
 		const raised = Object.entries(data.boosts).filter(([, stages]) => stages > 0).map(([stat]) => stat);
 		const indirectBenefit = ctx.attacker.moves.some(id => ['storedpower', 'powertrip', 'batonpass'].includes(toID(id)));
 		const foes = ctx.state.opponent.active.filter(p => !p.fainted);
-		if (!indirectBenefit && raised.length && raised.every(stat => ['atk', 'def', 'spa', 'spd'].includes(stat)) &&
+		if (!indirectBenefit && raised.length &&
+			raised.every(stat => ['atk', 'def', 'spa', 'spd', 'accuracy', 'evasion'].includes(stat)) &&
 			foes.length && foes.every(p => effectiveAbility(p, ctx.state.field) === 'unaware' &&
 				ctx.attacker.moves.every(id => {
 					const move = ctx.dex.moves.get(id);
@@ -634,10 +639,9 @@ function isStatLoweringMove(move: { id: string; category: string }): boolean {
 // =============================================================================
 
 /** Only pure status moves can be wholly invalidated by failure to inflict status. */
-function scoreStatus(ctx: ScoringContext, expected: string): number {
+export const checkStatusMove: NegativeScoringFunction = ctx => {
 	if (ctx.move.category !== 'Status') return 0;
-	const status = inflictedStatus(ctx.move, ctx.state);
-	if (expected === 'poison' ? !['psn', 'tox'].includes(status) : status !== expected) return 0;
+	const status = inflictedStatus(ctx.move, ctx.state, ctx.attacker);
 	const failure = statusFailure(ctx.state, ctx.attacker, ctx.target, ctx.move, status);
 	if (failure) {
 		const boosts = rulesDex(ctx.state.field).moves.get(ctx.move.id).boosts;
@@ -658,7 +662,7 @@ function scoreStatus(ctx: ScoringContext, expected: string): number {
 		return -10;
 	}
 	return 0;
-}
+};
 
 /** Team status cures fail when no living teammate has a status condition. */
 export const checkTeamStatusCure: NegativeScoringFunction = ctx => {
@@ -673,34 +677,6 @@ export const checkTeamStatusCure: NegativeScoringFunction = ctx => {
 	ctx.flags.hasNoEffect = true;
 	return -100;
 };
-
-/**
- * Check if sleep move will fail
- * CFRU: battle_util.c lines 2018-2037 (DoesSleepClausePrevent)
- */
-export const checkSleepMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'slp');
-
-/**
- * Check if paralysis move will fail
- */
-export const checkParalysisMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'par');
-
-/**
- * Check if burn move will fail
- * CFRU: ai_util.c BadIdeaToBurn lines 2951-2971
- */
-export const checkBurnMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'brn');
-
-/**
- * Check if poison move will fail
- * CFRU: ai_util.c BadIdeaToPoison lines 2876-2901
- */
-export const checkPoisonMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'poison');
-
-/**
- * Check if confusion move will fail
- */
-export const checkConfusionMove: NegativeScoringFunction = ctx => scoreStatus(ctx, 'confusion');
 
 // =============================================================================
 // Setup Move Checks
@@ -828,7 +804,7 @@ export const checkStatBoostWasted: NegativeScoringFunction = (ctx) => {
 export const checkMagicBounce: NegativeScoringFunction = (ctx) => {
 	const targetAbility = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
-	// Only check if opponent's ability is revealed as Magic Bounce
+	// Use the effective known or estimated ability, including Mold Breaker and suppression.
 	if (targetAbility !== 'magicbounce') {
 		return 0;
 	}
@@ -836,12 +812,7 @@ export const checkMagicBounce: NegativeScoringFunction = (ctx) => {
 	// Use the 'reflectable' flag - same approach as CFRU's FLAG_MAGIC_COAT_AFFECTED
 	// This automatically covers all moves that can be bounced by Magic Coat/Magic Bounce
 	if (ctx.move.flags['reflectable']) {
-		ctx.adjustments.push({
-			reason: 'Magic Bounce will reflect this move',
-			amount: -20,
-			category: 'negative',
-		});
-		return -20;
+		return discourageMove(ctx, 'Magic Bounce will reflect this move');
 	}
 
 	return 0;
@@ -1005,7 +976,7 @@ export const checkMentalMoveRedundant: NegativeScoringFunction = (ctx) => {
 			ctx.flags.hasNoEffect = true;
 			return -10;
 		}
-		const amount = DISCOURAGED_SCORE - BASE_SCORE;
+		const amount = Math.min(0, DISCOURAGED_SCORE - ctx.score);
 		ctx.adjustments.push({ reason: 'Encore needs a useful interruption opportunity', amount, category: 'negative' });
 		return amount;
 	}
@@ -1940,7 +1911,7 @@ export const checkKnockOff: NegativeScoringFunction = ctx => {
 export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkSleepTalkSnore,
 	checkMoveImmunity,
-	checkConditionalPriority,
+	checkConditionalAttack,
 	checkFieldEffect,
 	// Partner effects after confirmed immunities
 	checkTargetingPartnerDamage,
@@ -1971,11 +1942,7 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 
 	// Status moves
 	checkTeamStatusCure,
-	checkSleepMove,
-	checkParalysisMove,
-	checkBurnMove,
-	checkPoisonMove,
-	checkConfusionMove,
+	checkStatusMove,
 
 	// Setup moves and stat resets
 	checkStatBoostWasted,

@@ -10,8 +10,7 @@ function runNegativesScoringTests() {
 	const {
 		checkBellyDrum,
 		checkCounterMirrorCoat,
-		checkBurnMove,
-		checkPoisonMove,
+		checkStatusMove,
 		checkCovertCloak,
 		checkPainSplit,
 		checkVolatileEffect,
@@ -202,7 +201,7 @@ function runNegativesScoringTests() {
 			moveId: 'willowisp',
 			targetAbility: 'Magic Guard',
 		});
-		const penalty = checkBurnMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, -10, '对 Magic Guard 使用鬼火应扣10分');
 	});
 
@@ -212,7 +211,7 @@ function runNegativesScoringTests() {
 			moveType: 'Poison',
 			targetAbility: 'Magic Guard',
 		});
-		const penalty = checkPoisonMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, -10, '对 Magic Guard 使用剧毒应扣10分');
 	});
 
@@ -223,7 +222,7 @@ function runNegativesScoringTests() {
 			targetAbility: 'Magic Guard',
 			attackerMoves: [{ id: 'venoshock' }, { id: 'sludgebomb' }],
 		});
-		const penalty = checkPoisonMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, 0, '有 Venoshock 时不扣分');
 	});
 
@@ -232,7 +231,7 @@ function runNegativesScoringTests() {
 			moveId: 'willowisp',
 			targetAbility: 'Blaze',
 		});
-		const penalty = checkBurnMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, 0, '对普通特性不扣分');
 	});
 
@@ -916,8 +915,6 @@ function runNegativesScoringTests() {
 
 	section('睡眠条款检查 / Sleep Clause Tests');
 
-	const { checkSleepMove } = require('../../../dist/server/npc/ai/cfru/scoring/negatives');
-
 	function createSleepClauseContext(overrides = {}) {
 		return createDoublesContext({
 			state: { isDoubles: false,
@@ -943,7 +940,7 @@ function runNegativesScoringTests() {
 		const ctx = createSleepClauseContext({
 			reserve1Status: 'slp', // Garchomp is asleep
 		});
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, -100, '对手已有睡眠精灵时睡眠招式应扣 100 分');
 		assert(
 			ctx.adjustments.some(adj =>
@@ -957,7 +954,7 @@ function runNegativesScoringTests() {
 		const ctx = createSleepClauseContext({
 			// No sleeping Pokemon on opponent team
 		});
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, 0, '对手无睡眠精灵时睡眠招式不应扣分');
 	});
 
@@ -969,7 +966,7 @@ function runNegativesScoringTests() {
 				{ species: 'Dragonite', fainted: false, status: '' },
 			],
 		});
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, 0, '已倒下的睡眠精灵不应触发睡眠条款');
 	});
 
@@ -978,7 +975,7 @@ function runNegativesScoringTests() {
 			targetStatus: 'par', // Target is paralyzed
 			reserve1Status: 'slp', // Another Pokemon is asleep
 		});
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, -100, '目标已有状态时应扣分');
 		assert(
 			ctx.adjustments.some(adj =>
@@ -992,7 +989,7 @@ function runNegativesScoringTests() {
 		const ctx = createSleepClauseContext({
 			targetTypes: ['Grass', 'Poison'],
 		});
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, -100, '草系免疫粉末招式');
 		assert(
 			ctx.adjustments.some(adj =>
@@ -1007,7 +1004,7 @@ function runNegativesScoringTests() {
 			terrain: 'electric',
 			targetTypes: ['Ground', 'Rock'], // Grounded types
 		});
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, -100, '电气场地阻止接地精灵睡眠');
 		assert(
 			ctx.adjustments.some(adj =>
@@ -1021,7 +1018,7 @@ function runNegativesScoringTests() {
 		const ctx = createSleepClauseContext({
 			targetAbility: 'Insomnia',
 		});
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, -100, '不眠特性阻止睡眠');
 		assert(
 			ctx.adjustments.some(adj =>
@@ -1034,10 +1031,11 @@ function runNegativesScoringTests() {
 	test('睡眠条款：非睡眠招式不应检查 / Sleep Clause: non-sleep move should not check', () => {
 		const ctx = createSleepClauseContext({
 			moveId: 'thunderwave',
+			targetSpecies: 'Snorlax', targetTypes: ['Normal'], targetAbility: 'Thick Fat',
 			reserve1Status: 'slp',
 		});
 		ctx.move.id = 'thunderwave';
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, 0, '非睡眠招式不应触发睡眠条款检查');
 	});
 
@@ -1045,7 +1043,7 @@ function runNegativesScoringTests() {
 		const ctx = createSleepClauseContext({
 			reserve1Status: 'slp', // Opponent has sleeping Pokemon
 		});
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, -100, '睡眠条款违规应扣 100 分');
 		assertEqual(ctx.flags.hasNoEffect, true, 'hasNoEffect 标志应为 true');
 	});
@@ -1060,7 +1058,7 @@ function runNegativesScoringTests() {
 		});
 
 		// First run negative scorer to set hasNoEffect
-		const penalty = checkSleepMove(ctx);
+		const penalty = checkStatusMove(ctx);
 		assertEqual(penalty, -100, '应扣 100 分');
 		assertEqual(ctx.flags.hasNoEffect, true, 'hasNoEffect 应为 true');
 

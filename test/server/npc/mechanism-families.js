@@ -52,6 +52,106 @@ function oracle(g, id, tolerance = 0) {
 describe('NPC shared mechanism families', () => {
 	afterEach(() => { for (const b of games) b.destroy(); games = []; });
 	for (const mode of ['singles', 'doubles', 'multi']) {
+		it(`${mode}: only rewards Focus Punch behind a substitute or against a sleeping target`, () => {
+			const g = game({ mode, actor: { species: 'Breloom', ability: 'Poison Heal', moves: ['focuspunch', 'spore', 'substitute'] },
+				foe: { species: 'Tauros', ability: 'Intimidate', moves: ['earthquake'] } });
+			let s = g.state();
+			s.opponent.active[0].hp = 1;
+			s.opponent.active[0].hpPercent = 1;
+			s.opponent.active[0].lastMove = 'Earthquake';
+			const result = g.score('focuspunch', s);
+			assert(result.flags.canKO, 'The test must cover a tempting KO reward');
+			assert.equal(result.score, 60);
+			assert.equal(result.breakdown.positives, 0);
+			if (mode !== 'singles') {
+				s.opponent.active[1].status = 'slp';
+				assert.equal(g.score('focuspunch', s).score, 60, 'An unrelated sleeping foe does not protect this attack');
+			}
+			g.b.p1.active[0].setStatus('slp');
+			g.b.makeRequest('move');
+			s = g.state();
+			assert(g.score('focuspunch', s).score > 60, 'Public sleep permits normal scoring');
+			g.b.p1.active[0].cureStatus();
+			g.b.p2.active[0].addVolatile('substitute');
+			g.b.makeRequest('move');
+			assert(g.score('focuspunch').score > 60, 'Our substitute permits normal scoring');
+		});
+		for (const format of ['gen5customgame', 'gen5pokemmorandombattle', 'gen9customgame']) {
+			it(`${mode}, ${format}: validates Psycho Shift using the user's actual status`, () => {
+				const g = game({ mode, format, actor: { species: 'Sigilyph', ability: 'Magic Guard', moves: ['psychoshift'] },
+					foe: { species: 'Scizor', ability: 'Technician', moves: ['splash'] } });
+				assert.equal(g.score('psychoshift').score, 0, 'No status to transfer');
+				g.b.p2.active[0].setStatus('brn');
+				g.b.p1.active[0].setStatus('frz');
+				g.b.makeRequest('move');
+				const blocked = g.score('psychoshift');
+				assert.equal(blocked.score, 0, 'An existing target status blocks transfer');
+				assert(blocked.flags.hasNoEffect);
+				const useShift = () => {
+					const move = g.b.dex.getActiveMove('psychoshift');
+					move.accuracy = true; // Isolate status rules from the Gen 5 accuracy roll.
+					g.b.actions.useMove(move, g.b.p2.active[0], { target: g.b.p1.active[0] });
+				};
+				useShift();
+				assert(g.b.log.some(line => line.startsWith('|-fail|p2')));
+				assert.equal(g.b.p2.active[0].status, 'brn');
+				g.b.p1.active[0].cureStatus();
+				g.b.makeRequest('move');
+				assert(g.score('psychoshift').score > 60, 'A valid transfer remains usable');
+				useShift();
+				assert.equal(g.b.p1.active[0].status, 'brn');
+				assert.equal(g.b.p2.active[0].status, '');
+				g.b.p1.active[0].cureStatus();
+				g.b.p2.active[0].setStatus('tox');
+				g.b.makeRequest('move');
+				assert.equal(g.score('psychoshift').score, 0, 'Steel immunity blocks transferred poison');
+				useShift();
+				assert.equal(g.b.p1.active[0].status, '');
+				assert.equal(g.b.p2.active[0].status, 'tox');
+			});
+		}
+		it(`${mode}: discourages Coil when Unaware ignores every useful boost`, () => {
+			const g = game({ mode, actor: { species: 'Dunsparce', ability: 'Serene Grace', moves: ['coil', 'bodyslam', 'earthquake', 'roost'] } });
+			const s = g.state();
+			for (const foe of s.opponent.active) foe.ability = 'Unaware';
+			for (const id of ['coil', 'honeclaws', 'doubleteam']) {
+				const result = g.score(id, s);
+				assert.equal(result.score, 60, id);
+				assert.equal(result.breakdown.positives, 0, id);
+			}
+			assert(g.score('dragondance', s).score > 60, 'Speed still has value against Unaware');
+			s.self.active[0].ability = 'Mold Breaker';
+			assert(g.score('coil', s).score > 60, 'Mold Breaker bypasses Unaware');
+			s.self.active[0].ability = 'Serene Grace';
+			s.self.active[0].moves.push('storedpower');
+			assert(g.score('coil', s).score > 60, 'Stored Power still benefits from the boost count');
+			s.self.active[0].moves.pop();
+			if (mode !== 'singles') {
+				s.opponent.active[1].ability = 'Synchronize';
+				assert(g.score('coil', s).score > 60, 'Boosts can still help against the other foe');
+			}
+		});
+		it(`${mode}: records Magic Bounce from a reflected move and suppresses its tactical rewards`, () => {
+			const g = game({ mode, actor: { species: 'Whimsicott', ability: 'Prankster', moves: ['leechseed', 'encore', 'taunt', 'hurricane'] },
+				foe: { species: 'Xatu', ability: 'Magic Bounce', moves: ['toxic', 'splash'] } });
+			const choice = mode === 'singles' ? 'move 1' : 'move 1 1';
+			g.b.makeChoices(...(mode === 'multi' ? [choice, choice, 'move 1', 'move 1'] :
+				mode === 'doubles' ? [choice + ', move 1', choice + ', move 1'] : [choice, choice]));
+			assert(g.b.log.some(line => line.startsWith('|move|p1a: Xatu|Leech Seed|') && line.includes('[from] ability: Magic Bounce')));
+			const s = g.state(), target = s.opponent.active[0];
+			assert.equal(target.ability, 'Magic Bounce');
+			assert.equal(target.lastMove.toLowerCase(), 'toxic');
+			assert(!target.moves.includes('leechseed'), 'Reflected moves are not revealed moveset slots');
+			for (const id of ['encore', 'leechseed', 'taunt']) {
+				const result = g.score(id, s);
+				assert(result.score <= 60, `${id}: ${result.score}`);
+				assert.equal(result.breakdown.positives, 0, id);
+				assert(result.breakdown.details.some(detail => detail.reason.includes('Magic Bounce')));
+			}
+			assert(g.score('hurricane', s).score > 60, 'Ordinary attacks are unaffected');
+			s.self.active[0].ability = 'Mold Breaker';
+			assert(g.score('encore', s).score > 60, 'Mold Breaker allows Encore through');
+		});
 		it(`${mode}: resolves Shell Side Arm against the target's defenses`, () => {
 			const g = game({ mode, actor: { species: 'Slowbro-Galar', ability: 'Quick Draw', nature: 'Adamant', evs: { atk: 252 }, moves: ['shellsidearm'] }, foe: { species: 'Chansey', ability: 'Natural Cure', moves: ['splash'] } });
 			const s = g.state();

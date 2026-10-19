@@ -11,6 +11,9 @@ const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/a
 const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { getBestKOMove } = require('../../../dist/server/npc/ai/cfru/util/knockout');
 const { resolveMove } = require('../../../dist/server/npc/ai/cfru/util/type-calc');
+const { canRestoreUserHp, recoveryKind, painSplitRecovery } = require('../../../dist/server/npc/ai/cfru/util/move-effects');
+const { getOpponentPreset, computeStatsFromPreset } = require('../../../dist/server/npc/ai/cfru/util/opponent-presets');
+const { Dex } = require('../../../dist/sim');
 
 function pokemon(overrides = {}) {
 	return {
@@ -420,6 +423,79 @@ describe('CFRU scoring with production move metadata', () => {
 		assert.equal(score('toxic', { target }).score, 111, 'A bounded pool can rule out recovery');
 		assert.equal(score('saltcure', { target }).score,
 			score('saltcure', { target: pokemon({ moves: revealedMoves }) }).score + 2);
+	});
+
+	for (const formatId of ['gen5customgame', 'gen5pokemmorandombattle', 'gen9customgame']) {
+		it(`${formatId}: shares recovery knowledge across Toxic, Salt Cure and revealed/preset moves`, () => {
+			const recovery = ['recover', 'softboiled', 'milkdrink', 'slackoff', 'roost', 'healorder', 'synthesis',
+				'moonlight', 'morningsun', 'shoreup', 'rest', 'swallow', 'lifedew', 'junglehealing', 'lunarblessing',
+				'wish', 'strengthsap', 'painsplit', 'purify', 'aquaring', 'ingrain', 'leechseed',
+				'absorb', 'megadrain', 'gigadrain', 'drainpunch', 'drainingkiss', 'leechlife', 'hornleech',
+				'paraboliccharge', 'oblivionwing', 'dreameater', 'bitterblade', 'matchagotcha', 'bouncybubble'];
+			for (const id of recovery) {
+				assert(canRestoreUserHp({ id }, { formatId }), id);
+				for (const revealed of [true, false]) {
+					const other = ['tackle', 'psychic', 'protect'];
+					const moves = revealed ? [...other, id] : other;
+					const target = pokemon({ moves, moveKnowledge: {
+						revealedMoves: moves, presetCandidates: revealed ? [] : [id], remainingSlots: revealed ? 0 : 1,
+						movePools: [[...other, id]],
+					} });
+					for (const attack of ['toxic', 'saltcure']) {
+						assert(!hasReason(score(attack, { target, formatId }), 'No recovery in'), `${id}, ${attack}, ${revealed}`);
+					}
+				}
+			}
+			for (const id of ['healpulse', 'floralhealing', 'pollenpuff', 'healingwish', 'lunardance', 'revivalblessing',
+				'healbell', 'aromatherapy', 'refresh', 'protect', 'swordsdance']) {
+				assert(!canRestoreUserHp({ id }, { formatId }), `${id} does not heal the user`);
+				const target = pokemon({ moves: ['tackle', 'psychic', 'growl', id] });
+				assert(hasReason(score('toxic', { target, formatId }), 'No recovery in'), id);
+			}
+			for (const move of Dex.forFormat(formatId).moves.all()) {
+				if (!move.isZ && !move.isMax && (move.heal || move.drain || move.flags.heal)) {
+					assert(recoveryKind(move, { formatId }), `Unclassified recovery: ${move.id}`);
+				}
+			}
+		});
+	}
+
+	it('uses preset or 85-EV maximum HP and public percentage for Pain Split', () => {
+		for (const species of ['Bronzong', 'Swalot']) {
+			const tracker = createBattleTracker('p2');
+			tracker.parseMessage(`|switch|p1a: Foe|${species}, L80|60/100`);
+			const target = trackedPokemonToAIPokemon(tracker.getActiveOpponent(), 1, true, 'gen9customgame');
+			const base = Dex.species.get(species).baseStats, preset = getOpponentPreset(species);
+			const max = preset ? computeStatsFromPreset(base, 80, preset).hp :
+				Math.floor((2 * base.hp + 31 + Math.floor(85 / 4)) * 80 / 100) + 80 + 10;
+			assert.equal(target.maxHp, max);
+			const actor = pokemon({ hp: 50, maxHp: 400, hpPercent: 12.5 });
+			target.hp = 1; // The calculation must use estimated max HP and the observed percentage.
+			assert.equal(painSplitRecovery(actor, target), Math.floor((50 + Math.floor(max * 0.6)) / 2) - 50);
+		}
+	});
+
+	it('keeps conditional recovery subject to effect eligibility', () => {
+		const actor = pokemon({ hp: 20, hpPercent: 20 / 3 });
+		assert.equal(score('purify', { actor }).score, 0);
+		assert(score('purify', { actor, target: pokemon({ status: 'par' }) }).score > 100);
+		const target = pokemon({ volatiles: new Set(['substitute']) });
+		assert.equal(score('painsplit', { actor, target }).score, 0);
+		assert(score('painsplit', { actor: { ...actor, ability: 'Infiltrator' }, target, formatId: 'gen9customgame' }).score > 100);
+	});
+
+	it('uses drain metadata for newer attacks and does not reward healing reversed by Liquid Ooze', () => {
+		const actor = pokemon({ hp: 100, hpPercent: 100 / 3 });
+		for (const id of ['bitterblade', 'matchagotcha', 'dreameater']) {
+			const target = pokemon({ status: id === 'dreameater' ? 'slp' : '' });
+			assert(hasReason(score(id, { actor, target }), 'Drain move'), id);
+			target.ability = 'Liquid Ooze';
+			assert(!hasReason(score(id, { actor, target }), 'Drain move'), id);
+			assert(hasReason(score(id, { actor, target }), 'Liquid Ooze'), id);
+			assert(!hasReason(score(id, { actor: { ...actor, ability: 'Mold Breaker' }, target }), 'Drain move'), id);
+			target.volatiles.add('gastroacid');
+			assert(hasReason(score(id, { actor, target }), 'Drain move'), id);
+		}
 	});
 
 	it('recognizes recovery in both Gen5 random Blissey roles before a healing move is revealed', () => {

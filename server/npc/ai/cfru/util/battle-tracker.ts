@@ -451,6 +451,7 @@ export class BattleTracker {
 		case 'cant':
 			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
+			if (parts[2] === 'recharge') this.handleVolatileStatus(['-end', parts[1], 'mustrecharge']);
 			if (parts[2] === 'slp') {
 				const position = parts[1].split(':')[0];
 				const decrement = this.getEffectiveAbility(position) === 'earlybird' ? 2 : 1;
@@ -510,6 +511,10 @@ export class BattleTracker {
 		case '-sidestart':
 		case '-sideend':
 			this.handleSideCondition(parts);
+			break;
+		case '-mustrecharge':
+			// Recharge survives the turn boundary and ends when the holder spends its action recharging.
+			this.handleVolatileStatus(['-start', parts[1], 'mustrecharge']);
 			break;
 		case '-start':
 		case '-end':

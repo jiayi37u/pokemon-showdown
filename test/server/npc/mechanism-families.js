@@ -52,6 +52,30 @@ function oracle(g, id, tolerance = 0) {
 describe('NPC shared mechanism families', () => {
 	afterEach(() => { for (const b of games) b.destroy(); games = []; });
 	for (const mode of ['singles', 'doubles', 'multi']) {
+		it(`${mode}: values Pain Split by capped HP gained, matching the simulator's absolute-HP split`, () => {
+			const g = game({ mode, actor: { ...passive, moves: ['painsplit'] } });
+			for (const [max, hp, targetMax, targetHp, expected] of [
+				[337, 264, 238, 238, 60], [337, 264, 270, 270, 80],
+				[400, 200, 200, 200, 60], [400, 200, 100, 90, 60],
+				[100, 80, 1000, 200, 100], [400, 100, 180, 180, 100],
+				[400, 100, 300, 300, 110], [400, 20, 460, 460, 120],
+				[400, 360, 800, 800, 100],
+			]) {
+				const s = g.state(), actor = s.self.active[0], target = s.opponent.active[0];
+				Object.assign(actor, { hp, maxHp: max, hpPercent: hp / max * 100 });
+				Object.assign(target, { hp: targetHp, maxHp: targetMax, hpPercent: targetHp / targetMax * 100 });
+				const result = g.score('painsplit', s);
+				assert.equal(result.score, expected, JSON.stringify([max, hp, targetMax, targetHp]));
+				assert.equal(result.score, 100 + result.breakdown.details.reduce((n, d) => n + d.amount, 0));
+				const ours = g.b.p2.active[0], foe = g.b.p1.active[0];
+				ours.maxhp = max; ours.hp = hp;
+				foe.maxhp = targetMax; foe.hp = targetHp;
+				g.b.actions.useMove('painsplit', ours, { target: foe });
+				assert.equal(ours.hp, Math.min(max, Math.floor((hp + targetHp) / 2)));
+				assert.equal(foe.hp, Math.min(targetMax, Math.floor((hp + targetHp) / 2)));
+				assert(result.breakdown.details.some(d => d.reason.includes(`HP change: ${ours.hp - hp >= 0 ? '+' : ''}${ours.hp - hp} `)));
+			}
+		});
 		it(`${mode}: only rewards Focus Punch behind a substitute or against a sleeping target`, () => {
 			const g = game({ mode, actor: { species: 'Breloom', ability: 'Poison Heal', moves: ['focuspunch', 'spore', 'substitute'] },
 				foe: { species: 'Tauros', ability: 'Intimidate', moves: ['earthquake'] } });

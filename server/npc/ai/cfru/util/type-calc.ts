@@ -433,8 +433,8 @@ export function getMoveInteraction(
 	if (move.id === 'dreameater' && defender.status !== 'slp' && ability !== 'comatose') {
 		return block('Dream Eater fails on non-sleeping target', true);
 	}
-	if (move.id === 'suckerpunch' && defender.volatiles.has('mustrecharge')) {
-		return block('Sucker Punch fails against a recharging target', true);
+	if (['suckerpunch', 'thunderclap'].includes(move.id) && defender.volatiles.has('mustrecharge')) {
+		return block(`${move.name} fails against a recharging target`, true);
 	}
 	const direct = ['normal', 'any', 'allAdjacent', 'allAdjacentFoes', 'adjacentAlly', 'adjacentAllyOrSelf']
 		.includes(move.target) &&

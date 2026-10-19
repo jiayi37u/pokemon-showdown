@@ -17,10 +17,12 @@ import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, PositiveScoringFunction } from './index';
 import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
 import { actsBeforeTarget, attacksFirst, compareSpeedOrder } from '../util/speed';
-import { recoveryRecipients, recoveryCuresStatus, secondaryEffectFailure, statusFailure } from '../util/move-effects';
+import {
+	recoveryRecipients, recoveryCuresStatus, secondaryEffectFailure, statusFailure, canRestoreUserHp, recoveryKind,
+} from '../util/move-effects';
 import { getTypeEffectiveness, resolveMove } from '../util/type-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
-import { getHazeBenefit } from './negatives';
+import { getHazeBenefit, painSplitValue } from './negatives';
 
 /** Ordinary speed order, independent of either move's priority bracket. */
 function speedOrder(ctx: ScoringContext): number {
@@ -43,11 +45,7 @@ function targetLacksRecovery(ctx: ScoringContext): boolean {
 		getOpponentMoveKnowledge(ctx.target.species, ctx.target.moves, ctx.config.formatId);
 	const moves = [...ctx.target.moves, ...knowledge.revealedMoves,
 		...knowledge.presetCandidates.filter(id => canHaveOpponentMoves(knowledge, [id]))];
-	if (moves.some(id => {
-		const move = ctx.dex.moves.get(id);
-		return (move.heal && ['self', 'allies'].includes(move.target)) ||
-			['wish', 'rest', 'strengthsap', 'junglehealing', 'lunarblessing'].includes(move.id);
-	})) return false;
+	if (moves.some(id => canRestoreUserHp({ id }, ctx.state.field))) return false;
 	const slots = knowledge.revealedMoves.length + knowledge.remainingSlots;
 	return knowledge.remainingSlots === 0 || (knowledge.slots?.length || 0) >= slots ||
 		!!knowledge.movePools?.length && knowledge.movePools.every(pool => pool.length >= slots);
@@ -961,20 +959,8 @@ export const rewardDrainMove: PositiveScoringFunction = (ctx) => {
 
 	const moveId = toID(ctx.move.id);
 
-	// Drain moves that heal the user based on damage dealt
-	const drainMoves = [
-		'absorb', 'megadrain', 'gigadrain', // Grass drains
-		'drainpunch', // Fighting drain
-		'drainingkiss', // Fairy drain
-		'leechlife', // Bug drain
-		'hornleech', // Grass drain
-		'paraboliccharge', // Electric drain
-		'oblivionwing', // Flying drain (75% heal)
-		'strengthsap', // Special case - heals based on target's attack
-		'dreamdreater', // Ghost drain (only works on sleeping)
-	];
-
-	if (!drainMoves.includes(moveId)) return 0;
+	if (recoveryKind(ctx.move, ctx.state.field) !== 'drain' ||
+		defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field) === 'liquidooze') return 0;
 
 	let bonus = 0;
 	const hpPercent = ctx.attacker.hpPercent;
@@ -1050,6 +1036,14 @@ export const rewardHealing: PositiveScoringFunction = (ctx) => {
 		ctx.adjustments.push({ reason: "Recovery cures a recipient's status", amount: 5, category: 'positive' });
 	}
 	return bonus;
+};
+
+export const rewardPainSplit: PositiveScoringFunction = ctx => {
+	if (ctx.move.id !== 'painsplit') return 0;
+	const value = painSplitValue(ctx);
+	const amount = Math.max(0, value.score - BASE_SCORE);
+	if (amount) ctx.adjustments.push({ reason: value.reason, amount, category: 'positive' });
+	return amount;
 };
 
 /**
@@ -2055,6 +2049,7 @@ export const allPositiveScorers: PositiveScoringFunction[] = [
 	rewardDrainMove,
 	rewardPivotMove,
 	rewardHealing,
+	rewardPainSplit,
 	rewardScreens,
 	rewardTrickRoom,
 	rewardDisable,

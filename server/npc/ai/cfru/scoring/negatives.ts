@@ -17,6 +17,7 @@ import { effectiveAbility, defensiveAbility, effectiveItem, rulesDex } from '../
 import {
 	delayedMoveFailure, fieldEffectFailure, inflictedStatus, statusFailure, volatileEffectFailure,
 	beneficialTargets, recoveryRecipients, recoveryCuresStatus, boostRecipients, boostChanges, boostsCanChange,
+	recoveryKind, painSplitRecovery,
 } from '../util/move-effects';
 import { itemMoveFailure, itemRemovalFailure } from '../util/items';
 import { compareSpeedOrder } from '../util/speed';
@@ -51,7 +52,7 @@ export const checkStatusOpportunity: NegativeScoringFunction = ctx => {
 	if (ctx.move.category !== 'Status') return 0;
 	const data = ctx.dex.moves.get(ctx.move.id);
 	// Healing and field-clearing moves retain their independent purpose at low HP.
-	const setup = data.target === 'self' && !data.heal && !data.flags.heal && data.id !== 'tidyup' &&
+	const setup = data.target === 'self' && !recoveryKind(ctx.move, ctx.state.field) && data.id !== 'tidyup' &&
 		(data.boosts && Object.values(data.boosts).some(stages => stages > 0) ||
 			['bellydrum', 'stockpile'].includes(data.id));
 	const nonGhostCurse = data.id === 'curse' && !ctx.attacker.types.includes('Ghost');
@@ -753,7 +754,7 @@ export const checkStatBoostWasted: NegativeScoringFunction = (ctx) => {
 	const usable = improvements.filter(boost => ctx.attacker.boosts[boost.stat] < 6);
 	// Moves with additional effects must not be declared useless just because their boosts are capped.
 	const otherEffects = data.onHit || data.onTryHit || data.onAfterHit || data.onAfterMove ||
-		data.volatileStatus || data.heal || data.sideCondition || data.weather || data.terrain;
+		data.volatileStatus || recoveryKind(ctx.move, ctx.state.field) || data.sideCondition || data.weather || data.terrain;
 	if (!usable.length && !otherEffects) {
 		ctx.skipPositiveScoring = true;
 		ctx.flags.hasNoEffect = boosts.every(boost => {
@@ -827,17 +828,11 @@ export const checkMagicBounce: NegativeScoringFunction = (ctx) => {
  * CFRU: ai_negatives.c lines 784-785
  */
 export const checkLiquidOoze: NegativeScoringFunction = (ctx) => {
-	const targetAbility = effectiveAbility(ctx.target, ctx.state.field);
+	const targetAbility = defensiveAbility(ctx.attacker, ctx.target, ctx.move, ctx.state.field);
 
 	if (targetAbility !== 'liquidooze') return 0;
 
-	// Absorb moves will hurt the user instead
-	const drainMoves = ['absorb', 'megadrain', 'gigadrain', 'drainingkiss',
-		'drainpunch', 'leechlife', 'hornleech', 'paraboliccharge',
-		'oblivionwing', 'strengthsap'];
-	const moveId = toID(ctx.move.id);
-
-	if (drainMoves.includes(moveId)) {
+	if (recoveryKind(ctx.move, ctx.state.field) === 'drain') {
 		ctx.adjustments.push({
 			reason: 'Liquid Ooze will damage user instead of healing',
 			amount: -6,
@@ -1361,12 +1356,7 @@ export const checkTargetingPartnerStatus: NegativeScoringFunction = (ctx) => {
 		return 0; // Don't penalize
 	}
 
-	// Healing moves on partner
-	const healingMoves = ['recover', 'softboiled', 'milkdrink', 'slackoff', 'roost',
-		'moonlight', 'morningsun', 'synthesis', 'shoreup'];
-	if (healingMoves.includes(moveId)) {
-		return 0; // Healing partner is fine (even if move targets self)
-	}
+	if (recoveryRecipients(ctx.state, ctx.attacker, ctx.target, ctx.move).length) return 0;
 
 	// Status moves that hurt partner - big penalty
 	const badPartnerMoves = [
@@ -1716,35 +1706,24 @@ export const checkContactRisk: NegativeScoringFunction = (ctx) => {
 // CFRU: ai_negatives.c lines 1778-1782, 1829-1834, 2239-2244, 2452-2470, 2529-2540, 2916-2942
 // =============================================================================
 
-/**
- * Check if Pain Split is a bad idea
- * CFRU: ai_negatives.c lines 1778-1782
- *
- * Pain Split averages both Pokemon's HP.
- * Bad idea if attacker HP > average (will lose HP)
- */
-export const checkPainSplit: NegativeScoringFunction = (ctx) => {
-	const moveId = toID(ctx.move.id);
+/** Pain Split value is based on the user's capped HP change, not either side's HP percentage alone. */
+export function painSplitValue(ctx: ScoringContext): { score: number, reason: string } {
+	const recovered = painSplitRecovery(ctx.attacker, ctx.target);
+	const percent = recovered / ctx.attacker.maxHp * 100;
+	return {
+		score: percent <= 0 ? DISCOURAGED_SCORE : percent < 10 ? 80 : percent < 25 ? 100 : percent < 50 ? 110 : 120,
+		reason: `Pain Split HP change: ${recovered >= 0 ? '+' : ''}${recovered} (${percent.toFixed(1)}% of max HP)`,
+	};
+}
 
-	if (moveId !== 'painsplit') return 0;
-
-	// Calculate what the HP would be after Pain Split
-	// We use percentages since we don't have exact HP values
-	const attackerHp = ctx.attacker.hpPercent;
-	const targetHp = ctx.target.hpPercent;
-	const averageHp = (attackerHp + targetHp) / 2;
-
-	// If attacker has more HP than average, Pain Split hurts us
-	if (attackerHp > averageHp) {
-		ctx.adjustments.push({
-			reason: `Pain Split bad - attacker HP (${Math.floor(attackerHp)}%) > average (${Math.floor(averageHp)}%)`,
-			amount: -10,
-			category: 'negative',
-		});
-		return -10;
-	}
-
-	return 0;
+export const checkPainSplit: NegativeScoringFunction = ctx => {
+	if (ctx.move.id !== 'painsplit') return 0;
+	const value = painSplitValue(ctx);
+	if (value.score > BASE_SCORE) return 0;
+	ctx.skipPositiveScoring = true;
+	const amount = Math.min(0, value.score - (ctx.score ?? BASE_SCORE));
+	ctx.adjustments.push({ reason: value.reason, amount, category: 'negative' });
+	return amount;
 };
 
 export const checkFutureSight: NegativeScoringFunction = ctx => {

@@ -9,6 +9,7 @@ import type { AIPokemon, AIMove, BattleState, MoveScore, OpponentModel as Oppone
 export type { OpponentModel as OpponentHypothesis } from '../cfru/types';
 import { effectiveItem, replaceActivePokemon } from '../cfru/util/mechanics';
 import { inferRandomBattle } from '../cfru/util/random-presets';
+import { canRestoreUserHp } from '../cfru/util/move-effects';
 import { buildAIMove } from '../cfru/state-builder';
 import {
 	computeStatsFromPreset, getOpponentPreset, getOpponentMoveKnowledge, canHaveOpponentMoves, compatibleMoveSlots,
@@ -40,7 +41,7 @@ export function fightingStyle(pokemon: AIPokemon, formatId: string): FightingSty
 	const attacks = moves.filter(m => m.category !== 'Status').map(m => m.id);
 	if (attacks.some((a, i) => attacks.slice(i + 1).some((b, j) =>
 		attacks.slice(i + j + 2).some(c => together([a, b, c]))))) return 'attacker';
-	if (moves.some(m => m.heal || ['rest', 'leechseed', 'toxic'].includes(m.id))) return 'stall';
+	if (moves.some(m => canRestoreUserHp(m, { formatId }) || m.id === 'toxic')) return 'stall';
 	return 'support';
 }
 

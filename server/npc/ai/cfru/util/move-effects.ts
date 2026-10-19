@@ -1,15 +1,42 @@
 /** Effect eligibility over public snapshots, shared by failure scoring and effect rewards. */
 import { Dex, toID } from '../../../../../sim/dex';
-import type { AIPokemon, AIMove, BattleState } from '../types';
+import type { AIPokemon, AIMove, BattleState, FieldConditions } from '../types';
 import { effectiveAbility, defensiveAbility, effectiveItem, grounded, normalizeWeather, rulesDex } from './mechanics';
 import { getMoveInteraction } from './type-calc';
 import { actsBeforeTarget } from './speed';
 
+type RecoveryKind = 'direct' | 'ally' | 'drain' | 'split' | 'delayed' | 'residual' | 'replacement';
+
+/** Shared HP-recovery classification; status cures alone do not restore HP. */
+export function recoveryKind(
+	move: Pick<AIMove, 'id'>, field: Pick<FieldConditions, 'formatId'> = {}
+): RecoveryKind | undefined {
+	const data = rulesDex(field).moves.get(move.id);
+	if (data.drain || data.id === 'strengthsap') return 'drain';
+	if (data.id === 'painsplit') return 'split';
+	if (data.id === 'wish') return 'delayed';
+	if (['aquaring', 'ingrain', 'leechseed'].includes(data.id)) return 'residual';
+	if (['healingwish', 'lunardance', 'revivalblessing'].includes(data.id)) return 'replacement';
+	if (['healpulse', 'floralhealing', 'pollenpuff'].includes(data.id)) return 'ally';
+	if (data.category === 'Status' && (data.heal || data.flags.heal)) return 'direct';
+}
+
+export function canRestoreUserHp(move: Pick<AIMove, 'id'>, field?: Pick<FieldConditions, 'formatId'>): boolean {
+	const kind = recoveryKind(move, field);
+	return !!kind && kind !== 'ally' && kind !== 'replacement';
+}
+
 /** Immediate recovery shares recipient rules for rewards and unnecessary-healing penalties. */
-export function isImmediateRecovery(move: Pick<AIMove, 'id'>): boolean {
-	return ['recover', 'softboiled', 'milkdrink', 'slackoff', 'roost', 'healorder',
-		'synthesis', 'moonlight', 'morningsun', 'shoreup', 'rest', 'swallow',
-		'lifedew', 'junglehealing', 'lunarblessing', 'healpulse', 'floralhealing'].includes(move.id);
+export function isImmediateRecovery(move: Pick<AIMove, 'id'>, field?: Pick<FieldConditions, 'formatId'>): boolean {
+	const kind = recoveryKind(move, field);
+	return kind === 'direct' || kind === 'ally';
+}
+
+/** Own HP is authorized; opposing HP comes from the preset/baseline maximum and public percentage. */
+export function painSplitRecovery(attacker: AIPokemon, target: AIPokemon): number {
+	const targetHp = Math.max(1, Math.floor(target.maxHp * target.hpPercent / 100));
+	const average = Math.max(1, Math.floor((attacker.hp + targetHp) / 2));
+	return Math.min(attacker.maxHp, average) - attacker.hp;
 }
 
 /** Beneficial targeted effects must be evaluated and issued against the same recipient. */
@@ -26,9 +53,11 @@ export function moveTargets(state: BattleState, attacker: AIPokemon, move: AIMov
 export function recoveryRecipients(
 	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove
 ): AIPokemon[] {
-	if (!isImmediateRecovery(move)) return [];
+	if (!isImmediateRecovery(move, state.field)) return [];
 	if (move.target === 'allies') return state.self.active.filter(p => !p.fainted);
-	if (['healpulse', 'floralhealing'].includes(move.id)) return target === attacker ? [] : [target];
+	if (recoveryKind(move, state.field) === 'ally') {
+		return target !== attacker && state.self.active.includes(target) ? [target] : [];
+	}
 	return [attacker];
 }
 
@@ -127,6 +156,11 @@ export function volatileEffectFailure(
 	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove
 ): string | undefined {
 	const dex = rulesDex(state.field);
+	if (move.id === 'purify' && !target.status) return 'Purify requires a target status to cure';
+	if (move.id === 'painsplit' && target.volatiles.has('substitute') &&
+		!(dex.gen >= 6 && effectiveAbility(attacker, state.field) === 'infiltrator')) {
+		return 'Substitute blocks Pain Split';
+	}
 	if (move.id === 'encore') {
 		if (target.volatiles.has('encore')) return 'Target already encored';
 		if (target.volatiles.has('dynamax')) return 'Dynamax prevents Encore';

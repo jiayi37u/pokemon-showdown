@@ -13,6 +13,7 @@ import {
 import { createCache } from '../cfru/util/cache';
 import { calculateDamage, getSecondaryEffectDamage } from '../cfru/util/damage-calc';
 import { resolveMove } from '../cfru/util/type-calc';
+import { recoveryKind } from '../cfru/util/move-effects';
 import { compareActionOrder } from '../cfru/util/speed';
 import {
 	effectiveAbility, effectiveItem, grounded, replaceActivePokemon,
@@ -158,6 +159,7 @@ export class HardEvaluation {
 	}
 
 	private recoveryAmount(actor: AIPokemon, move: AIMove): number {
+		if (recoveryKind(move, this.state.field) !== 'direct') return 0;
 		const data = this.dex.moves.get(move.id);
 		if (data.heal) return actor.maxHp * data.heal[0] / data.heal[1];
 		if (move.id === 'rest') return actor.maxHp;

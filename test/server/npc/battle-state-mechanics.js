@@ -1389,6 +1389,48 @@ describe('Shared public state pipeline across game types', () => {
 			}
 		}
 
+		for (const formatId of ['gen5customgame', 'gen5pokemmorandombattle', 'gen9customgame']) {
+			it(`${gameType}, ${formatId}: public recharge persists until consumed and blocks conditional priority`, () => {
+				const game = fixture(gameType,
+					// No Guard isolates recharge from Hyper Beam's accuracy roll.
+					{ species: 'Mew', ability: 'No Guard', moves: ['hyperbeam'] },
+					{ species: 'Snorlax', ability: 'Immunity', moves: ['hyperbeam', 'suckerpunch', 'thunderclap'] },
+					undefined, undefined, { species: 'Blissey', ability: 'Natural Cure', moves: ['splash'] }, formatId);
+				try {
+					game.build();
+					game.play('move 1 1', 'move 1 1');
+					let state = game.build();
+					assert(game.battle.log.some(line => line.startsWith('|-mustrecharge|p1a:')));
+					assert(game.battle.log.some(line => line.startsWith('|-mustrecharge|p2a:')));
+					for (const side of ['self', 'opponent']) assert(state[side].active[0].volatiles.has('mustrecharge'));
+					const score = (id, s) => new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId }, createAICache(s.turn))
+						.scoreMove(s, s.self.active[0], buildAIMove({ id }, 1, formatId), s.opponent.active[0]);
+					const conditional = formatId === 'gen9customgame' ? ['suckerpunch', 'thunderclap'] : ['suckerpunch'];
+					for (const id of conditional) {
+						const result = score(id, state);
+						assert.equal(result.score, 0, id);
+						assert(result.flags.hasNoEffect, id);
+						assert(result.breakdown.details.some(d => d.reason.includes('recharging target')), id);
+					}
+					game.play('move 1', 'move 1');
+					state = game.build();
+					for (const side of ['self', 'opponent']) assert(!state[side].active[0].volatiles.has('mustrecharge'));
+					for (const side of ['p1', 'p2']) assert(!game.battle[side].active[0].volatiles.mustrecharge);
+					for (const id of conditional) assert(!score(id, state).flags.hasNoEffect, id);
+					// Forced switching during recharge must not leave the effect on the incoming Pokemon.
+					game.play('move 1 1', 'move 1 1');
+					assert(game.build().opponent.active[0].volatiles.has('mustrecharge'));
+					for (const side of ['p1', 'p2']) game.battle.actions.dragIn(game.battle[side], 0);
+					game.battle.makeRequest('move');
+					state = game.build();
+					for (const side of ['self', 'opponent']) {
+						assert.equal(state[side].active[0].species, 'Blissey');
+						assert(!state[side].active[0].volatiles.has('mustrecharge'));
+					}
+				} finally { game.battle.destroy(); }
+			});
+		}
+
 		for (const formatId of ['gen6customgame', 'gen7customgame', 'gen5pokemmorandombattle', 'gen9customgame']) {
 			it(`${gameType}, ${formatId}: single-move effects persist across turns and repeated Destiny Bond follows the format`, () => {
 				const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };

@@ -289,9 +289,11 @@ function runNegativesScoringTests() {
 	function createPainSplitContext(overrides = {}) {
 		return createDoublesContext({
 			state: { isDoubles: false },
-			attacker: { hpPercent: overrides.attackerHp || 50, ability: '', item: overrides.attackerItem || '', itemKnown: true,
+			attacker: { hp: overrides.attackerHp || 50, maxHp: 100,
+				hpPercent: overrides.attackerHp || 50, ability: '', item: overrides.attackerItem || '', itemKnown: true,
 				types: ['Normal'], volatiles: overrides.attackerVolatiles || new Set(), moves: overrides.attackerMoves || [] },
-			target: { hpPercent: overrides.targetHp || 50, ability: overrides.targetAbility || '', item: overrides.targetItem || '', itemKnown: true,
+			target: { hp: overrides.targetHp || 50, maxHp: 100,
+				hpPercent: overrides.targetHp || 50, ability: overrides.targetAbility || '', item: overrides.targetItem || '', itemKnown: true,
 				types: ['Normal'], volatiles: overrides.targetVolatiles || new Set(), moves: overrides.targetMoves || [] },
 			move: buildAIMove({ id: overrides.moveId || 'painsplit' }, 1),
 			flags: { canKO: false, goesFirst: overrides.goesFirst !== false },
@@ -304,7 +306,7 @@ function runNegativesScoringTests() {
 			targetHp: 20,
 		});
 		const penalty = checkPainSplit(ctx);
-		assertEqual(penalty, -10, '攻击方HP高时应扣10分');
+		assertEqual(penalty, -40, '损失HP时降至60分');
 	});
 
 	test('Pain Split: 攻击方HP低时不扣分 / Pain Split OK when attacker HP lower', () => {
@@ -316,13 +318,13 @@ function runNegativesScoringTests() {
 		assertEqual(penalty, 0, '攻击方HP低时不扣分');
 	});
 
-	test('Pain Split: HP相等时不扣分 / Pain Split OK when HP equal', () => {
+	test('Pain Split: HP相等时扣分 / Pain Split discouraged when HP equal', () => {
 		const ctx = createPainSplitContext({
 			attackerHp: 50,
 			targetHp: 50,
 		});
 		const penalty = checkPainSplit(ctx);
-		assertEqual(penalty, 0, 'HP相等时不扣分');
+		assertEqual(penalty, -40, '没有回复收益时降至60分');
 	});
 
 	// =============================================================================

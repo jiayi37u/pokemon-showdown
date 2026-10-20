@@ -1,0 +1,62 @@
+{
+  "name": "Metagross Weavile Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Metagross",
+      "item": "Metagrossite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Power-Up Punch", "Zen Headbutt", "Thunder Punch", "Bullet Punch"]
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pickpocket",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Pursuit", "Ice Shard", "Knock Off", "Icicle Crash"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Assault Vest",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 248, "spa": 140, "spd": 60, "spe": 60 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Steam Eruption", "Flamethrower", "Sludge Bomb", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 32, "atk": 40, "def": 56, "spd": 128, "spe": 252 },
+      "moves": ["Swords Dance", "Earthquake", "Rock Slide", "Rapid Spin"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Rocky Helmet",
+      "ability": "Rough Skin",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 240, "def": 112, "spd": 148, "spe": 8 },
+      "moves": ["Stealth Rock", "Earthquake", "Dragon Tail", "Toxic"]
+    },
+    {
+      "species": "Zapdos",
+      "item": "Leftovers",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 224, "spd": 20, "spe": 16 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Heat Wave", "Hidden Power Ice", "Roost"],
+      "hpType": "Ice"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "name": "3.0 - Choice Banded Mienshoa Bulky Offense (Win Conditions)",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Mienshao",
+      "item": "Choice Band",
+      "ability": "Reckless",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "U-turn", "Poison Jab", "Knock Off"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Dread Plate",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Pursuit", "Stealth Rock", "Earthquake"],
+      "shiny": true
+    },
+    {
+      "species": "Suicune",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 232, "spe": 24 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Scald", "Rest", "Roar"]
+    },
+    {
+      "species": "Celebi",
+      "item": "Life Orb",
+      "ability": "Natural Cure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Nasty Plot", "Psychic", "Giga Drain", "Dazzling Gleam"]
+    },
+    {
+      "species": "Crobat",
+      "item": "Sky Plate",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Brave Bird", "U-turn", "Defog", "Taunt"]
+    },
+    {
+      "species": "Aggron",
+      "item": "Aggronite",
+      "ability": "Sturdy",
+      "nature": "Careful",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "moves": ["Curse", "Heavy Slam", "Rest", "Sleep Talk"]
+    }
+  ]
+}

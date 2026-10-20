@@ -1,0 +1,58 @@
+{
+  "name": "Gyarados Cresselia Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Gyarados",
+      "item": "Gyaradosite",
+      "ability": "Intimidate",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Dragon Dance", "Crunch", "Waterfall", "Substitute"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Lum Berry",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 240, "spa": 16, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Glare", "Synthesis", "Leaf Storm", "Hidden Power Fire"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Garchomp",
+      "item": "Rocky Helmet",
+      "ability": "Rough Skin",
+      "nature": "Jolly",
+      "evs": { "hp": 240, "def": 68, "spe": 200 },
+      "moves": ["Stealth Rock", "Earthquake", "Stone Edge", "Swords Dance"]
+    },
+    {
+      "species": "Cresselia",
+      "item": "Rocky Helmet",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 76, "spa": 32, "spe": 152 },
+      "ivs": { "atk": 0 },
+      "moves": ["Lunar Dance", "Ice Beam", "Toxic", "Moonlight"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 32, "atk": 40, "def": 56, "spd": 128, "spe": 252 },
+      "moves": ["Swords Dance", "Earthquake", "Iron Head", "Rapid Spin"]
+    },
+    {
+      "species": "Talonflame",
+      "item": "Leftovers",
+      "ability": "Gale Wings",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 252, "def": 8 },
+      "moves": ["Brave Bird", "Swords Dance", "Roost", "Will-O-Wisp"]
+    }
+  ]
+}

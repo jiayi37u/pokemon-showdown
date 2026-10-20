@@ -1,0 +1,59 @@
+{
+  "name": "Mega Medicham + Serperior",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Medicham",
+      "item": "Medichamite",
+      "ability": "Pure Power",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "Ice Punch", "Fake Out", "Bullet Punch"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Leftovers",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 56, "spa": 200, "spe": 252 },
+      "ivs": { "atk": 30, "spa": 30, "spe": 30 },
+      "moves": ["Leaf Storm", "Hidden Power Fire", "Glare", "Substitute"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Garchomp",
+      "item": "Rocky Helmet",
+      "ability": "Rough Skin",
+      "nature": "Impish",
+      "evs": { "hp": 240, "def": 168, "spd": 100 },
+      "moves": ["Stealth Rock", "Earthquake", "Dragon Tail", "Fire Blast"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "Taunt", "Knock Off", "U-turn"]
+    },
+    {
+      "species": "Heatran",
+      "item": "Leftovers",
+      "ability": "Flash Fire",
+      "nature": "Timid",
+      "evs": { "hp": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Magma Storm", "Earth Power", "Taunt", "Protect"]
+    },
+    {
+      "species": "Azumarill",
+      "item": "Choice Band",
+      "ability": "Huge Power",
+      "nature": "Adamant",
+      "evs": { "hp": 160, "atk": 252, "spe": 96 },
+      "moves": ["Play Rough", "Waterfall", "Aqua Jet", "Superpower"]
+    }
+  ]
+}

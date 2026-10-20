@@ -1,0 +1,60 @@
+{
+  "name": "Alakazam Spikes Balanced",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Alakazam",
+      "item": "Alakazite",
+      "ability": "Magic Guard",
+      "nature": "Modest",
+      "evs": { "def": 24, "spa": 252, "spe": 232 },
+      "ivs": { "atk": 0 },
+      "moves": ["Psychic", "Calm Mind", "Focus Blast", "Shadow Ball"]
+    },
+    {
+      "species": "Clefable",
+      "item": "Life Orb",
+      "ability": "Magic Guard",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 240, "spe": 16 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Moonblast", "Ice Beam", "Soft-Boiled"]
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Wash",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 252, "def": 40, "spe": 216 },
+      "ivs": { "atk": 0 },
+      "moves": ["Volt Switch", "Hydro Pump", "Will-O-Wisp", "Pain Split"]
+    },
+    {
+      "species": "Ferrothorn",
+      "item": "Leftovers",
+      "ability": "Iron Barbs",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 8, "spd": 248 },
+      "moves": ["Power Whip", "Leech Seed", "Spikes", "Protect"]
+    },
+    {
+      "species": "Heatran",
+      "item": "Leftovers",
+      "ability": "Flash Fire",
+      "nature": "Calm",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Lava Plume", "Protect", "Roar"]
+    },
+    {
+      "species": "Gliscor",
+      "item": "Toxic Orb",
+      "ability": "Poison Heal",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "spd": 192, "spe": 64 },
+      "moves": ["Earthquake", "Knock Off", "Taunt", "Roost"]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "name": "Mega Medicham + Offensive Roar Volcanion",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Medicham",
+      "item": "Medichamite",
+      "ability": "Pure Power",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "Zen Headbutt", "Fake Out", "Bullet Punch"],
+      "shiny": true
+    },
+    {
+      "species": "Volcanion",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 248, "spa": 252, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Steam Eruption", "Flamethrower", "Protect", "Roar"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Life Orb",
+      "ability": "Rough Skin",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Dragon Claw", "Earthquake", "Outrage"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Knock Off", "U-turn"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "spd": 136, "spe": 120 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Stealth Rock"]
+    },
+    {
+      "species": "Tangrowth",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "nature": "Relaxed",
+      "evs": { "hp": 244, "def": 216, "spd": 48 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Sleep Powder", "Giga Drain", "Knock Off", "Hidden Power Ice"],
+      "hpType": "Ice"
+    }
+  ]
+}

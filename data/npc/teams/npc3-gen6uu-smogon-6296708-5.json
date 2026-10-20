@@ -1,0 +1,63 @@
+{
+  "name": "Decision Maker's Kyurem Mega Sharpedo Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Kyurem",
+      "item": "Choice Specs",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 24, "spa": 252, "spe": 232 },
+      "ivs": { "atk": 0 },
+      "moves": ["Ice Beam", "Draco Meteor", "Focus Blast", "Earth Power"],
+      "shiny": true
+    },
+    {
+      "species": "Florges",
+      "item": "Leftovers",
+      "ability": "Flower Veil",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 240, "spe": 20 },
+      "ivs": { "atk": 0 },
+      "moves": ["Wish", "Aromatherapy", "Moonblast", "Protect"],
+      "shiny": true
+    },
+    {
+      "species": "Cobalion",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Volt Switch", "Close Combat", "Iron Head"],
+      "shiny": true
+    },
+    {
+      "species": "Crobat",
+      "item": "Black Sludge",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "hp": 248, "atk": 40, "spe": 220 },
+      "moves": ["Brave Bird", "Taunt", "Roost", "Defog"]
+    },
+    {
+      "species": "Sharpedo",
+      "item": "Sharpedonite",
+      "ability": "Speed Boost",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Crunch", "Protect", "Waterfall", "Ice Fang"]
+    },
+    {
+      "species": "Heliolisk",
+      "item": "Choice Scarf",
+      "ability": "Dry Skin",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Dragon Tail", "Thunderbolt", "Volt Switch", "Hyper Voice"]
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "name": "AV Future Sight Slowking Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Slowking",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "nature": "Modest",
+      "evs": { "hp": 248, "spa": 252, "spe": 8 },
+      "ivs": { "spa": 30 },
+      "moves": ["Future Sight", "Scald", "Hidden Power Electric", "Ice Beam"],
+      "hpType": "Electric"
+    },
+    {
+      "species": "Forretress",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "spe": 0 },
+      "moves": ["Gyro Ball", "Rapid Spin", "Volt Switch", "Stealth Rock"]
+    },
+    {
+      "species": "Florges",
+      "item": "Leftovers",
+      "ability": "Flower Veil",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "moves": ["Calm Mind", "Moonblast", "Synthesis", "Heal Bell"]
+    },
+    {
+      "species": "Hydreigon",
+      "item": "Life Orb",
+      "ability": "Levitate",
+      "nature": "Timid",
+      "evs": { "hp": 4, "spa": 252, "spe": 252 },
+      "moves": ["Dark Pulse", "Draco Meteor", "Taunt", "Roost"]
+    },
+    {
+      "species": "Toxicroak",
+      "item": "Life Orb",
+      "ability": "Dry Skin",
+      "nature": "Adamant",
+      "evs": { "hp": 4, "atk": 252, "spe": 252 },
+      "moves": ["Swords Dance", "Drain Punch", "Gunk Shot", "Sucker Punch"]
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Aerodactylite",
+      "ability": "Rock Head",
+      "nature": "Jolly",
+      "evs": { "hp": 4, "atk": 252, "spe": 252 },
+      "moves": ["Hone Claws", "Stone Edge", "Earthquake", "Roost"]
+    }
+  ]
+}

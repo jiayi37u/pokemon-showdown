@@ -1,0 +1,61 @@
+{
+  "name": "Maltese Webs",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Shuckle",
+      "item": "Red Card",
+      "ability": "Sturdy",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 64, "spd": 196 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Sticky Web", "Encore", "Infestation"]
+    },
+    {
+      "species": "Scizor",
+      "item": "Scizorite",
+      "ability": "Light Metal",
+      "nature": "Adamant",
+      "evs": { "hp": 48, "atk": 216, "spe": 244 },
+      "moves": ["Swords Dance", "Bullet Punch", "Bug Bite", "Superpower"]
+    },
+    {
+      "species": "Bisharp",
+      "item": "Life Orb",
+      "ability": "Defiant",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Sucker Punch", "Knock Off", "Iron Head"]
+    },
+    {
+      "species": "Azumarill",
+      "item": "Sitrus Berry",
+      "ability": "Huge Power",
+      "nature": "Adamant",
+      "evs": { "hp": 76, "atk": 252, "spe": 180 },
+      "moves": ["Belly Drum", "Aqua Jet", "Play Rough", "Knock Off"]
+    },
+    {
+      "name": "Thundurus",
+      "species": "Thundurus-Therian",
+      "item": "Sitrus Berry",
+      "ability": "Volt Absorb",
+      "gender": "M",
+      "nature": "Modest",
+      "evs": { "hp": 8, "spa": 248, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Nasty Plot", "Focus Blast", "Thunderbolt", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Hoopa",
+      "item": "Choice Scarf",
+      "ability": "Magician",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Hyperspace Hole", "Shadow Ball", "Focus Blast", "Trick"]
+    }
+  ]
+}

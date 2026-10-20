@@ -1,0 +1,57 @@
+{
+  "name": "Tirishia's Offence Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Mienshao",
+      "item": "Choice Band",
+      "ability": "Reckless",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "U-turn", "Poison Jab", "Knock Off"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Damp",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Rain Dance", "Waterfall", "Earthquake", "Ice Punch"]
+    },
+    {
+      "species": "Hydreigon",
+      "item": "Life Orb",
+      "ability": "Levitate",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Draco Meteor", "Dark Pulse", "Roost", "Flash Cannon"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Leftovers",
+      "ability": "Prankster",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spe": 8 },
+      "moves": ["Encore", "Stun Spore", "Moonblast", "U-turn"],
+      "shiny": true
+    },
+    {
+      "species": "Crobat",
+      "item": "Sky Plate",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Brave Bird", "U-turn", "Defog", "Taunt"]
+    },
+    {
+      "species": "Empoleon",
+      "item": "Shuca Berry",
+      "ability": "Torrent",
+      "nature": "Modest",
+      "evs": { "hp": 212, "spa": 252, "spe": 44 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Scald", "Ice Beam", "Grass Knot"]
+    }
+  ]
+}

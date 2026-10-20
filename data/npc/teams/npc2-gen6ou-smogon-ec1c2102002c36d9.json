@@ -1,0 +1,63 @@
+{
+  "name": "Mega Heracross Jolly tech + Roar Suicune & Toxic Spikes",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Heracross",
+      "item": "Heracronite",
+      "ability": "Guts",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Close Combat", "Rock Blast", "Pin Missile", "Substitute"]
+    },
+    {
+      "species": "Nidoking",
+      "item": "Choice Scarf",
+      "ability": "Sheer Force",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Earth Power", "Ice Beam", "Flamethrower", "Toxic Spikes"]
+    },
+    {
+      "species": "Suicune",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 212, "spd": 44 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Scald", "Rest", "Roar"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "spd": 136, "spe": 120 },
+      "moves": ["Earthquake", "Iron Head", "Stealth Rock", "Rapid Spin"]
+    },
+    {
+      "species": "Thundurus",
+      "item": "Rocky Helmet",
+      "ability": "Prankster",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Thunder Wave", "Volt Switch", "Hidden Power Ice", "Focus Blast"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Latias",
+      "item": "Colbur Berry",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 252, "spa": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Psychic", "Thunder Wave", "Protect", "Healing Wish"]
+    }
+  ]
+}

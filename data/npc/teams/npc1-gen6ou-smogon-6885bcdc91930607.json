@@ -1,0 +1,63 @@
+{
+  "name": "Gallade Beat Up HO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Volcanion",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 248, "def": 100, "spa": 96, "spd": 8, "spe": 56 },
+      "ivs": { "atk": 0 },
+      "moves": ["Protect", "Sludge Bomb", "Flamethrower", "Steam Eruption"]
+    },
+    {
+      "species": "Gallade",
+      "item": "Galladite",
+      "ability": "Justified",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Knock Off", "Psycho Cut", "Drain Punch"]
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pickpocket",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Ice Shard", "Knock Off", "Icicle Crash", "Beat Up"]
+    },
+    {
+      "name": "Kyurem",
+      "species": "Kyurem-Black",
+      "item": "Choice Specs",
+      "ability": "Teravolt",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Hidden Power Fire", "Draco Meteor", "Earth Power", "Ice Beam"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Excadrill",
+      "item": "Choice Scarf",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Rapid Spin", "Rock Slide", "Iron Head", "Earthquake"]
+    },
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 172, "spe": 88 },
+      "moves": ["Stealth Rock", "Earthquake", "Stone Edge", "U-turn"]
+    }
+  ]
+}

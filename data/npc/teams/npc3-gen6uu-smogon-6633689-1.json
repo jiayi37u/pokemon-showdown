@@ -1,0 +1,59 @@
+{
+  "name": "Cancer On FLEEK's Rain",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Kingdra",
+      "item": "Life Orb",
+      "ability": "Swift Swim",
+      "gender": "M",
+      "nature": "Naughty",
+      "evs": { "hp": 92, "atk": 252, "spe": 164 },
+      "moves": ["Dragon Dance", "Outrage", "Waterfall", "Draco Meteor"]
+    },
+    {
+      "species": "Ludicolo",
+      "item": "Life Orb",
+      "ability": "Swift Swim",
+      "gender": "F",
+      "nature": "Modest",
+      "evs": { "hp": 48, "spa": 252, "spe": 208 },
+      "moves": ["Focus Blast", "Hydro Pump", "Giga Drain", "Ice Beam"]
+    },
+    {
+      "species": "Qwilfish",
+      "item": "Life Orb",
+      "ability": "Swift Swim",
+      "gender": "F",
+      "nature": "Adamant",
+      "evs": { "hp": 92, "atk": 252, "spe": 164 },
+      "moves": ["Swords Dance", "Waterfall", "Poison Jab", "Explosion"]
+    },
+    {
+      "species": "Tornadus",
+      "item": "Damp Rock",
+      "ability": "Prankster",
+      "gender": "M",
+      "nature": "Naive",
+      "evs": { "hp": 8, "atk": 16, "spa": 252, "spe": 232 },
+      "moves": ["Rain Dance", "Hurricane", "Superpower", "Taunt"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Torrent",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Power-Up Punch", "Waterfall", "Earthquake", "Ice Punch"]
+    },
+    {
+      "species": "Alomomola",
+      "item": "Damp Rock",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Rain Dance", "Healing Wish", "Scald", "Magic Coat"]
+    }
+  ]
+}

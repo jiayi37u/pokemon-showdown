@@ -1,0 +1,60 @@
+{
+  "name": "Highways' Celebi Mega Swampert Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Celebi",
+      "item": "Meadow Plate",
+      "ability": "Natural Cure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Leaf Storm", "Psychic", "Stealth Rock", "U-turn"]
+    },
+    {
+      "species": "Empoleon",
+      "item": "Shuca Berry",
+      "ability": "Torrent",
+      "nature": "Modest",
+      "evs": { "hp": 252, "spa": 148, "spd": 108 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Ice Beam", "Flash Cannon", "Defog"]
+    },
+    {
+      "species": "Hydreigon",
+      "item": "Life Orb",
+      "ability": "Levitate",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Draco Meteor", "Dark Pulse", "Roost", "Taunt"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Damp",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Rain Dance", "Earthquake", "Waterfall", "Ice Punch"]
+    },
+    {
+      "species": "Entei",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Sacred Fire", "Extreme Speed", "Stone Edge", "Flare Blitz"],
+      "shiny": true
+    },
+    {
+      "species": "Cobalion",
+      "item": "Lum Berry",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Rock Polish", "Close Combat", "Iron Head"]
+    }
+  ]
+}

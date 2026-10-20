@@ -1,0 +1,64 @@
+{
+  "name": "Lopunny Kyurem Cresselia Balanced",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Lopunny",
+      "item": "Lopunnite",
+      "ability": "Limber",
+      "gender": "F",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Fake Out", "High Jump Kick", "Return", "Quick Attack"]
+    },
+    {
+      "species": "Kyurem",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 56, "spa": 228, "spe": 224 },
+      "ivs": { "atk": 0 },
+      "moves": ["Substitute", "Ice Beam", "Earth Power", "Roost"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 136, "spd": 112, "spe": 12 },
+      "ivs": { "atk": 0 },
+      "moves": ["Toxic", "Roar", "Flamethrower", "Steam Eruption"]
+    },
+    {
+      "species": "Cresselia",
+      "item": "Rocky Helmet",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 236, "def": 136, "spe": 136 },
+      "ivs": { "atk": 0 },
+      "moves": ["Moonlight", "Thunder Wave", "Lunar Dance", "Ice Beam"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 4, "atk": 20, "def": 68, "spd": 248, "spe": 168 },
+      "moves": ["Stealth Rock", "Earthquake", "Iron Head", "Rapid Spin"]
+    },
+    {
+      "species": "Zapdos",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 184, "def": 216, "spe": 108 },
+      "ivs": { "atk": 0 },
+      "moves": ["Discharge", "Heat Wave", "Defog", "Roost"]
+    }
+  ]
+}

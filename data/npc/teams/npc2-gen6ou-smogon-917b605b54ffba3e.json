@@ -1,0 +1,60 @@
+{
+  "name": "Mega Medicham + Tyranitar Sand",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Medicham",
+      "item": "Medichamite",
+      "ability": "Pure Power",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "Ice Punch", "Zen Headbutt", "Fake Out"],
+      "shiny": true
+    },
+    {
+      "species": "Tyranitar",
+      "item": "Choice Band",
+      "ability": "Sand Stream",
+      "nature": "Adamant",
+      "evs": { "hp": 156, "atk": 252, "spe": 100 },
+      "moves": ["Stone Edge", "Crunch", "Superpower", "Pursuit"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "hp": 116, "atk": 252, "spe": 140 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Substitute"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Knock Off", "U-turn"]
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Wash",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 128, "spe": 128 },
+      "moves": ["Hydro Pump", "Volt Switch", "Pain Split", "Will-O-Wisp"]
+    },
+    {
+      "species": "Heatran",
+      "item": "Leftovers",
+      "ability": "Flash Fire",
+      "nature": "Calm",
+      "evs": { "hp": 252, "spd": 208, "spe": 48 },
+      "ivs": { "atk": 0 },
+      "moves": ["Magma Storm", "Earth Power", "Toxic", "Stealth Rock"]
+    }
+  ]
+}

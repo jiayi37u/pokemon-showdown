@@ -1,0 +1,63 @@
+{
+  "name": "Mega Metagross + Life Orb Breloom",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Metagross",
+      "item": "Metagrossite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "hp": 180, "atk": 140, "spe": 188 },
+      "moves": ["Zen Headbutt", "Power-Up Punch", "Ice Punch", "Bullet Punch"]
+    },
+    {
+      "species": "Breloom",
+      "item": "Life Orb",
+      "ability": "Technician",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Bullet Seed", "Rock Tomb", "Spore", "Superpower"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Assault Vest",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 240, "spa": 140, "spd": 64, "spe": 64 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Steam Eruption", "Flamethrower", "Sludge Wave", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Wash",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 248, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Hydro Pump", "Volt Switch", "Pain Split", "Will-O-Wisp"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Knock Off", "U-turn"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "spd": 136, "spe": 120 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Stealth Rock"]
+    }
+  ]
+}

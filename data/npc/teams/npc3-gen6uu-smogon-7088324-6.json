@@ -1,0 +1,55 @@
+{
+  "name": "6.0 - Choice Banded Mienshoa Balance (Fighting Spam)",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Mienshao",
+      "item": "Choice Band",
+      "ability": "Reckless",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "U-turn", "Poison Jab", "Knock Off"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Leftovers",
+      "ability": "Torrent",
+      "nature": "Relaxed",
+      "evs": { "hp": 240, "atk": 16, "def": 252 },
+      "moves": ["Stealth Rock", "Earthquake", "Scald", "Roar"]
+    },
+    {
+      "species": "Toxicroak",
+      "item": "Life Orb",
+      "ability": "Dry Skin",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Gunk Shot", "Drain Punch", "Sucker Punch"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Leftovers",
+      "ability": "Prankster",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spe": 8 },
+      "moves": ["Encore", "Stun Spore", "Moonblast", "U-turn"],
+      "shiny": true
+    },
+    {
+      "species": "Crobat",
+      "item": "Sky Plate",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Brave Bird", "U-turn", "Defog", "Taunt"]
+    },
+    {
+      "species": "Aggron",
+      "item": "Aggronite",
+      "ability": "Sturdy",
+      "nature": "Careful",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "moves": ["Curse", "Heavy Slam", "Rest", "Sleep Talk"]
+    }
+  ]
+}

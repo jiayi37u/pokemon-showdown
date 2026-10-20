@@ -1,0 +1,62 @@
+{
+  "name": "Gallade Hydreigon BO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Gallade",
+      "item": "Galladite",
+      "ability": "Justified",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 224, "atk": 32, "spe": 252 },
+      "moves": ["Swords Dance", "Shadow Sneak", "Psycho Cut", "Drain Punch"]
+    },
+    {
+      "species": "Hydreigon",
+      "item": "Black Glasses",
+      "ability": "Levitate",
+      "nature": "Modest",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Roost", "Thunder Wave", "Flash Cannon", "Dark Pulse"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 176, "spd": 80, "spe": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Toxic", "Haze", "Flamethrower", "Steam Eruption"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 32, "def": 56, "spd": 168, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Stealth Rock", "Rapid Spin"]
+    },
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Choice Scarf",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Earthquake", "Stone Edge", "Knock Off", "U-turn"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "spd": 8, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Knock Off", "U-turn"]
+    }
+  ]
+}

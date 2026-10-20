@@ -1,0 +1,55 @@
+{
+  "name": "Cyndequil's Offense team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Hydreigon",
+      "item": "Life Orb",
+      "ability": "Levitate",
+      "nature": "Naive",
+      "evs": { "atk": 56, "spa": 220, "spe": 232 },
+      "moves": ["Iron Tail", "Superpower", "Dark Pulse", "Draco Meteor"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Expert Belt",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Encore", "Giga Drain", "Moonblast", "Shadow Ball"]
+    },
+    {
+      "species": "Lucario",
+      "item": "Life Orb",
+      "ability": "Justified",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Bullet Punch", "Close Combat", "Extreme Speed"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Damp",
+      "nature": "Adamant",
+      "evs": { "hp": 40, "atk": 252, "spe": 216 },
+      "moves": ["Stealth Rock", "Waterfall", "Earthquake", "Ice Punch"]
+    },
+    {
+      "species": "Doublade",
+      "item": "Eviolite",
+      "ability": "No Guard",
+      "nature": "Adamant",
+      "evs": { "hp": 232, "atk": 252, "spd": 8, "spe": 16 },
+      "moves": ["Swords Dance", "Pursuit", "Shadow Sneak", "Iron Head"]
+    },
+    {
+      "species": "Crobat",
+      "item": "Sky Plate",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Taunt", "Roost", "U-turn", "Brave Bird"]
+    }
+  ]
+}

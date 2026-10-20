@@ -1,0 +1,61 @@
+{
+  "name": "Gully's Venomoth Spike Stack",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "name": "planet",
+      "species": "Forretress",
+      "item": "Leftovers",
+      "ability": "Sturdy",
+      "nature": "Calm",
+      "evs": { "hp": 232, "def": 72, "spd": 200, "spe": 4 },
+      "moves": ["Stealth Rock", "Volt Switch", "Rapid Spin", "Spikes"]
+    },
+    {
+      "name": "chastity",
+      "species": "Doublade",
+      "item": "Eviolite",
+      "ability": "No Guard",
+      "nature": "Brave",
+      "evs": { "hp": 248, "atk": 252, "spd": 8 },
+      "ivs": { "spe": 0 },
+      "moves": ["Shadow Claw", "Shadow Sneak", "Gyro Ball", "Swords Dance"]
+    },
+    {
+      "name": "mythical beast",
+      "species": "Hydreigon",
+      "item": "Life Orb",
+      "ability": "Levitate",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Dark Pulse", "Draco Meteor", "Roar", "Roost"]
+    },
+    {
+      "name": "thing",
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Torrent",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Waterfall", "Earthquake", "Ice Punch", "Rain Dance"]
+    },
+    {
+      "name": "showoff",
+      "species": "Mienshao",
+      "item": "Choice Scarf",
+      "ability": "Reckless",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "U-turn", "Knock Off", "Stone Edge"]
+    },
+    {
+      "name": "pest",
+      "species": "Venomoth",
+      "item": "Lum Berry",
+      "ability": "Tinted Lens",
+      "nature": "Timid",
+      "evs": { "hp": 112, "spa": 144, "spe": 252 },
+      "moves": ["Bug Buzz", "Roost", "Quiver Dance", "Substitute"]
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "name": "obii's Offence Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Aerodactyl",
+      "item": "Focus Sash",
+      "ability": "Pressure",
+      "nature": "Hasty",
+      "evs": { "atk": 176, "spa": 80, "spe": 252 },
+      "moves": ["Taunt", "Stealth Rock", "Double-Edge", "Fire Blast"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Lum Berry",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Close Combat", "Iron Head", "Rock Polish"]
+    },
+    {
+      "species": "Hydreigon",
+      "item": "Life Orb",
+      "ability": "Levitate",
+      "nature": "Naive",
+      "evs": { "atk": 4, "spa": 252, "spe": 252 },
+      "moves": ["Draco Meteor", "Dark Pulse", "Superpower", "Iron Tail"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Damp",
+      "nature": "Adamant",
+      "evs": { "hp": 80, "atk": 252, "spe": 176 },
+      "moves": ["Rain Dance", "Earthquake", "Waterfall", "Ice Punch"]
+    },
+    {
+      "species": "Gyarados",
+      "item": "Lum Berry",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Dragon Dance", "Waterfall", "Bounce", "Earthquake"]
+    },
+    {
+      "species": "Metagross",
+      "item": "Expert Belt",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Meteor Mash", "Earthquake", "Thunder Punch", "Bullet Punch"]
+    }
+  ]
+}

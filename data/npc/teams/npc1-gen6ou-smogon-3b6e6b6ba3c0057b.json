@@ -1,0 +1,60 @@
+{
+  "name": "Diancie Cresselia HO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Diancie",
+      "item": "Diancite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Naive",
+      "evs": { "atk": 4, "spa": 252, "spe": 252 },
+      "moves": ["Protect", "Moonblast", "Earth Power", "Diamond Storm"]
+    },
+    {
+      "species": "Weavile",
+      "item": "Lum Berry",
+      "ability": "Pickpocket",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Knock Off", "Swords Dance", "Icicle Crash", "Ice Shard"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 208, "spa": 252, "spe": 48 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Substitute", "Steam Eruption", "Flamethrower", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Cresselia",
+      "item": "Rocky Helmet",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 76, "spd": 32, "spe": 152 },
+      "ivs": { "atk": 0 },
+      "moves": ["Moonlight", "Ice Beam", "Thunder Wave", "Lunar Dance"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 120, "spd": 136, "spe": 252 },
+      "moves": ["Stealth Rock", "Rapid Spin", "Earthquake", "Iron Head"]
+    },
+    {
+      "species": "Dragonite",
+      "item": "Lum Berry",
+      "ability": "Inner Focus",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Dragon Dance", "Earthquake", "Fire Punch", "Extreme Speed"]
+    }
+  ]
+}

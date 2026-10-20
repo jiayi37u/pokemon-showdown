@@ -1,0 +1,66 @@
+{
+  "name": "Diancie Spikes HO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "name": "The Jester",
+      "species": "Diancie",
+      "item": "Diancite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Naive",
+      "evs": { "atk": 252, "spa": 4, "spe": 252 },
+      "moves": ["Protect", "Explosion", "Earth Power", "Diamond Storm"]
+    },
+    {
+      "name": "Heavy Crown",
+      "species": "Crawdaunt",
+      "item": "Choice Band",
+      "ability": "Adaptability",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Aqua Jet", "Crunch", "Crabhammer", "Knock Off"]
+    },
+    {
+      "name": "King Shit",
+      "species": "Volcarona",
+      "item": "Sitrus Berry",
+      "ability": "Flame Body",
+      "nature": "Modest",
+      "evs": { "hp": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Quiver Dance", "Giga Drain", "Bug Buzz", "Fire Blast"]
+    },
+    {
+      "name": "The Joker",
+      "species": "Ferrothorn",
+      "item": "Chople Berry",
+      "ability": "Iron Barbs",
+      "nature": "Relaxed",
+      "evs": { "hp": 252, "atk": 144, "def": 88, "spd": 24 },
+      "ivs": { "spe": 0 },
+      "moves": ["Spikes", "Power Whip", "Explosion", "Gyro Ball"]
+    },
+    {
+      "name": "Short King",
+      "species": "Landorus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "moves": ["Stealth Rock", "Earthquake", "Smack Down", "U-turn"]
+    },
+    {
+      "name": "Clown Juice",
+      "species": "Latias",
+      "item": "Choice Specs",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Healing Wish", "Defog", "Draco Meteor", "Psychic"]
+    }
+  ]
+}

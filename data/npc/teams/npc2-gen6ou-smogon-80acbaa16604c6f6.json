@@ -1,0 +1,61 @@
+{
+  "name": "Mega Tyranitar Powerful Sand",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Tyranitar",
+      "item": "Tyranitarite",
+      "ability": "Sand Stream",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Dragon Dance", "Stone Edge", "Crunch", "Ice Punch"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Choice Band",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Rock Slide"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Choice Specs",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Steam Eruption", "Flamethrower", "Sludge Bomb", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Garchomp",
+      "item": "Rocky Helmet",
+      "ability": "Rough Skin",
+      "nature": "Impish",
+      "evs": { "hp": 240, "def": 176, "spe": 92 },
+      "moves": ["Stealth Rock", "Earthquake", "Dragon Tail", "Fire Blast"]
+    },
+    {
+      "species": "Ferrothorn",
+      "item": "Leftovers",
+      "ability": "Iron Barbs",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 88, "spd": 168 },
+      "moves": ["Spikes", "Leech Seed", "Power Whip", "Thunder Wave"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Hurricane", "Knock Off", "Hidden Power Ice", "U-turn"],
+      "hpType": "Ice"
+    }
+  ]
+}

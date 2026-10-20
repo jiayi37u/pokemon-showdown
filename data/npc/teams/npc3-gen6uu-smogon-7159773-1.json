@@ -1,0 +1,66 @@
+{
+  "name": "Morsel's Crawdaunt Entei Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "name": "M. Robespierre",
+      "species": "Crawdaunt",
+      "item": "Life Orb",
+      "ability": "Adaptability",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Crabhammer", "Knock Off", "Aqua Jet"]
+    },
+    {
+      "name": "Snoop Dogg",
+      "species": "Entei",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Extreme Speed", "Sacred Fire", "Flare Blitz", "Stone Edge"],
+      "shiny": true
+    },
+    {
+      "name": "Yōsei",
+      "species": "Sylveon",
+      "item": "Leftovers",
+      "ability": "Pixilate",
+      "nature": "Bold",
+      "evs": { "hp": 212, "def": 252, "spd": 32, "spe": 12 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Hyper Voice", "Snore", "Rest"]
+    },
+    {
+      "name": "Alpha Metroid",
+      "species": "Tentacruel",
+      "item": "Black Sludge",
+      "ability": "Liquid Ooze",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 244, "spe": 16 },
+      "ivs": { "atk": 0 },
+      "moves": ["Rapid Spin", "Scald", "Haze", "Toxic Spikes"]
+    },
+    {
+      "name": "Athos",
+      "species": "Cobalion",
+      "item": "Shuca Berry",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Volt Switch", "Close Combat", "Iron Head"]
+    },
+    {
+      "name": "Cele-bae",
+      "species": "Celebi",
+      "item": "Choice Scarf",
+      "ability": "Natural Cure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Leaf Storm", "Psychic", "Healing Wish", "U-turn"]
+    }
+  ]
+}

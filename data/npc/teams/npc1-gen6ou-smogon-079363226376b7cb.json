@@ -1,0 +1,60 @@
+{
+  "name": "Charizard X Cresselia HO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Charizard",
+      "item": "Charizardite X",
+      "ability": "Blaze",
+      "nature": "Jolly",
+      "evs": { "hp": 176, "atk": 148, "spe": 184 },
+      "moves": ["Swords Dance", "Flame Charge", "Dragon Claw", "Earthquake"]
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Icicle Crash", "Pursuit", "Ice Shard"]
+    },
+    {
+      "name": "Keldeo",
+      "species": "Keldeo-Resolute",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 72, "def": 48, "spa": 136, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Substitute", "Scald", "Secret Sword"]
+    },
+    {
+      "species": "Cresselia",
+      "item": "Rocky Helmet",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 32, "spa": 56, "spd": 36, "spe": 136 },
+      "ivs": { "atk": 0 },
+      "moves": ["Lunar Dance", "Ice Beam", "Thunder Wave", "Moonlight"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 120, "spd": 136, "spe": 252 },
+      "moves": ["Stealth Rock", "Earthquake", "Iron Head", "Rapid Spin"]
+    },
+    {
+      "species": "Diggersby",
+      "item": "Assault Vest",
+      "ability": "Huge Power",
+      "nature": "Adamant",
+      "evs": { "hp": 136, "atk": 248, "spd": 92, "spe": 32 },
+      "moves": ["Frustration", "Earthquake", "Quick Attack", "Fire Punch"],
+      "happiness": 0
+    }
+  ]
+}

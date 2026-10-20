@@ -1,0 +1,62 @@
+{
+  "name": "Manectric Sand BO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Manectric",
+      "item": "Manectite",
+      "ability": "Lightning Rod",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Thunderbolt", "Flamethrower", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "name": "Keldeo",
+      "species": "Keldeo-Resolute",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Substitute", "Calm Mind", "Scald", "Secret Sword"]
+    },
+    {
+      "species": "Clefable",
+      "item": "Leftovers",
+      "ability": "Magic Guard",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "moves": ["Calm Mind", "Moonblast", "Knock Off", "Soft-Boiled"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "atk": 216, "spd": 40, "spe": 252 },
+      "moves": ["Toxic", "Rapid Spin", "Iron Head", "Earthquake"]
+    },
+    {
+      "species": "Hippowdon",
+      "item": "Leftovers",
+      "ability": "Sand Stream",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "moves": ["Earthquake", "Stealth Rock", "Slack Off", "Rock Slide"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 100, "spa": 156, "spe": 252 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Hurricane", "Hidden Power Ice", "Knock Off", "U-turn"],
+      "hpType": "Ice"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "name": "Manectric Spikes BO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Manectric",
+      "item": "Manectite",
+      "ability": "Lightning Rod",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Thunderbolt", "Hidden Power Ice", "Overheat", "Volt Switch"],
+      "hpType": "Ice"
+    },
+    {
+      "name": "Keldeo",
+      "species": "Keldeo-Resolute",
+      "item": "Choice Specs",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 40, "spa": 224, "spd": 36, "spe": 208 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Scald", "Hydro Pump", "Secret Sword", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Heatran",
+      "item": "Air Balloon",
+      "ability": "Flash Fire",
+      "nature": "Modest",
+      "evs": { "hp": 248, "spa": 56, "spd": 4, "spe": 200 },
+      "ivs": { "atk": 0 },
+      "moves": ["Magma Storm", "Earth Power", "Taunt", "Will-O-Wisp"]
+    },
+    {
+      "species": "Ferrothorn",
+      "item": "Chople Berry",
+      "ability": "Iron Barbs",
+      "nature": "Relaxed",
+      "evs": { "hp": 252, "atk": 144, "def": 88, "spd": 24 },
+      "ivs": { "spe": 0 },
+      "moves": ["Spikes", "Gyro Ball", "Power Whip", "Knock Off"]
+    },
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "moves": ["Earthquake", "Stealth Rock", "U-turn", "Knock Off"]
+    },
+    {
+      "species": "Latios",
+      "item": "Choice Scarf",
+      "ability": "Levitate",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Draco Meteor", "Psyshock", "Defog", "Trick"]
+    }
+  ]
+}

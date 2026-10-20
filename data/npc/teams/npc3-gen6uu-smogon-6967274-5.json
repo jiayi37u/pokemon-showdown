@@ -1,0 +1,60 @@
+{
+  "name": "Amaroq's Offence Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Krookodile",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "hp": 8, "atk": 248, "spe": 252 },
+      "moves": ["Stealth Rock", "Knock Off", "Earthquake", "Taunt"]
+    },
+    {
+      "species": "Entei",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Sacred Fire", "Flare Blitz", "Extreme Speed", "Stone Edge"],
+      "shiny": true
+    },
+    {
+      "species": "Tentacruel",
+      "item": "Black Sludge",
+      "ability": "Clear Body",
+      "nature": "Timid",
+      "evs": { "hp": 116, "spa": 200, "spe": 192 },
+      "ivs": { "atk": 0 },
+      "moves": ["Rapid Spin", "Hydro Pump", "Ice Beam", "Acid Spray"]
+    },
+    {
+      "species": "Celebi",
+      "item": "Leftovers",
+      "ability": "Natural Cure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 48, "spa": 208, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Nasty Plot", "Giga Drain", "Psychic", "Dazzling Gleam"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Shuca Berry",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Close Combat", "Iron Head", "X-Scissor"]
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Aerodactylite",
+      "ability": "Rock Head",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Hone Claws", "Stone Edge", "Wing Attack", "Earthquake"]
+    }
+  ]
+}

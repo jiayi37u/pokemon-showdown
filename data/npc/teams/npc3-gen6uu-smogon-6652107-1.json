@@ -1,0 +1,58 @@
+{
+  "name": "Everybody Yeezus' Porygon2 Heracross Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Porygon2",
+      "item": "Eviolite",
+      "ability": "Trace",
+      "gender": "N",
+      "nature": "Calm",
+      "evs": { "hp": 248, "spa": 8, "spd": 252 },
+      "moves": ["Recover", "Ice Beam", "Tri Attack", "Thunder Wave"],
+      "shiny": true
+    },
+    {
+      "species": "Heracross",
+      "item": "Choice Band",
+      "ability": "Guts",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Close Combat", "Megahorn", "Knock Off", "Swords Dance"]
+    },
+    {
+      "species": "Metagross",
+      "item": "Life Orb",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Zen Headbutt", "Bullet Punch", "Explosion", "Stealth Rock"]
+    },
+    {
+      "species": "Gardevoir",
+      "item": "Choice Specs",
+      "ability": "Trace",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Moonblast", "Psyshock", "Energy Ball", "Focus Blast"],
+      "shiny": true
+    },
+    {
+      "species": "Jellicent",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "nature": "Bold",
+      "evs": { "hp": 240, "def": 252, "spd": 16 },
+      "moves": ["Will-O-Wisp", "Recover", "Taunt", "Scald"]
+    },
+    {
+      "species": "Vaporeon",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "nature": "Bold",
+      "evs": { "hp": 200, "def": 248, "spd": 60 },
+      "moves": ["Scald", "Wish", "Roar", "Protect"]
+    }
+  ]
+}

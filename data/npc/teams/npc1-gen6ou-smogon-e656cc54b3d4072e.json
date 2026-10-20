@@ -1,0 +1,57 @@
+{
+  "name": "Scizor Balanced",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Scizor",
+      "item": "Scizorite",
+      "ability": "Technician",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 56, "def": 40, "spd": 144, "spe": 20 },
+      "moves": ["Roost", "Swords Dance", "Knock Off", "Bullet Punch"]
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pickpocket",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Ice Shard", "Pursuit", "Icicle Crash", "Knock Off"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Rocky Helmet",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 56, "spa": 200, "spe": 252 },
+      "ivs": { "atk": 1, "def": 30, "spd": 30, "spe": 30 },
+      "moves": ["Glare", "Synthesis", "Hidden Power Rock", "Leaf Storm"],
+      "hpType": "Rock"
+    },
+    {
+      "species": "Slowbro",
+      "item": "Leftovers",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Slack Off", "Calm Mind", "Psyshock", "Scald"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Impish",
+      "evs": { "hp": 40, "def": 252, "spd": 88, "spe": 128 },
+      "moves": ["Stealth Rock", "Rapid Spin", "Iron Head", "Earthquake"]
+    },
+    {
+      "species": "Talonflame",
+      "item": "Leftovers",
+      "ability": "Gale Wings",
+      "nature": "Careful",
+      "evs": { "hp": 248, "atk": 8, "spd": 252 },
+      "moves": ["Roost", "Taunt", "Will-O-Wisp", "Brave Bird"]
+    }
+  ]
+}

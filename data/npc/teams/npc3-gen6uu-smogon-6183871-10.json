@@ -1,0 +1,54 @@
+{
+  "name": "Lord Wallace's Bulky Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Snorlax",
+      "item": "Leftovers",
+      "ability": "Thick Fat",
+      "nature": "Careful",
+      "evs": { "hp": 144, "def": 188, "spd": 176 },
+      "moves": ["Curse", "Sleep Talk", "Body Slam", "Rest"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Earth Plate",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Pursuit", "Knock Off", "Earthquake", "Stealth Rock"]
+    },
+    {
+      "species": "Dragalge",
+      "item": "Black Sludge",
+      "ability": "Adaptability",
+      "nature": "Modest",
+      "evs": { "hp": 252, "def": 4, "spa": 252 },
+      "moves": ["Toxic Spikes", "Draco Meteor", "Sludge Wave", "Haze"]
+    },
+    {
+      "species": "Blastoise",
+      "item": "Blastoisinite",
+      "ability": "Torrent",
+      "nature": "Modest",
+      "evs": { "hp": 184, "spa": 252, "spe": 72 },
+      "moves": ["Dark Pulse", "Aura Sphere", "Hydro Pump", "Rapid Spin"]
+    },
+    {
+      "species": "Chandelure",
+      "item": "Choice Specs",
+      "ability": "Flash Fire",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Fire Blast", "Energy Ball", "Shadow Ball", "Trick"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Leftovers",
+      "ability": "Prankster",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "moves": ["Moonblast", "Leech Seed", "Stun Spore", "Encore"]
+    }
+  ]
+}

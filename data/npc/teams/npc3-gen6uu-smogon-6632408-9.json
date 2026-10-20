@@ -1,0 +1,55 @@
+{
+  "name": "IronBullet's Balance Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Mamoswine",
+      "item": "Life Orb",
+      "ability": "Thick Fat",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Ice Shard", "Earthquake", "Icicle Crash", "Knock Off"]
+    },
+    {
+      "species": "Hydreigon",
+      "item": "Choice Scarf",
+      "ability": "Levitate",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Draco Meteor", "U-turn", "Dark Pulse", "Fire Blast"]
+    },
+    {
+      "species": "Toxicroak",
+      "item": "Lum Berry",
+      "ability": "Dry Skin",
+      "nature": "Jolly",
+      "evs": { "hp": 40, "atk": 252, "spe": 216 },
+      "moves": ["Knock Off", "Drain Punch", "Gunk Shot", "Swords Dance"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Choice Specs",
+      "ability": "Infiltrator",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Energy Ball", "Moonblast", "U-turn", "Switcheroo"]
+    },
+    {
+      "species": "Slowking",
+      "item": "Leftovers",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spa": 8 },
+      "moves": ["Scald", "Psyshock", "Dragon Tail", "Slack Off"]
+    },
+    {
+      "species": "Forretress",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "nature": "Relaxed",
+      "evs": { "hp": 252, "def": 16, "spd": 240 },
+      "ivs": { "spe": 0 },
+      "moves": ["Gyro Ball", "Volt Switch", "Stealth Rock", "Rapid Spin"]
+    }
+  ]
+}

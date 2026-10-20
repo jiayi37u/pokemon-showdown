@@ -1,0 +1,61 @@
+{
+  "name": "Gardevoir Volcarona Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Gardevoir",
+      "item": "Gardevoirite",
+      "ability": "Trace",
+      "nature": "Modest",
+      "evs": { "hp": 112, "def": 56, "spa": 216, "spe": 124 },
+      "ivs": { "atk": 0 },
+      "moves": ["Hyper Voice", "Psyshock", "Focus Blast", "Taunt"]
+    },
+    {
+      "species": "Volcarona",
+      "item": "Lum Berry",
+      "ability": "Flame Body",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Quiver Dance", "Flamethrower", "Bug Buzz", "Giga Drain"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Rocky Helmet",
+      "ability": "Rough Skin",
+      "nature": "Jolly",
+      "evs": { "hp": 240, "def": 112, "spd": 148, "spe": 8 },
+      "moves": ["Stealth Rock", "Earthquake", "Rock Tomb", "Toxic"]
+    },
+    {
+      "species": "Latias",
+      "item": "Rocky Helmet",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 168, "spa": 88, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Surf", "Thunder Wave", "Defog", "Healing Wish"]
+    },
+    {
+      "species": "Bisharp",
+      "item": "Assault Vest",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 252, "spd": 8 },
+      "moves": ["Knock Off", "Iron Head", "Sucker Punch", "Pursuit"]
+    },
+    {
+      "species": "Thundurus",
+      "item": "Rocky Helmet",
+      "ability": "Prankster",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 8, "def": 160, "spa": 88, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Focus Blast", "Hidden Power Ice", "Thunder Wave"],
+      "hpType": "Ice"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "name": "Mega Metagross + BD Azumarill",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Metagross",
+      "item": "Metagrossite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Meteor Mash", "Zen Headbutt", "Hammer Arm", "Thunder Punch"],
+      "shiny": true
+    },
+    {
+      "species": "Azumarill",
+      "item": "Sitrus Berry",
+      "ability": "Huge Power",
+      "nature": "Adamant",
+      "evs": { "hp": 160, "atk": 252, "spe": 96 },
+      "moves": ["Belly Drum", "Aqua Jet", "Play Rough", "Knock Off"]
+    },
+    {
+      "species": "Latios",
+      "item": "Colbur Berry",
+      "ability": "Levitate",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Draco Meteor", "Surf", "Roost", "Defog"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Rocky Helmet",
+      "ability": "Rough Skin",
+      "nature": "Impish",
+      "evs": { "hp": 240, "def": 176, "spe": 92 },
+      "moves": ["Stealth Rock", "Earthquake", "Dragon Tail", "Toxic"]
+    },
+    {
+      "species": "Heatran",
+      "item": "Leftovers",
+      "ability": "Flash Fire",
+      "nature": "Calm",
+      "evs": { "hp": 252, "spd": 208, "spe": 48 },
+      "ivs": { "atk": 0 },
+      "moves": ["Magma Storm", "Earth Power", "Toxic", "Protect"]
+    },
+    {
+      "species": "Tangrowth",
+      "item": "Yache Berry",
+      "ability": "Regenerator",
+      "nature": "Relaxed",
+      "evs": { "hp": 248, "def": 200, "spd": 60 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Sleep Powder", "Giga Drain", "Knock Off", "Hidden Power Ice"],
+      "hpType": "Ice"
+    }
+  ]
+}

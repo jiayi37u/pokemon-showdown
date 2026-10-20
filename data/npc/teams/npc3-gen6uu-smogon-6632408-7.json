@@ -1,0 +1,58 @@
+{
+  "name": "Aquadext's Bulky Offense Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Sceptile",
+      "item": "Sceptilite",
+      "ability": "Overgrow",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Giga Drain", "Dragon Pulse", "Leaf Storm", "Hidden Power Fire"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Swampert",
+      "item": "Leftovers",
+      "ability": "Torrent",
+      "nature": "Relaxed",
+      "evs": { "hp": 236, "def": 248, "spe": 24 },
+      "moves": ["Stealth Rock", "Scald", "Earthquake", "Roar"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Shuca Berry",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Close Combat", "Iron Head", "Stone Edge"]
+    },
+    {
+      "species": "Gardevoir",
+      "item": "Choice Specs",
+      "ability": "Trace",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Psyshock", "Moonblast", "Calm Mind", "Trick"]
+    },
+    {
+      "species": "Snorlax",
+      "item": "Choice Band",
+      "ability": "Thick Fat",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 240, "spe": 16 },
+      "moves": ["Return", "Earthquake", "Pursuit", "Facade"]
+    },
+    {
+      "species": "Crobat",
+      "item": "Sharp Beak",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Brave Bird", "U-turn", "Defog", "Roost"]
+    }
+  ]
+}

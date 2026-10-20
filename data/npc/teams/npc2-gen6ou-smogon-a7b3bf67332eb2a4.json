@@ -1,0 +1,69 @@
+{
+  "name": "Mega Medicham + Specs Volcanion",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Medicham",
+      "item": "Medichamite",
+      "ability": "Pure Power",
+      "gender": "M",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "Zen Headbutt", "Fake Out", "Bullet Punch"],
+      "shiny": true
+    },
+    {
+      "species": "Volcanion",
+      "item": "Choice Specs",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Steam Eruption", "Flamethrower", "Sludge Wave", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Zapdos",
+      "item": "Rocky Helmet",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 240, "def": 140, "spa": 8, "spe": 120 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Roost", "Heat Wave", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Garchomp",
+      "item": "Leftovers",
+      "ability": "Rough Skin",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 240, "atk": 12, "def": 100, "spd": 148, "spe": 8 },
+      "moves": ["Stealth Rock", "Earthquake", "Rock Tomb", "Fire Blast"],
+      "shiny": true
+    },
+    {
+      "species": "Ferrothorn",
+      "item": "Leftovers",
+      "ability": "Iron Barbs",
+      "gender": "M",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 88, "spd": 168 },
+      "moves": ["Spikes", "Leech Seed", "Iron Head", "Power Whip"],
+      "shiny": true
+    },
+    {
+      "species": "Latias",
+      "item": "Colbur Berry",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Thunder Wave", "Draco Meteor", "Recover", "Defog"],
+      "shiny": true
+    }
+  ]
+}

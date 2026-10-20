@@ -1,0 +1,57 @@
+{
+  "name": "TSR's Infernape Triple Ghost Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Infernape",
+      "item": "Life Orb",
+      "ability": "Iron Fist",
+      "nature": "Hasty",
+      "evs": { "atk": 104, "spa": 152, "spe": 252 },
+      "ivs": { "hp": 27, "atk": 30, "def": 30 },
+      "moves": ["Fire Blast", "Close Combat", "Thunder Punch", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Doublade",
+      "item": "Eviolite",
+      "ability": "No Guard",
+      "nature": "Adamant",
+      "evs": { "hp": 240, "atk": 224, "spd": 44 },
+      "moves": ["Iron Head", "Shadow Sneak", "Sacred Sword", "Swords Dance"]
+    },
+    {
+      "species": "Cloyster",
+      "item": "Belue Berry",
+      "ability": "Skill Link",
+      "nature": "Hasty",
+      "evs": { "hp": 40, "atk": 192, "spa": 64, "spe": 212 },
+      "moves": ["Shell Smash", "Hydro Pump", "Icicle Spear", "Natural Gift"]
+    },
+    {
+      "species": "Sceptile",
+      "item": "Sceptilite",
+      "ability": "Overgrow",
+      "nature": "Modest",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Leaf Storm", "Giga Drain", "Focus Blast", "Dragon Pulse"]
+    },
+    {
+      "species": "Empoleon",
+      "item": "Shuca Berry",
+      "ability": "Torrent",
+      "nature": "Modest",
+      "evs": { "hp": 208, "spa": 252, "spe": 48 },
+      "moves": ["Scald", "Ice Beam", "Grass Knot", "Defog"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Life Orb",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "ivs": { "hp": 29 },
+      "moves": ["Knock Off", "Iron Tail", "Earthquake", "Stealth Rock"]
+    }
+  ]
+}

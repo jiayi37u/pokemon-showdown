@@ -1,0 +1,63 @@
+{
+  "name": "Malin's team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "name": "COB lion",
+      "species": "Cobalion",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Close Combat", "Iron Head", "Volt Switch", "Stealth Rock"]
+    },
+    {
+      "name": "Ex-Cavalier",
+      "species": "Escavalier",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 56, "spd": 204 },
+      "moves": ["Iron Head", "Megahorn", "Drill Run", "Swords Dance"]
+    },
+    {
+      "name": "BvS",
+      "species": "Crobat",
+      "item": "Black Sludge",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Brave Bird", "Defog", "Roost", "Taunt"]
+    },
+    {
+      "name": "Sea Serpant",
+      "species": "Milotic",
+      "item": "Leftovers",
+      "ability": "Marvel Scale",
+      "nature": "Calm",
+      "evs": { "hp": 240, "def": 252, "spd": 16 },
+      "ivs": { "atk": 0 },
+      "moves": ["Recover", "Scald", "Toxic", "Haze"]
+    },
+    {
+      "name": "X-mas",
+      "species": "Sceptile",
+      "item": "Sceptilite",
+      "ability": "Overgrow",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Dragon Pulse", "Giga Drain", "Focus Blast", "Leaf Storm"]
+    },
+    {
+      "name": "Pigswine",
+      "species": "Mamoswine",
+      "item": "Life Orb",
+      "ability": "Thick Fat",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spe": 252 },
+      "moves": ["Knock Off", "Earthquake", "Ice Shard", "Icicle Crash"]
+    }
+  ]
+}

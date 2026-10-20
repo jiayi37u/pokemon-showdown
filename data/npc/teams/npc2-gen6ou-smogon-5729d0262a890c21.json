@@ -1,0 +1,61 @@
+{
+  "name": "Mega Medicham + Eject Zapdos Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Medicham",
+      "item": "Medichamite",
+      "ability": "Pure Power",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "Zen Headbutt", "Fake Out", "Thunder Punch"],
+      "shiny": true
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Icicle Crash", "Pursuit", "Ice Shard"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Careful",
+      "evs": { "hp": 252, "spd": 216, "spe": 40 },
+      "moves": ["Earthquake", "Iron Head", "Toxic", "Rapid Spin"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 224, "spa": 252, "spe": 32 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Steam Eruption", "Flamethrower", "Hidden Power Grass", "Substitute"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Zapdos",
+      "item": "Eject Button",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 240, "def": 140, "spa": 8, "spe": 120 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Roost", "Heat Wave", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Garchomp",
+      "item": "Life Orb",
+      "ability": "Rough Skin",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Earthquake", "Outrage", "Stealth Rock"]
+    }
+  ]
+}

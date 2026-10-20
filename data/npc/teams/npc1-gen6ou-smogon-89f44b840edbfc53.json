@@ -1,0 +1,63 @@
+{
+  "name": "Gyarados Screens HO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Gyarados",
+      "item": "Gyaradosite",
+      "ability": "Intimidate",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Taunt", "Dragon Dance", "Waterfall", "Crunch"]
+    },
+    {
+      "species": "Mew",
+      "item": "Mental Herb",
+      "ability": "Synchronize",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "def": 4, "spe": 252 },
+      "moves": ["Thunder Wave", "Stealth Rock", "Explosion", "Taunt"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Light Clay",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 252, "def": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Light Screen", "Reflect", "Leaf Storm", "Taunt"]
+    },
+    {
+      "species": "Volcarona",
+      "item": "Life Orb",
+      "ability": "Flame Body",
+      "gender": "F",
+      "nature": "Modest",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 1, "spa": 30, "spd": 30 },
+      "moves": ["Quiver Dance", "Fire Blast", "Giga Drain", "Hidden Power Ground"],
+      "hpType": "Ground"
+    },
+    {
+      "species": "Cloyster",
+      "item": "Focus Sash",
+      "ability": "Skill Link",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Shell Smash", "Icicle Spear", "Rapid Spin", "Toxic Spikes"]
+    },
+    {
+      "name": "Thundurus",
+      "species": "Thundurus-Therian",
+      "item": "Leftovers",
+      "ability": "Volt Absorb",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 24, "def": 20, "spa": 212, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Nasty Plot", "Focus Blast", "Thunderbolt", "Hidden Power Ice"],
+      "hpType": "Ice"
+    }
+  ]
+}

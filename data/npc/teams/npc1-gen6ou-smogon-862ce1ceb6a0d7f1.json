@@ -1,0 +1,65 @@
+{
+  "name": "Medicham VoltTurn",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Medicham",
+      "item": "Medichamite",
+      "ability": "Pure Power",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "Zen Headbutt", "Fake Out", "Bullet Punch"]
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Wash",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 128, "spe": 128 },
+      "ivs": { "atk": 0 },
+      "moves": ["Volt Switch", "Hydro Pump", "Will-O-Wisp", "Pain Split"]
+    },
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Relaxed",
+      "evs": { "hp": 248, "atk": 8, "def": 252 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Earthquake", "Hidden Power Ice", "U-turn", "Stealth Rock"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Tyranitar",
+      "item": "Choice Band",
+      "ability": "Sand Stream",
+      "nature": "Adamant",
+      "evs": { "hp": 48, "atk": 252, "spe": 208 },
+      "moves": ["Pursuit", "Crunch", "Stone Edge", "Fire Punch"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Earthquake", "Rapid Spin", "Iron Head", "Swords Dance"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 100, "spa": 156, "spe": 252 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Hurricane", "Heat Wave", "U-turn", "Hidden Power Ice"],
+      "hpType": "Ice"
+    }
+  ]
+}

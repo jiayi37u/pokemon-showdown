@@ -1,0 +1,64 @@
+{
+  "name": "Metagross Landorus Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Metagross",
+      "item": "Metagrossite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "hp": 4, "atk": 252, "spe": 252 },
+      "moves": ["Power-Up Punch", "Thunder Punch", "Bullet Punch", "Zen Headbutt"]
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pickpocket",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Ice Shard", "Pursuit", "Icicle Crash", "Knock Off"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Rocky Helmet",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 208, "spa": 48, "spe": 252 },
+      "ivs": { "atk": 1, "def": 30, "spd": 30, "spe": 30 },
+      "moves": ["Glare", "Synthesis", "Hidden Power Rock", "Leaf Storm"],
+      "hpType": "Rock"
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Wash",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 128, "spe": 128 },
+      "ivs": { "atk": 0 },
+      "moves": ["Will-O-Wisp", "Pain Split", "Hydro Pump", "Volt Switch"]
+    },
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "moves": ["Stealth Rock", "Earthquake", "Rock Tomb", "U-turn"]
+    },
+    {
+      "species": "Latias",
+      "item": "Choice Scarf",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Healing Wish", "Defog", "Draco Meteor", "Psyshock"]
+    }
+  ]
+}

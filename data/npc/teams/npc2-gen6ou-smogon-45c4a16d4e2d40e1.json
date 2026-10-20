@@ -1,0 +1,63 @@
+{
+  "name": "Mega Charizard-X Sand Team",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Charizard",
+      "item": "Charizardite X",
+      "ability": "Blaze",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Dragon Claw", "Flame Charge", "Earthquake"]
+    },
+    {
+      "species": "Tyranitar",
+      "item": "Choice Scarf",
+      "ability": "Sand Stream",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Stone Edge", "Pursuit", "Superpower", "Crunch"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "hp": 116, "atk": 252, "spe": 140 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Stealth Rock"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Knock Off", "U-turn"]
+    },
+    {
+      "species": "Amoonguss",
+      "item": "Black Sludge",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 168, "spd": 92 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Spore", "Giga Drain", "Clear Smog", "Hidden Power Fire"],
+      "shiny": true,
+      "hpType": "Fire"
+    },
+    {
+      "name": "Keldeo",
+      "species": "Keldeo-Resolute",
+      "item": "Choice Specs",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "def": 48, "spa": 252, "spe": 208 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Hydro Pump", "Secret Sword", "Scald", "Hidden Power Grass"],
+      "hpType": "Grass"
+    }
+  ]
+}

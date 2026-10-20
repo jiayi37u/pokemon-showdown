@@ -1,0 +1,69 @@
+{
+  "name": "Kalawishis' Crawdaunt Trick Room",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "name": "Crabsmack",
+      "species": "Crawdaunt",
+      "item": "Life Orb",
+      "ability": "Adaptability",
+      "nature": "Brave",
+      "evs": { "hp": 252, "atk": 252, "spd": 4 },
+      "ivs": { "spe": 0 },
+      "moves": ["Knock Off", "Crabhammer", "Aqua Jet", "Swords Dance"]
+    },
+    {
+      "name": "Bell Pepper",
+      "species": "Bronzong",
+      "item": "Life Orb",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Brave",
+      "evs": { "hp": 252, "atk": 252, "spd": 4 },
+      "ivs": { "spe": 0 },
+      "moves": ["Trick Room", "Gyro Ball", "Stealth Rock", "Explosion"]
+    },
+    {
+      "name": "Hot Dog",
+      "species": "Entei",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Sacred Fire", "Flare Blitz", "Extreme Speed", "Stone Edge"],
+      "shiny": true
+    },
+    {
+      "name": "Ducksworth",
+      "species": "Porygon2",
+      "item": "Eviolite",
+      "ability": "Download",
+      "gender": "N",
+      "nature": "Quiet",
+      "evs": { "hp": 252, "def": 4, "spa": 252 },
+      "ivs": { "atk": 0, "spe": 0 },
+      "moves": ["Thunderbolt", "Ice Beam", "Trick Room", "Recover"]
+    },
+    {
+      "name": "Sheeple",
+      "species": "Ampharos",
+      "item": "Ampharosite",
+      "ability": "Static",
+      "nature": "Quiet",
+      "evs": { "hp": 252, "def": 4, "spa": 252 },
+      "ivs": { "atk": 0, "spe": 0 },
+      "moves": ["Volt Switch", "Dragon Pulse", "Thunderbolt", "Focus Blast"]
+    },
+    {
+      "name": "Greenspan",
+      "species": "Reuniclus",
+      "item": "Life Orb",
+      "ability": "Magic Guard",
+      "nature": "Quiet",
+      "evs": { "hp": 252, "def": 4, "spa": 252 },
+      "ivs": { "atk": 0, "spe": 0 },
+      "moves": ["Psyshock", "Focus Blast", "Shadow Ball", "Trick Room"]
+    }
+  ]
+}

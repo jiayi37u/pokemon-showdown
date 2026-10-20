@@ -1,0 +1,61 @@
+{
+  "name": "Alakazam FWG HO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Alakazam",
+      "item": "Alakazite",
+      "ability": "Magic Guard",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Psychic", "Focus Blast", "Shadow Ball", "Taunt"]
+    },
+    {
+      "species": "Bisharp",
+      "item": "Lum Berry",
+      "ability": "Defiant",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Knock Off", "Iron Head", "Sucker Punch"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Rocky Helmet",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 56, "spa": 200, "spe": 252 },
+      "ivs": { "atk": 1, "def": 30, "spd": 30, "spe": 30 },
+      "moves": ["Leaf Storm", "Hidden Power Rock", "Glare", "Taunt"],
+      "hpType": "Rock"
+    },
+    {
+      "species": "Volcarona",
+      "item": "Life Orb",
+      "ability": "Flame Body",
+      "nature": "Modest",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 1, "spa": 30, "spd": 30 },
+      "moves": ["Quiver Dance", "Fire Blast", "Giga Drain", "Hidden Power Ground"],
+      "hpType": "Ground"
+    },
+    {
+      "species": "Cloyster",
+      "item": "Focus Sash",
+      "ability": "Skill Link",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Shell Smash", "Icicle Spear", "Rock Blast", "Rapid Spin"]
+    },
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 248, "def": 28, "spe": 232 },
+      "moves": ["Stealth Rock", "Earthquake", "Imprison", "U-turn"]
+    }
+  ]
+}

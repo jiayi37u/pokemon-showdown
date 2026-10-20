@@ -1,0 +1,58 @@
+{
+  "name": "hilarious' (pif) Stall Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Arcanine",
+      "item": "Leftovers",
+      "ability": "Intimidate",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 244, "spe": 16 },
+      "moves": ["Morning Sun", "Flare Blitz", "Will-O-Wisp", "Extreme Speed"]
+    },
+    {
+      "species": "Xatu",
+      "item": "Leftovers",
+      "ability": "Magic Bounce",
+      "nature": "Calm",
+      "evs": { "hp": 248, "spd": 244, "spe": 16 },
+      "ivs": { "atk": 0 },
+      "moves": ["Roost", "Haze", "Psyshock", "Night Shade"]
+    },
+    {
+      "species": "Forretress",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "nature": "Relaxed",
+      "evs": { "hp": 252, "atk": 4, "def": 252 },
+      "ivs": { "spe": 0 },
+      "moves": ["Stealth Rock", "Gyro Ball", "Rapid Spin", "Pain Split"]
+    },
+    {
+      "species": "Blissey",
+      "item": "Leftovers",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Calm",
+      "evs": { "hp": 192, "def": 252, "spd": 56, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Soft-Boiled", "Toxic", "Aromatherapy", "Seismic Toss"]
+    },
+    {
+      "species": "Chesnaught",
+      "item": "Leftovers",
+      "ability": "Bulletproof",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 252, "spe": 8 },
+      "moves": ["Synthesis", "Wood Hammer", "Spiky Shield", "Drain Punch"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Torrent",
+      "nature": "Sassy",
+      "evs": { "hp": 248, "spd": 252, "spe": 8 },
+      "moves": ["Rest", "Sleep Talk", "Scald", "Earthquake"]
+    }
+  ]
+}

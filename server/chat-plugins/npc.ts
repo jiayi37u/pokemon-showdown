@@ -10,6 +10,7 @@
 import { NPC, NPC_RANDOM_FORMATS, NPC_RANDOM_MULTI_FORMATS } from '../npc/manager';
 import { createNPCBattle, createNPCMultiBattle, isFormatSupported } from '../npc/room';
 import { Teams } from '../../sim/teams';
+import { Utils } from '../../lib';
 import { challenges, GameChallenge } from '../ladders-challenges';
 
 /**
@@ -89,7 +90,7 @@ function getNPCListHTML(user: User): string {
 		const formatNames = formats.map(f => getFormatDisplayName(f)).join(', ');
 
 		html += `<tr>`;
-		html += `<td><strong>${npc.name}</strong>${npc.title ? `<br/><small>${npc.title}</small>` : ''}</td>`;
+		html += `<td><strong>${Utils.escapeHTML(npc.name)}</strong>${npc.title ? `<br/><small>${Utils.escapeHTML(npc.title)}</small>` : ''}</td>`;
 		html += `<td>${formatNames || 'None'}</td>`;
 		html += `<td><button class="button" name="send" value="/npc challenge ${npc.id}">Challenge</button></td>`;
 		html += `</tr>`;
@@ -124,9 +125,9 @@ function getFormatSelectionHTML(npcId: string, user: User, selectedDifficulty?: 
 		'Battle with random teams, alone or with a friend. An NPC appearance is chosen for you.' : npc?.description;
 
 	let html = `<div class="pad">`;
-	html += `<h2>Challenge ${name}</h2>`;
-	if (npc?.title) html += `<p><em>${npc.title}</em></p>`;
-	if (description) html += `<p>${description}</p>`;
+	html += `<h2>Challenge ${Utils.escapeHTML(name)}</h2>`;
+	if (npc?.title) html += `<p><em>${Utils.escapeHTML(npc.title)}</em></p>`;
+	if (description) html += `<p>${Utils.escapeHTML(description)}</p>`;
 
 	// Difficulty selection
 	html += `<h3>Select Difficulty</h3>`;
@@ -406,7 +407,7 @@ export const commands: Chat.ChatCommands = {
 			// Show teammate input form
 			let html = `<div class="pad">`;
 			html += `<h2>Multi Battle Setup</h2>`;
-			html += `<p>Challenge <strong>${npc?.name || 'Random Battle'}</strong> with a teammate!</p>`;
+			html += `<p>Challenge <strong>${Utils.escapeHTML(npc?.name || 'Random Battle')}</strong> with a teammate!</p>`;
 			html += `<p>Difficulty: <strong>${diffInfo.name}</strong></p>`;
 			html += `<p>Format: <strong>${getFormatDisplayName(multiFormat)}</strong></p>`;
 			if (isRandom) html += `<p>All four players receive 3 random Pokemon. No team selection needed.</p>`;

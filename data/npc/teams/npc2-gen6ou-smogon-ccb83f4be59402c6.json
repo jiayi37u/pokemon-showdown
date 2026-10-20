@@ -1,0 +1,61 @@
+{
+  "name": "Scarf Volcanion Sand",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Tyranitar",
+      "item": "Tyranitarite",
+      "ability": "Sand Stream",
+      "nature": "Adamant",
+      "evs": { "hp": 216, "atk": 244, "spe": 48 },
+      "moves": ["Stone Edge", "Crunch", "Pursuit", "Focus Punch"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Choice Scarf",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Steam Eruption", "Flamethrower", "Sludge Bomb", "Overheat"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Life Orb",
+      "ability": "Sand Rush",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Rock Slide", "Rapid Spin"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Chesto Berry",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 48, "spa": 208, "spe": 252 },
+      "ivs": { "atk": 1, "def": 30, "spd": 30, "spe": 30 },
+      "moves": ["Leaf Storm", "Hidden Power Rock", "Glare", "Rest"],
+      "hpType": "Rock"
+    },
+    {
+      "species": "Clefable",
+      "item": "Leftovers",
+      "ability": "Magic Guard",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 236, "spe": 20 },
+      "moves": ["Moonblast", "Knock Off", "Soft-Boiled", "Stealth Rock"]
+    },
+    {
+      "species": "Zapdos",
+      "item": "Rocky Helmet",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 168, "spa": 36, "spe": 56 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Heat Wave", "Hidden Power Ice", "Roost"],
+      "hpType": "Ice"
+    }
+  ]
+}

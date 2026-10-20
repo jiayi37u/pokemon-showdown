@@ -1,0 +1,62 @@
+{
+  "name": "Six Naughty Wives",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "name": "Queen of Hearts",
+      "species": "Darmanitan",
+      "item": "Choice Scarf",
+      "ability": "Sheer Force",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Flare Blitz", "U-turn", "Rock Slide", "Superpower"]
+    },
+    {
+      "name": "Yzma",
+      "species": "Heliolisk",
+      "item": "Life Orb",
+      "ability": "Dry Skin",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Volt Switch", "Thunder", "Grass Knot", "Hyper Voice"]
+    },
+    {
+      "name": "Ursula",
+      "species": "Suicune",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 212, "spe": 44 },
+      "moves": ["Scald", "Roar", "Rest", "Sleep Talk"]
+    },
+    {
+      "name": "Other Mother",
+      "species": "Krookodile",
+      "item": "Life Orb",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Knock Off", "Earthquake", "Stone Edge", "Stealth Rock"]
+    },
+    {
+      "name": "Maleficent",
+      "species": "Crobat",
+      "item": "Sky Plate",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Brave Bird", "U-turn", "Defog", "Roost"]
+    },
+    {
+      "name": "Mother Gothel",
+      "species": "Florges",
+      "item": "Leftovers",
+      "ability": "Flower Veil",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 240, "spe": 16 },
+      "moves": ["Calm Mind", "Moonblast", "Synthesis", "Aromatherapy"]
+    }
+  ]
+}

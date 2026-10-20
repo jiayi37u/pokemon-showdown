@@ -1,0 +1,64 @@
+{
+  "name": "Dad's Dad's Double Dragon Bulky Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "name": "the black dread",
+      "species": "Hydreigon",
+      "item": "Life Orb",
+      "ability": "Levitate",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Draco Meteor", "Dark Pulse", "Roost", "Taunt"]
+    },
+    {
+      "name": "emp grenade",
+      "species": "Ampharos",
+      "item": "Ampharosite",
+      "ability": "Static",
+      "nature": "Modest",
+      "evs": { "hp": 192, "spa": 252, "spe": 64 },
+      "moves": ["Rest", "Sleep Talk", "Dragon Pulse", "Volt Switch"]
+    },
+    {
+      "name": "goat simulator",
+      "species": "Cobalion",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Close Combat", "Iron Head", "Stealth Rock", "Swords Dance"]
+    },
+    {
+      "name": "king kunta",
+      "species": "Reuniclus",
+      "item": "Leftovers",
+      "ability": "Magic Guard",
+      "gender": "M",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 236, "spe": 20 },
+      "moves": ["Psyshock", "Focus Blast", "Calm Mind", "Recover"]
+    },
+    {
+      "name": "yamuraiha waifu",
+      "species": "Suicune",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 112, "spa": 252, "spe": 144 },
+      "moves": ["Hydro Pump", "Ice Beam", "Substitute", "Calm Mind"]
+    },
+    {
+      "name": "bruce wayne",
+      "species": "Crobat",
+      "ability": "Infiltrator",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 104, "atk": 188, "spd": 4, "spe": 212 },
+      "moves": ["Acrobatics", "Roost", "Taunt", "U-turn"]
+    }
+  ]
+}

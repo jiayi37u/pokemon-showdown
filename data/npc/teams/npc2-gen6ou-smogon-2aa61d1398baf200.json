@@ -1,0 +1,59 @@
+{
+  "name": "Mega Charizard-Y + CB Tyranitar",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Charizard",
+      "item": "Charizardite Y",
+      "ability": "Blaze",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Fire Blast", "Solar Beam", "Focus Blast", "Roost"]
+    },
+    {
+      "species": "Tyranitar",
+      "item": "Choice Band",
+      "ability": "Sand Stream",
+      "nature": "Adamant",
+      "evs": { "hp": 172, "atk": 252, "spe": 84 },
+      "moves": ["Stone Edge", "Crunch", "Superpower", "Pursuit"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "hp": 116, "atk": 252, "spe": 140 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Stealth Rock"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Air Slash", "Heat Wave", "Knock Off", "U-turn"]
+    },
+    {
+      "species": "Slowbro",
+      "item": "Eject Button",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 176, "spd": 80 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Slack Off", "Toxic", "Fire Blast"]
+    },
+    {
+      "species": "Latios",
+      "item": "Choice Scarf",
+      "ability": "Levitate",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Draco Meteor", "Psyshock", "Defog", "Trick"]
+    }
+  ]
+}

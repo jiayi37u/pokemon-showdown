@@ -1,0 +1,60 @@
+{
+  "name": "Nightingales' Tyrantrum Mega Abomasnow Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Tyrantrum",
+      "item": "Stone Plate",
+      "ability": "Rock Head",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Dragon Dance", "Rock Polish", "Earthquake", "Head Smash"]
+    },
+    {
+      "species": "Abomasnow",
+      "item": "Abomasite",
+      "ability": "Snow Warning",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 252, "spd": 8 },
+      "moves": ["Ice Shard", "Seed Bomb", "Wood Hammer", "Earthquake"]
+    },
+    {
+      "species": "Suicune",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spa": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Substitute", "Roar", "Calm Mind", "Scald"]
+    },
+    {
+      "species": "Moltres",
+      "item": "Life Orb",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "atk": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Fire Blast", "Hurricane", "Hidden Power Grass", "U-turn"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Donphan",
+      "item": "Leftovers",
+      "ability": "Sturdy",
+      "nature": "Adamant",
+      "evs": { "hp": 252, "atk": 252, "spd": 4 },
+      "moves": ["Rapid Spin", "Earthquake", "Stone Edge", "Ice Shard"]
+    },
+    {
+      "species": "Froslass",
+      "item": "Focus Sash",
+      "ability": "Cursed Body",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 248, "spd": 8, "spe": 252 },
+      "moves": ["Spikes", "Destiny Bond", "Light Screen", "Taunt"]
+    }
+  ]
+}

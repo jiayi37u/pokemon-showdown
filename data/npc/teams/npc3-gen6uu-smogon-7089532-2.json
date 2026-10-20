@@ -1,0 +1,60 @@
+{
+  "name": "Thunder Wave Spam + SubSeed Sceptile + CM Sylveon Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Forretress",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "gender": "F",
+      "nature": "Careful",
+      "evs": { "hp": 248, "def": 96, "spd": 164 },
+      "moves": ["Heavy Slam", "Earthquake", "Spikes", "Rapid Spin"]
+    },
+    {
+      "species": "Sceptile",
+      "item": "Sceptilite",
+      "ability": "Overgrow",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "hp": 0, "atk": 0 },
+      "moves": ["Substitute", "Leech Seed", "Dragon Pulse", "Giga Drain"]
+    },
+    {
+      "species": "Sylveon",
+      "item": "Leftovers",
+      "ability": "Pixilate",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 44, "spe": 216 },
+      "ivs": { "atk": 0 },
+      "moves": ["Hyper Voice", "Calm Mind", "Snore", "Rest"]
+    },
+    {
+      "species": "Blissey",
+      "item": "Leftovers",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "moves": ["Ice Beam", "Thunder Wave", "Soft-Boiled", "Stealth Rock"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Choice Band",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Pursuit", "Stone Edge", "Earthquake"]
+    },
+    {
+      "species": "Gyarados",
+      "item": "Leftovers",
+      "ability": "Intimidate",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 208, "spe": 52 },
+      "moves": ["Waterfall", "Taunt", "Thunder Wave", "Roar"],
+      "shiny": true
+    }
+  ]
+}

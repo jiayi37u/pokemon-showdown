@@ -1,0 +1,57 @@
+{
+  "name": "Dad's Dad's Mega Beedrill Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Gligar",
+      "item": "Eviolite",
+      "ability": "Hyper Cutter",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 16, "spd": 244 },
+      "moves": ["Earthquake", "Roost", "Defog", "U-turn"]
+    },
+    {
+      "species": "Suicune",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 240, "def": 224, "spe": 44 },
+      "moves": ["Scald", "Substitute", "Calm Mind", "Roar"]
+    },
+    {
+      "species": "Hydreigon",
+      "item": "Choice Specs",
+      "ability": "Levitate",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Draco Meteor", "Dark Pulse", "Flash Cannon", "U-turn"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Close Combat", "Iron Head", "Swords Dance", "Stealth Rock"]
+    },
+    {
+      "species": "Snorlax",
+      "item": "Leftovers",
+      "ability": "Thick Fat",
+      "nature": "Careful",
+      "evs": { "hp": 80, "def": 208, "spd": 200, "spe": 20 },
+      "moves": ["Frustration", "Rest", "Sleep Talk", "Curse"],
+      "happiness": 0
+    },
+    {
+      "species": "Beedrill",
+      "item": "Beedrillite",
+      "ability": "Swarm",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Poison Jab", "Drill Run", "U-turn", "Protect"]
+    }
+  ]
+}

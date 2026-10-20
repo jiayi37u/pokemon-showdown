@@ -1,0 +1,62 @@
+{
+  "name": "Mega Gallade (Bulky-Safeguard) Hyper Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Yache Berry",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 80, "atk": 172, "def": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Rock Tomb", "Earthquake", "Explosion"]
+    },
+    {
+      "species": "Gallade",
+      "item": "Galladite",
+      "ability": "Steadfast",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 104, "atk": 152, "spe": 252 },
+      "moves": ["Safeguard", "Swords Dance", "Psycho Cut", "Drain Punch"]
+    },
+    {
+      "species": "Manaphy",
+      "item": "Sitrus Berry",
+      "ability": "Hydration",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 112, "spa": 252, "spe": 144 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Tail Glow", "Surf", "Ice Beam", "Hidden Power Fire"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Bisharp",
+      "item": "Black Glasses",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Knock Off", "Swords Dance", "Iron Head", "Sucker Punch"]
+    },
+    {
+      "species": "Xatu",
+      "item": "Light Clay",
+      "ability": "Magic Bounce",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "spd": 4, "spe": 252 },
+      "moves": ["Light Screen", "Reflect", "U-turn", "Thunder Wave"]
+    },
+    {
+      "species": "Volcarona",
+      "item": "Lum Berry",
+      "ability": "Flame Body",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Quiver Dance", "Flamethrower", "Bug Buzz", "Giga Drain"]
+    }
+  ]
+}

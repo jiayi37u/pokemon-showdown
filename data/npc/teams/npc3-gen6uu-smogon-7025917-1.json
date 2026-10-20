@@ -1,0 +1,61 @@
+{
+  "name": "SunnyDoom",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Houndoom",
+      "item": "Houndoominite",
+      "ability": "Flash Fire",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Sunny Day", "Fire Blast", "Dark Pulse", "Solar Beam"]
+    },
+    {
+      "species": "Celebi",
+      "item": "Leftovers",
+      "ability": "Natural Cure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Nasty Plot", "Energy Ball", "Psychic", "Dazzling Gleam"]
+    },
+    {
+      "species": "Gyarados",
+      "item": "Charti Berry",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Dragon Dance", "Waterfall", "Bounce", "Earthquake"]
+    },
+    {
+      "species": "Entei",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Sacred Fire", "Flare Blitz", "Extreme Speed", "Stone Edge"],
+      "shiny": true
+    },
+    {
+      "species": "Lucario",
+      "item": "Life Orb",
+      "ability": "Justified",
+      "gender": "M",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Bullet Punch", "Extreme Speed", "Close Combat"]
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Focus Sash",
+      "ability": "Pressure",
+      "nature": "Hasty",
+      "evs": { "atk": 184, "spa": 72, "spe": 252 },
+      "moves": ["Stealth Rock", "Taunt", "Double-Edge", "Fire Blast"]
+    }
+  ]
+}

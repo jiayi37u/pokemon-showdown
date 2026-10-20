@@ -1,0 +1,56 @@
+{
+  "name": "4.0 - Choice Banded Mienshoa Balance (Anti- Heliolisk)",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Mienshao",
+      "item": "Choice Band",
+      "ability": "Reckless",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "U-turn", "Poison Jab", "Knock Off"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Choice Scarf",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Pursuit", "Stone Edge", "Earthquake"]
+    },
+    {
+      "species": "Slowking",
+      "item": "Leftovers",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spe": 4 },
+      "moves": ["Calm Mind", "Scald", "Psyshock", "Slack Off"]
+    },
+    {
+      "name": "Florges",
+      "species": "Florges-White",
+      "item": "Leftovers",
+      "ability": "Flower Veil",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 240, "spe": 16 },
+      "moves": ["Calm Mind", "Moonblast", "Synthesis", "Aromatherapy"]
+    },
+    {
+      "species": "Crobat",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Acrobatics", "U-turn", "Defog", "Taunt"],
+      "shiny": true
+    },
+    {
+      "species": "Aggron",
+      "item": "Aggronite",
+      "ability": "Sturdy",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 16, "spd": 240 },
+      "moves": ["Stealth Rock", "Roar", "Heavy Slam", "Earthquake"]
+    }
+  ]
+}

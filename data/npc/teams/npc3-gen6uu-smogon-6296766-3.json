@@ -1,0 +1,57 @@
+{
+  "name": "Brendannn's Mega Sceptile Moltres Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Sceptile",
+      "item": "Sceptilite",
+      "ability": "Overgrow",
+      "nature": "Modest",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Leaf Storm", "Giga Drain", "Dragon Pulse", "Focus Blast"]
+    },
+    {
+      "species": "Forretress",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "nature": "Relaxed",
+      "evs": { "hp": 252, "def": 252, "spe": 4 },
+      "ivs": { "spe": 0 },
+      "moves": ["Rapid Spin", "Spikes", "Volt Switch", "Gyro Ball"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Dread Plate",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Earthquake", "Knock Off", "Pursuit"]
+    },
+    {
+      "species": "Slowking",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "nature": "Modest",
+      "evs": { "hp": 248, "spa": 252, "spe": 8 },
+      "moves": ["Scald", "Psyshock", "Ice Beam", "Dragon Tail"]
+    },
+    {
+      "species": "Moltres",
+      "item": "Choice Scarf",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "atk": 4, "spa": 252, "spe": 252 },
+      "moves": ["Fire Blast", "Hurricane", "Flamethrower", "U-turn"]
+    },
+    {
+      "species": "Doublade",
+      "item": "Eviolite",
+      "ability": "No Guard",
+      "nature": "Adamant",
+      "evs": { "hp": 240, "atk": 252, "spe": 16 },
+      "moves": ["Swords Dance", "Shadow Sneak", "Iron Head", "Sacred Sword"]
+    }
+  ]
+}

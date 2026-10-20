@@ -1,0 +1,56 @@
+{
+  "name": "Brendannn's Mega Swampert Entei Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Damp",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Rain Dance", "Waterfall", "Earthquake", "Ice Punch"]
+    },
+    {
+      "species": "Entei",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Sacred Fire", "Extreme Speed", "Stone Edge", "Flare Blitz"],
+      "shiny": true
+    },
+    {
+      "species": "Crobat",
+      "item": "Sky Plate",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "hp": 176, "atk": 120, "spe": 212 },
+      "moves": ["Brave Bird", "U-turn", "Roost", "Defog"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Dread Plate",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Knock Off", "Earthquake", "Stone Edge"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Life Orb",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Giga Drain", "Moonblast", "Stun Spore", "Encore"]
+    },
+    {
+      "species": "Reuniclus",
+      "item": "Leftovers",
+      "ability": "Magic Guard",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spe": 4 },
+      "moves": ["Calm Mind", "Psyshock", "Focus Blast", "Recover"]
+    }
+  ]
+}

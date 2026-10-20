@@ -1,0 +1,55 @@
+{
+  "name": "Hydreigon HO",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Hydreigon",
+      "item": "Life Orb",
+      "ability": "Levitate",
+      "nature": "Hasty",
+      "evs": { "atk": 56, "spa": 200, "spe": 252 },
+      "moves": ["Draco Meteor", "Dark Pulse", "Superpower", "Iron Tail"]
+    },
+    {
+      "species": "Chandelure",
+      "item": "Leftovers",
+      "ability": "Flame Body",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Flamethrower", "Shadow Ball", "Substitute", "Calm Mind"]
+    },
+    {
+      "species": "Lucario",
+      "item": "Life Orb",
+      "ability": "Justified",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Close Combat", "Extreme Speed", "Bullet Punch", "Swords Dance"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Yache Berry",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Moonblast", "Giga Drain", "Encore", "Stun Spore"]
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Aerodactylite",
+      "ability": "Unnerve",
+      "nature": "Jolly",
+      "evs": { "atk": 216, "def": 40, "spe": 252 },
+      "moves": ["Wing Attack", "Stone Edge", "Earthquake", "Stealth Rock"]
+    },
+    {
+      "species": "Tentacruel",
+      "item": "Black Sludge",
+      "ability": "Clear Body",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "moves": ["Scald", "Ice Beam", "Toxic Spikes", "Rapid Spin"]
+    }
+  ]
+}

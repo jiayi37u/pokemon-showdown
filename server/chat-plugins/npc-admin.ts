@@ -1,10 +1,12 @@
 /**
- * NPC Admin —— 网页端管理 NPC 队伍。
+ * NPC Admin —— 网页端管理 NPC 和队伍。
  *
  * 页面：
  *   view-npcadmin                 —— 概览，列出所有 NPC + 其队伍
  *   view-npcadmin-edit-FILENAME   —— 编辑单个队伍
  *   view-npcadmin-new             —— 新建队伍
+ *   view-npcadmin-npcnew          —— 新建 NPC
+ *   view-npcadmin-npcedit-ID      —— 编辑 NPC
  *
  * 新 schema：一支队伍文件自己带 formats: string[]（可以同时属于多个分级）。
  *   - 保存（name + pokemon）走 /npcadmin team save
@@ -22,6 +24,9 @@ import { TeamValidator } from '../../sim/team-validator';
 import { Utils } from '../../lib';
 import { Dex } from '../../sim/dex';
 import { NPC, type NPCTemplate, type NPCTeamFile } from '../npc/manager';
+import {
+	hasTrainerAvatar, searchTrainerAvatars, trainerAvatarCredit, TRAINER_AVATAR_SOURCE,
+} from '../npc/trainer-avatars';
 
 const ADMIN_KEY = '963741';
 const UNLOCK_TTL = 30 * 60 * 1000;
@@ -30,6 +35,7 @@ const UNLOCK_TTL = 30 * 60 * 1000;
 // 必须显式注册到 multiLinePattern 白名单。见 server/chat-commands/core.ts:1822 的类似注册。
 process.nextTick(() => {
 	Chat.multiLinePattern.register('/npcadmin team save ');
+	Chat.multiLinePattern.register('/npcadmin save ');
 });
 
 const unlockedUsers = new Map<string, number>();
@@ -305,6 +311,73 @@ export const commands: Chat.ChatCommands = {
 			this.sendReply(`✓ NPC 配置已重载（共 ${NPC.count} 个 NPC）。`);
 		},
 
+		avatarsearch(target, room, user, connection) {
+			requireUnlock(user);
+			const [npcId, ...parts] = target.split('|');
+			if (npcId && (!/^[a-z0-9-]+$/.test(npcId) || !NPC.get(npcId))) {
+				return this.errorReply(`NPC 不存在，请返回列表重新选择。`);
+			}
+			const query = parts.join('|').trim();
+			if (query.length > 100) return this.errorReply(`搜索词不能超过 100 个字符。`);
+			const page = npcId ? `npcedit-${npcId}` : 'npcnew';
+			connection.send(
+				`>view-npcadmin-${page}\n|selectorhtml|#npc-avatar-results|${renderAvatarResults(npcId, query)}`
+			);
+		},
+
+		avatarselect(target, room, user, connection) {
+			requireUnlock(user);
+			const [npcId, avatar] = target.split('|');
+			if (npcId && (!/^[a-z0-9-]+$/.test(npcId) || !NPC.get(npcId))) {
+				return this.errorReply(`NPC 不存在，请返回列表重新选择。`);
+			}
+			if (!avatar || !hasTrainerAvatar(avatar)) {
+				return this.errorReply(`头像不存在，请从搜索结果中选择。`);
+			}
+			const page = npcId ? `npcedit-${npcId}` : 'npcnew';
+			connection.send(
+				`>view-npcadmin-${page}\n|selectorhtml|#npc-avatar-selection|${renderAvatarSelection(avatar, true)}`
+			);
+		},
+
+		/** 表单参数：id|name|avatar|description。空 ID 表示新建；描述可包含换行和 |。 */
+		save(target, room, user) {
+			requireUnlock(user);
+			const parts = target.split('|');
+			if (parts.length < 4) return this.errorReply(`NPC 表单参数不完整，请重新打开编辑页面。`);
+			const [rawId, rawName, rawAvatar, ...descriptionParts] = parts;
+			let id = rawId.trim();
+			const name = rawName.trim();
+			const avatar = rawAvatar.trim();
+			const description = descriptionParts.join('|').trim();
+			if (!name || name.length > 50 || [...name].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
+				return this.errorReply(`名称须为 1–50 个字符，不能包含换行或控制字符。`);
+			}
+			if (!avatar) return this.errorReply(`请先选择头像。`);
+			if (avatar.length > 100 || !/^[a-z0-9#][a-z0-9.-]*$/.test(avatar)) {
+				return this.errorReply(`请填写头像标识，例如 brock 或 maxie-gen3。`);
+			}
+			if (description.length > 2000) return this.errorReply(`描述不能超过 2000 个字符。`);
+
+			const templates = NPC.readTemplatesRaw();
+			if (id) {
+				if (!Object.prototype.hasOwnProperty.call(templates, id)) {
+					return this.errorReply(`NPC 不存在，请返回列表重新选择。`);
+				}
+				// 只更新可编辑字段，保留默认难度、队伍、称号和其他配置。
+				templates[id] = { ...templates[id], name, avatar, description };
+			} else {
+				let index = 1;
+				while (Object.prototype.hasOwnProperty.call(templates, `npc${index}`)) index++;
+				id = `npc${index}`;
+				templates[id] = { id, name, avatar, description, difficulty: 'smart', teams: [] };
+			}
+			NPC.writeTemplates(templates);
+			NPC.reload();
+			this.sendReply(`✓ 已保存 NPC：${name}。`);
+			return this.parse(`/j view-npcadmin-npcedit-${id}`);
+		},
+
 		team: {
 			/**
 			 * 保存队伍（队名 + pokemon）。不涉及 formats；formats 通过 addformat 另加。
@@ -496,6 +569,7 @@ function renderOverview(user: User): string {
 	buf += `<p>`;
 	buf += `<button class="button" name="send" value="/npcadmin"><i class="fa fa-refresh"></i> 刷新</button> `;
 	if (unlocked) {
+		buf += `<a class="button notifying" target="replace" href="/view-npcadmin-npcnew"><i class="fa fa-plus"></i> 新建 NPC</a> `;
 		buf += `<a class="button notifying" target="replace" href="/view-npcadmin-new"><i class="fa fa-plus"></i> 新建队伍</a>`;
 	}
 	buf += `</p><hr/>`;
@@ -507,7 +581,9 @@ function renderOverview(user: User): string {
 	}
 
 	for (const npc of npcs) {
-		buf += `<details open><summary><strong>${Utils.escapeHTML(npc.name)}</strong> <small>(${npc.id})</small></summary>`;
+		buf += `<details open><summary><strong>${Utils.escapeHTML(npc.name)}</strong></summary>`;
+		buf += `<p style="margin-left:16px"><a class="button" target="replace" href="/view-npcadmin-npcedit-${npc.id}">`;
+		buf += `${unlocked ? '编辑 NPC' : '查看 NPC'}</a></p>`;
 		if (!npc.teams.length) {
 			buf += `<div style="margin-left:16px;color:#888">还没有队伍</div>`;
 		} else {
@@ -537,14 +613,84 @@ function renderOverview(user: User): string {
 	return buf;
 }
 
+function renderAvatarSelection(avatar: string, editable = false): string {
+	let buf = editable ? `<input type="hidden" name="avatar" value="${Utils.escapeHTML(avatar)}" />` : '';
+	buf += `<p><strong>当前头像</strong></p>`;
+	if (!avatar) return `${buf}<p>尚未选择，请在头像搜索中点击一个形象。</p>`;
+	const source = hasTrainerAvatar(avatar) ? `${TRAINER_AVATAR_SOURCE}${avatar}.png` :
+		/^#[a-z0-9-]+$/.test(avatar) ? `https://play.pokemonshowdown.com/sprites/trainers-custom/${avatar.slice(1)}.png` : '';
+	if (source) {
+		buf += `<img src="${Utils.escapeHTML(source)}" alt="${Utils.escapeHTML(avatar)}" width="80" height="80" class="pixelated" />`;
+	}
+	buf += `<p><code>${Utils.escapeHTML(avatar)}</code></p>`;
+	const credit = trainerAvatarCredit(avatar);
+	if (credit) buf += `<p><small>by ${Utils.escapeHTML(credit)}</small></p>`;
+	return buf;
+}
+
+function renderAvatarResults(npcId: string, query: string): string {
+	const { total, ids } = searchTrainerAvatars(query);
+	if (!total) return `<p>没有找到匹配的头像，请尝试英文名称或更短的关键词，例如 brock。</p>`;
+	let buf = `<p><small>找到 ${total} 个形象，显示 ${ids.length} 个${total > ids.length ? '；可增加关键词缩小范围' : ''}。</small></p>`;
+	buf += `<div style="display:flex;flex-wrap:wrap;gap:8px">`;
+	for (const id of ids) {
+		buf += `<button type="button" class="button" name="send" value="/npcadmin avatarselect ${npcId}|${id}" ` +
+			`style="width:140px;min-height:132px;white-space:normal" aria-label="选择 ${id}">`;
+		buf += `<img src="${TRAINER_AVATAR_SOURCE}${id}.png" alt="${id}" width="80" height="80" class="pixelated" /><br />`;
+		buf += `<strong>${id}</strong>`;
+		const credit = trainerAvatarCredit(id);
+		if (credit) buf += `<br /><small>by ${Utils.escapeHTML(credit)}</small>`;
+		buf += `</button>`;
+	}
+	return `${buf}</div>`;
+}
+
+function renderNPCEdit(user: User, npcId: string | null): string {
+	const npc = npcId ? NPC.get(npcId) : null;
+	let buf = `<div class="pad"><p><a class="button" target="replace" href="/view-npcadmin">← 返回列表</a></p>`;
+	if (npcId && !npc) return `${buf}<p>NPC 不存在，请返回列表重新选择。</p></div>`;
+	buf += `<h2>${npc ? '编辑 NPC' : '新建 NPC'}</h2>`;
+	buf += renderUnlockBar(user);
+	if (!isUnlocked(user)) {
+		if (npc) {
+			buf += `<p><strong>名称：</strong>${Utils.escapeHTML(npc.name)}</p>`;
+			buf += renderAvatarSelection(npc.avatar);
+			buf += `<p><strong>描述：</strong>${Utils.escapeHTML(npc.description || '')}</p>`;
+		}
+		return `${buf}</div>`;
+	}
+	buf += `<div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start">`;
+	buf += `<form style="flex:1;min-width:260px" data-submitsend="/npcadmin save ${npc?.id || ''}|{name}|{avatar}|{description}">`;
+	buf += `<p><label>名称：<input class="textbox" name="name" required maxlength="50" ` +
+		`value="${Utils.escapeHTML(npc?.name || '')}" pattern="[^\\|]+" title="名称不能包含 |" style="width:300px" /></label></p>`;
+	buf += `<p><label>描述：<textarea class="textbox" name="description" maxlength="2000" ` +
+		`style="display:block;width:100%;min-height:120px">${escapeForTextarea(npc?.description || '')}</textarea></label></p>`;
+	buf += `<div id="npc-avatar-selection">${renderAvatarSelection(npc?.avatar || '', true)}</div>`;
+	buf += `<p><button class="button notifying" type="submit">保存 NPC</button></p></form>`;
+	const query = npc && hasTrainerAvatar(npc.avatar) ? npc.avatar.split('-')[0] : '';
+	buf += `<div style="flex:2;min-width:280px"><h3>选择头像</h3>`;
+	buf += `<form data-submitsend="/npcadmin avatarsearch ${npc?.id || ''}|{query}">`;
+	buf += `<p><input class="textbox" name="query" maxlength="100" aria-label="搜索头像" ` +
+		`value="${Utils.escapeHTML(query)}" placeholder="输入英文名称，例如 brock" style="width:220px" /> `;
+	buf += `<button class="button" type="submit">搜索</button></p></form>`;
+	buf += `<p><small>支持部分名称和近似拼写，最多显示 10 个形象。点击图片选择，保存 NPC 后生效。</small></p>`;
+	buf += `<div id="npc-avatar-results">${renderAvatarResults(npc?.id || '', query)}</div>`;
+	buf += `<p><small>图片与作者署名来自 <a href="${TRAINER_AVATAR_SOURCE}" target="_blank" rel="noopener">Pokémon Showdown 训练师目录</a>。</small></p>`;
+	buf += `</div></div>`;
+	if (npc) {
+		buf += `<p><a class="button" target="replace" href="/view-npcadmin-new-${npc.id}">为此 NPC 添加队伍</a></p>`;
+	}
+	return `${buf}</div>`;
+}
+
 /** 编辑/查看单个队伍文件；没有 fileName 时渲染新建 */
-function renderEdit(user: User, fileName: string | null): string {
+function renderEdit(user: User, fileName: string | null, selectedNpcId = ''): string {
 	const unlocked = isUnlocked(user);
 	const npcs = NPC.getAll();
 	const content = fileName ? NPC.readTeamFile(fileName) : null;
 
 	// 找出该文件当前挂在哪个 NPC（遍历所有 npc.teams）
-	let currentNpcId = '';
+	let currentNpcId = selectedNpcId;
 	if (fileName) {
 		for (const npc of npcs) {
 			if (npc.teams.includes(fileName)) {
@@ -567,7 +713,7 @@ function renderEdit(user: User, fileName: string | null): string {
 	if (!unlocked) {
 		// 只读显示
 		buf += `<p><strong>队伍名称：</strong>${Utils.escapeHTML(currentName || '(未命名)')}</p>`;
-		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(currentNpcId || '(未关联)')}</p>`;
+		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(NPC.get(currentNpcId)?.name || '(未关联)')}</p>`;
 		buf += `<p><strong>支持的分级：</strong>${
 			currentFormats.length ? currentFormats.map(f => renderFormatChip(f)).join(' ') : '(无)'
 		}</p>`;
@@ -587,14 +733,14 @@ function renderEdit(user: User, fileName: string | null): string {
 	if (!fileName) {
 		// 新建：选 NPC（强制选）
 		buf += `<p><label>所属 NPC：<select name="npcId" required>`;
-		buf += `<option value="" selected disabled>-- 请选择 NPC --</option>`;
+		buf += `<option value=""${NPC.get(currentNpcId) ? '' : ' selected'} disabled>-- 请选择 NPC --</option>`;
 		for (const npc of npcs) {
-			buf += `<option value="${npc.id}">${Utils.escapeHTML(npc.name)} (${npc.id})</option>`;
+			buf += `<option value="${npc.id}"${npc.id === currentNpcId ? ' selected' : ''}>${Utils.escapeHTML(npc.name)}</option>`;
 		}
 		buf += `</select></label></p>`;
 	} else {
 		buf += `<input type="hidden" name="npcId" value="${Utils.escapeHTML(currentNpcId)}" />`;
-		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(currentNpcId)} <small>（创建后不可修改）</small></p>`;
+		buf += `<p><strong>所属 NPC：</strong>${Utils.escapeHTML(NPC.get(currentNpcId)?.name || '(未关联)')} <small>（创建后不可修改）</small></p>`;
 	}
 
 	buf += `<p><strong>队伍 (PS Teambuilder Export 文本):</strong> ` +
@@ -705,7 +851,9 @@ export const pages: Chat.PageTable = {
 		this.title = '[NPC 管理]';
 		const [sub, ...rest] = query;
 		if (!sub) return renderOverview(user);
-		if (sub === 'new') return renderEdit(user, null);
+		if (sub === 'npcnew') return renderNPCEdit(user, null);
+		if (sub === 'npcedit') return renderNPCEdit(user, rest.join('-'));
+		if (sub === 'new') return renderEdit(user, null, rest.join('-'));
 		if (sub === 'edit') {
 			// 文件名可能含 '-'，整段 join 回来
 			const fileName = rest.join('-');

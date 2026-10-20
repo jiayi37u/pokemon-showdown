@@ -1,0 +1,60 @@
+{
+  "name": "Mega-Scizor Stall",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Clefable",
+      "item": "Leftovers",
+      "ability": "Unaware",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 160, "spd": 96, "spe": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Moonblast", "Wish", "Calm Mind", "Protect"]
+    },
+    {
+      "species": "Slowbro",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 236, "spd": 16, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Ice Beam", "Toxic", "Slack Off"]
+    },
+    {
+      "species": "Chansey",
+      "item": "Eviolite",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "moves": ["Seismic Toss", "Soft-Boiled", "Stealth Rock", "Heal Bell"]
+    },
+    {
+      "species": "Zapdos",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 184, "def": 216, "spe": 108 },
+      "ivs": { "atk": 0 },
+      "moves": ["Discharge", "Heat Wave", "Defog", "Roost"]
+    },
+    {
+      "species": "Scizor",
+      "item": "Scizorite",
+      "ability": "Light Metal",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 16, "def": 184, "spe": 60 },
+      "moves": ["Defog", "Roost", "Bullet Punch", "Superpower"]
+    },
+    {
+      "species": "Gastrodon",
+      "item": "Leftovers",
+      "ability": "Storm Drain",
+      "gender": "F",
+      "nature": "Sassy",
+      "evs": { "hp": 248, "def": 116, "spd": 144 },
+      "moves": ["Earthquake", "Scald", "Toxic", "Recover"]
+    }
+  ]
+}

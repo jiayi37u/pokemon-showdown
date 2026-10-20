@@ -1,0 +1,58 @@
+{
+  "name": "Hoopa Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Hoopa",
+      "item": "Leftovers",
+      "ability": "Magician",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Shadow Ball", "Focus Blast", "Calm Mind", "Substitute"]
+    },
+    {
+      "species": "Chesnaught",
+      "item": "Rocky Helmet",
+      "ability": "Bulletproof",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "moves": ["Spikes", "Synthesis", "Roar", "Wood Hammer"]
+    },
+    {
+      "species": "Tentacruel",
+      "item": "Black Sludge",
+      "ability": "Clear Body",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Sludge Bomb", "Rapid Spin", "Acid Spray"]
+    },
+    {
+      "species": "Kyurem",
+      "item": "Choice Specs",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Draco Meteor", "Ice Beam", "Earth Power", "Focus Blast"]
+    },
+    {
+      "species": "Aggron",
+      "item": "Aggronite",
+      "ability": "Sturdy",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 16, "spd": 240 },
+      "moves": ["Stealth Rock", "Thunder Wave", "Heavy Slam", "Earthquake"]
+    },
+    {
+      "species": "Infernape",
+      "item": "Choice Scarf",
+      "ability": "Blaze",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Close Combat", "Flare Blitz", "U-turn", "Stone Edge"]
+    }
+  ]
+}

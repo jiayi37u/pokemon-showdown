@@ -1,0 +1,56 @@
+{
+  "name": "Icey Tea's Infernape Mega Aerodactyl Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Infernape",
+      "item": "Choice Band",
+      "ability": "Iron Fist",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Close Combat", "U-turn", "Mach Punch", "Flare Blitz"]
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Aerodactylite",
+      "ability": "Pressure",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Aerial Ace", "Pursuit", "Stone Edge", "Earthquake"]
+    },
+    {
+      "species": "Metagross",
+      "item": "Life Orb",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Naughty",
+      "evs": { "atk": 232, "spa": 56, "spe": 220 },
+      "moves": ["Grass Knot", "Meteor Mash", "Explosion", "Stealth Rock"]
+    },
+    {
+      "species": "Tentacruel",
+      "item": "Black Sludge",
+      "ability": "Clear Body",
+      "nature": "Timid",
+      "evs": { "hp": 244, "def": 72, "spe": 192 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Toxic Spikes", "Rapid Spin", "Acid Spray"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Yache Berry",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Moonblast", "U-turn", "Giga Drain", "Encore"]
+    },
+    {
+      "species": "Heracross",
+      "item": "Choice Scarf",
+      "ability": "Moxie",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Megahorn", "Knock Off", "Close Combat", "Stone Edge"]
+    }
+  ]
+}

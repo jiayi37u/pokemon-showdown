@@ -1,0 +1,64 @@
+{
+  "name": "Metagross Serperior Bulky Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Metagross",
+      "item": "Metagrossite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 36, "spe": 220 },
+      "moves": ["Zen Headbutt", "Bullet Punch", "Brick Break", "Pursuit"]
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Wash",
+      "item": "Choice Scarf",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 24, "spe": 236 },
+      "ivs": { "atk": 0 },
+      "moves": ["Hydro Pump", "Volt Switch", "Will-O-Wisp", "Trick"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Chesto Berry",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 240, "spa": 16, "spe": 252 },
+      "ivs": { "atk": 1, "def": 30, "spd": 30, "spe": 30 },
+      "moves": ["Leaf Storm", "Hidden Power Rock", "Rest", "Glare"],
+      "hpType": "Rock"
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 172, "def": 32, "spd": 52, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Stealth Rock"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 168, "def": 132, "spe": 208 },
+      "moves": ["Hurricane", "Knock Off", "U-turn", "Taunt"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 152, "spa": 16, "spd": 84, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Steam Eruption", "Flamethrower", "Roar", "Protect"]
+    }
+  ]
+}

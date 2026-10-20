@@ -1,0 +1,58 @@
+{
+  "name": "Weezing Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Weezing",
+      "item": "Black Sludge",
+      "ability": "Levitate",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 236, "spe": 20 },
+      "moves": ["Clear Smog", "Will-O-Wisp", "Toxic Spikes", "Flamethrower"]
+    },
+    {
+      "species": "Empoleon",
+      "item": "Leftovers",
+      "ability": "Torrent",
+      "nature": "Calm",
+      "evs": { "hp": 244, "spd": 244, "spe": 20 },
+      "moves": ["Stealth Rock", "Defog", "Scald", "Roar"]
+    },
+    {
+      "species": "Entei",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Extreme Speed", "Sacred Fire", "Flare Blitz", "Stone Edge"],
+      "shiny": true
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Aerodactylite",
+      "ability": "Unnerve",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Stone Edge", "Aerial Ace", "Pursuit", "Roost"]
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Mow",
+      "item": "Choice Scarf",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Volt Switch", "Leaf Storm", "Trick", "Thunderbolt"]
+    },
+    {
+      "species": "Machamp",
+      "item": "Assault Vest",
+      "ability": "No Guard",
+      "nature": "Adamant",
+      "evs": { "hp": 88, "atk": 252, "spe": 168 },
+      "moves": ["Dynamic Punch", "Heavy Slam", "Knock Off", "Bullet Punch"]
+    }
+  ]
+}

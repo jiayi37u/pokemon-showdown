@@ -1,0 +1,66 @@
+{
+  "name": "Rest Tenta + Blissey",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "name": "Toxapex Pre-Evo",
+      "species": "Tentacruel",
+      "item": "Black Sludge",
+      "ability": "Liquid Ooze",
+      "nature": "Bold",
+      "evs": { "hp": 240, "def": 244, "spe": 24 },
+      "ivs": { "atk": 0 },
+      "moves": ["Rapid Spin", "Scald", "Haze", "Rest"]
+    },
+    {
+      "name": "Eggcelent",
+      "species": "Blissey",
+      "item": "Leftovers",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Soft Boiled", "Hyper Voice", "Shadow Ball"]
+    },
+    {
+      "species": "Jellicent",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "nature": "Bold",
+      "evs": { "hp": 128, "def": 252, "spe": 128 },
+      "ivs": { "atk": 0 },
+      "moves": ["Will-O-Wisp", "Recover", "Taunt", "Hex"]
+    },
+    {
+      "name": "NOT CHESnoid",
+      "species": "Chesnaught",
+      "item": "Rocky Helmet",
+      "ability": "Bulletproof",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "moves": ["Spikes", "Synthesis", "Spiky Shield", "Drain Punch"],
+      "shiny": true
+    },
+    {
+      "name": "Need 4 Steel",
+      "species": "Aggron",
+      "item": "Aggronite",
+      "ability": "Sturdy",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 16, "spd": 240 },
+      "moves": ["Heavy Slam", "Rest", "Stealth Rock", "Roar"]
+    },
+    {
+      "name": "FLOWER POWER",
+      "species": "Florges-Orange",
+      "item": "Leftovers",
+      "ability": "Flower Veil",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Aromatherapy", "Toxic", "Synthesis", "Moonblast"]
+    }
+  ]
+}

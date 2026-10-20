@@ -25,6 +25,16 @@ NPC 对战功能允许用户与电脑控制的对手进行对战，支持可配�
 4. **对手信息追踪** - 通过协议消息追踪对手状态
 5. **多人组队对战** - 两名玩家组队对战 NPC (v1.2)
 
+## NPC 与队伍管理
+
+在客户端输入 `/npcadmin` 打开管理面板，用 `/npcadmin unlock KEY` 解锁 30 分钟。点击「新建 NPC」或对应 NPC 的「编辑 NPC」，填写名称和描述，在「选择头像」中输入英文名称（例如 `brock`）并搜索。搜索忽略大小写，支持部分名称；没有直接匹配时会尝试近似拼写，每次最多显示 10 个形象。点击缩略图可查看当前头像预览，最后点击「保存 NPC」。描述可留空或分行填写；搜索和选图不会清空尚未保存的名称、描述，也不会提前写入配置。
+
+头像名称和作者署名保存在 `data/npc/trainer-avatars.json`，图片直接来自 [Pokémon Showdown 训练师目录](https://play.pokemonshowdown.com/sprites/trainers/)。运行 `node tools/update-npc-avatars.js` 可刷新目录快照，随后构建并重启服务。日常搜索不依赖外网请求，图片显示需要客户端能够访问图片站点。
+
+NPC ID 自动生成且不可编辑，页面以名称展示 NPC。新 NPC 默认难度为 `smart`；编辑仅更新名称、描述和头像，保留默认难度、称号、队伍与其他配置。保存会写入 `data/npc/templates.json` 并自动重载，无需重启服务。
+
+保存后点击「为此 NPC 添加队伍」，队伍表单会预选该 NPC。粘贴 PS Teambuilder Export 文本并保存，再选择分级、验证并添加；同一支队伍可关联多个分级。Multi 队伍须为 6 只，前 3 只分给 p2，后 3 只分给 p4。修改阵容后应先保存，再验证已有分级，保存本身不执行分级合法性检查。
+
 ## 随机对战
 
 `/npc` 的 NPC 表格包含独立的 **Random Battle** 行，Formats 列显示支持的 **Gen 9 Random Battle** 和 **PokeMMO Random Battle**。点击 **Challenge** 后，选择 Basic／Smart 难度，再点击目标模式旁的 **Battle**。开始对战时随机选择已有 NPC 的名称与形象，双方自动生成队伍。各具体 NPC 的详情页只展示其固定队伍模式。

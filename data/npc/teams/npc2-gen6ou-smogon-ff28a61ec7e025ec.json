@@ -1,0 +1,65 @@
+{
+  "name": "Cloyster Hyper Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Cloyster",
+      "item": "Focus Sash",
+      "ability": "Skill Link",
+      "gender": "M",
+      "nature": "Adamant",
+      "evs": { "hp": 4, "atk": 252, "spe": 252 },
+      "moves": ["Shell Smash", "Icicle Spear", "Rapid Spin", "Explosion"]
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Rocky Helmet",
+      "ability": "Pressure",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 72, "def": 252, "spe": 184 },
+      "moves": ["Taunt", "Stealth Rock", "Double-Edge", "Earthquake"]
+    },
+    {
+      "species": "Scizor",
+      "item": "Scizorite",
+      "ability": "Technician",
+      "gender": "M",
+      "nature": "Adamant",
+      "evs": { "hp": 32, "atk": 252, "spe": 224 },
+      "moves": ["Swords Dance", "Bullet Punch", "Bug Bite", "Knock Off"]
+    },
+    {
+      "species": "Weavile",
+      "item": "Focus Sash",
+      "ability": "Pickpocket",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Knock Off", "Icicle Crash", "Low Kick"]
+    },
+    {
+      "species": "Volcarona",
+      "item": "Lum Berry",
+      "ability": "Flame Body",
+      "gender": "M",
+      "nature": "Modest",
+      "evs": { "def": 84, "spa": 252, "spe": 172 },
+      "ivs": { "atk": 1, "spa": 30, "spd": 30 },
+      "moves": ["Quiver Dance", "Flamethrower", "Giga Drain", "Hidden Power Ground"],
+      "hpType": "Ground"
+    },
+    {
+      "name": "Thundurus",
+      "species": "Thundurus-Therian",
+      "item": "Sitrus Berry",
+      "ability": "Volt Absorb",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Nasty Plot", "Thunderbolt", "Hidden Power Ice", "Focus Blast"],
+      "hpType": "Ice"
+    }
+  ]
+}

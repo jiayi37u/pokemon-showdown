@@ -1,0 +1,65 @@
+{
+  "name": "Mega Metagross + Scarf Landorus-T",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Metagross",
+      "item": "Metagrossite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Meteor Mash", "Zen Headbutt", "Hammer Arm", "Stealth Rock"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Chesto Berry",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 56, "spa": 200, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Leaf Storm", "Hidden Power Fire", "Glare", "Rest"],
+      "hpType": "Fire"
+    },
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Choice Scarf",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 56, "atk": 252, "def": 4, "spe": 196 },
+      "moves": ["Earthquake", "U-turn", "Stone Edge", "Explosion"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "spd": 136, "spe": 120 },
+      "moves": ["Earthquake", "Iron Head", "Toxic", "Rapid Spin"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Choice Specs",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 116, "spa": 252, "spe": 140 },
+      "ivs": { "atk": 30, "spa": 30 },
+      "moves": ["Steam Eruption", "Flamethrower", "Sludge Bomb", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Zapdos",
+      "item": "Rocky Helmet",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 240, "def": 140, "spa": 8, "spe": 120 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Roost", "Heat Wave", "Hidden Power Ice"],
+      "hpType": "Ice"
+    }
+  ]
+}

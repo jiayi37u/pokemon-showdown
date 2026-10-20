@@ -1,0 +1,65 @@
+{
+  "name": "Mega Metagross Bulky Spread + Specs Keldeo & Mew version",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Metagross",
+      "item": "Metagrossite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "hp": 180, "atk": 140, "spe": 188 },
+      "moves": ["Meteor Mash", "Zen Headbutt", "Hammer Arm", "Bullet Punch"]
+    },
+    {
+      "name": "Keldeo",
+      "species": "Keldeo-Resolute",
+      "item": "Choice Specs",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Hydro Pump", "Scald", "Secret Sword", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Knock Off", "U-turn"]
+    },
+    {
+      "species": "Heatran",
+      "item": "Leftovers",
+      "ability": "Flash Fire",
+      "nature": "Timid",
+      "evs": { "hp": 104, "spa": 152, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Magma Storm", "Hidden Power Ice", "Taunt", "Protect"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Garchomp",
+      "item": "Rocky Helmet",
+      "ability": "Rough Skin",
+      "nature": "Impish",
+      "evs": { "hp": 240, "def": 176, "spe": 92 },
+      "moves": ["Stealth Rock", "Earthquake", "Dragon Tail", "Toxic"]
+    },
+    {
+      "species": "Mew",
+      "item": "Leftovers",
+      "ability": "Synchronize",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 212, "spd": 12, "spe": 32 },
+      "ivs": { "atk": 0 },
+      "moves": ["Defog", "Soft-Boiled", "Will-O-Wisp", "Volt Switch"]
+    }
+  ]
+}

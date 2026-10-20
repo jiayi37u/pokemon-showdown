@@ -1,0 +1,59 @@
+{
+  "name": "Charizard Y Weavile Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Charizard",
+      "item": "Charizardite Y",
+      "ability": "Blaze",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Flamethrower", "Solar Beam", "Focus Blast", "Overheat"]
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Pursuit", "Ice Shard", "Knock Off", "Icicle Crash"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Rocky Helmet",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 56, "spa": 200, "spe": 252 },
+      "ivs": { "atk": 1, "def": 30, "spd": 30, "spe": 30 },
+      "moves": ["Leaf Storm", "Hidden Power Rock", "Glare", "Synthesis"],
+      "hpType": "Rock"
+    },
+    {
+      "species": "Heatran",
+      "item": "Leftovers",
+      "ability": "Flash Fire",
+      "nature": "Calm",
+      "evs": { "hp": 248, "def": 12, "spd": 248 },
+      "ivs": { "atk": 0 },
+      "moves": ["Roar", "Stealth Rock", "Earth Power", "Magma Storm"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 32, "def": 56, "spd": 168, "spe": 252 },
+      "moves": ["Swords Dance", "Earthquake", "Iron Head", "Rapid Spin"]
+    },
+    {
+      "species": "Slowbro",
+      "item": "Colbur Berry",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Future Sight", "Flamethrower", "Thunder Wave", "Slack Off"]
+    }
+  ]
+}

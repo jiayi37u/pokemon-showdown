@@ -1,0 +1,62 @@
+{
+  "name": "Diancie Sand",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Diancie",
+      "item": "Diancite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Moonblast", "Diamond Storm", "Earth Power", "Protect"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Air Balloon",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Swords Dance", "Rapid Spin"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 136, "spa": 100, "spd": 24 },
+      "ivs": { "atk": 0 },
+      "moves": ["Steam Eruption", "Flamethrower", "Toxic", "Protect"]
+    },
+    {
+      "species": "Amoonguss",
+      "item": "Black Sludge",
+      "ability": "Regenerator",
+      "nature": "Calm",
+      "evs": { "hp": 240, "def": 212, "spd": 56 },
+      "ivs": { "atk": 0 },
+      "moves": ["Spore", "Sludge Bomb", "Giga Drain", "Stun Spore"]
+    },
+    {
+      "species": "Hippowdon",
+      "item": "Rocky Helmet",
+      "ability": "Sand Stream",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 192, "spd": 68 },
+      "moves": ["Stealth Rock", "Earthquake", "Slack Off", "Whirlwind"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "spa": 8, "spe": 252 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Hurricane", "Hidden Power Ice", "Knock Off", "U-turn"],
+      "hpType": "Ice"
+    }
+  ]
+}

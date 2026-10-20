@@ -1,0 +1,55 @@
+{
+  "name": "Hairy Toenail's Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Doublade",
+      "item": "Eviolite",
+      "ability": "No Guard",
+      "nature": "Adamant",
+      "evs": { "hp": 240, "atk": 252, "spd": 16 },
+      "moves": ["Swords Dance", "Iron Head", "Shadow Sneak", "Pursuit"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Leftovers",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "moves": ["Giga Drain", "Moonblast", "Encore", "U-turn"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "hp": 144, "atk": 112, "spe": 252 },
+      "moves": ["Stealth Rock", "Close Combat", "Taunt", "Volt Switch"]
+    },
+    {
+      "species": "Snorlax",
+      "item": "Leftovers",
+      "ability": "Thick Fat",
+      "nature": "Careful",
+      "evs": { "hp": 144, "def": 176, "spd": 188 },
+      "moves": ["Curse", "Body Slam", "Rest", "Sleep Talk"]
+    },
+    {
+      "species": "Tentacruel",
+      "item": "Black Sludge",
+      "ability": "Liquid Ooze",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 236, "spe": 24 },
+      "moves": ["Scald", "Rapid Spin", "Toxic Spikes", "Acid Spray"]
+    },
+    {
+      "species": "Hydreigon",
+      "item": "Choice Scarf",
+      "ability": "Levitate",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Draco Meteor", "Dark Pulse", "Flamethrower", "U-turn"]
+    }
+  ]
+}

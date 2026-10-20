@@ -1,0 +1,58 @@
+{
+  "name": "SD 4 life",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Sylveon",
+      "item": "Pixie Plate",
+      "ability": "Pixilate",
+      "nature": "Modest",
+      "evs": { "hp": 176, "def": 32, "spa": 252, "spe": 48 },
+      "moves": ["Hyper Voice", "Wish", "Heal Bell", "Quick Attack"]
+    },
+    {
+      "species": "Entei",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Sacred Fire", "Stone Edge", "Extreme Speed", "Flare Blitz"],
+      "shiny": true
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Aerodactylite",
+      "ability": "Rock Head",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Hone Claws", "Aqua Tail", "Stone Edge", "Aerial Ace"]
+    },
+    {
+      "species": "Celebi",
+      "item": "Leftovers",
+      "ability": "Natural Cure",
+      "gender": "N",
+      "nature": "Careful",
+      "evs": { "hp": 248, "def": 64, "spd": 96, "spe": 100 },
+      "moves": ["Stealth Rock", "Recover", "Swords Dance", "Seed Bomb"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Iron Head", "Close Combat", "Substitute"]
+    },
+    {
+      "species": "Gligar",
+      "item": "Eviolite",
+      "ability": "Hyper Cutter",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 252, "spe": 8 },
+      "moves": ["Earthquake", "Roost", "Defog", "U-turn"]
+    }
+  ]
+}

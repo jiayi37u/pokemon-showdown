@@ -1,0 +1,59 @@
+{
+  "name": "CM MLatias Balance",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Latias",
+      "item": "Latiasite",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 252, "def": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Stored Power", "Roost", "Substitute"]
+    },
+    {
+      "species": "Keldeo",
+      "item": "Choice Specs",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30 },
+      "moves": ["Scald", "Hydro Pump", "Focus Blast", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Talonflame",
+      "ability": "Gale Wings",
+      "nature": "Impish",
+      "evs": { "hp": 248, "atk": 8, "def": 164, "spe": 88 },
+      "moves": ["Acrobatics", "Swords Dance", "Will-O-Wisp", "Roost"],
+      "shiny": true
+    },
+    {
+      "species": "Ferrothorn",
+      "item": "Leftovers",
+      "ability": "Iron Barbs",
+      "nature": "Careful",
+      "evs": { "hp": 252, "atk": 4, "spd": 252 },
+      "moves": ["Spikes", "Leech Seed", "Protect", "Power Whip"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 56, "atk": 36, "spd": 164, "spe": 252 },
+      "moves": ["Stealth Rock", "Earthquake", "Iron Head", "Rapid Spin"]
+    },
+    {
+      "species": "Gliscor",
+      "item": "Toxic Orb",
+      "ability": "Poison Heal",
+      "nature": "Careful",
+      "evs": { "hp": 244, "def": 20, "spd": 244 },
+      "moves": ["Swords Dance", "Roost", "Earthquake", "Facade"]
+    }
+  ]
+}

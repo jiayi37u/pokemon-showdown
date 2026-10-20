@@ -1,0 +1,65 @@
+{
+  "name": "Galician HO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "name": "Arisu",
+      "species": "Beedrill",
+      "item": "Beedrillite",
+      "ability": "Swarm",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Fell Stinger", "U-turn", "Poison Jab", "Drill Run"]
+    },
+    {
+      "name": "BR1",
+      "species": "Volcarona",
+      "item": "Leftovers",
+      "ability": "Flame Body",
+      "nature": "Timid",
+      "evs": { "hp": 80, "spa": 172, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Quiver Dance", "Flamethrower", "Giga Drain", "Bug Buzz"]
+    },
+    {
+      "name": "Gross :(",
+      "species": "Weavile",
+      "item": "Life Orb",
+      "ability": "Pressure",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Icicle Crash", "Ice Shard", "Low Kick"]
+    },
+    {
+      "name": "Argas",
+      "species": "Excadrill",
+      "item": "Choice Scarf",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Rock Slide", "Rapid Spin"]
+    },
+    {
+      "name": "CHETTO SULTÁN",
+      "species": "Thundurus-Therian",
+      "item": "Leftovers",
+      "ability": "Volt Absorb",
+      "gender": "M",
+      "nature": "Modest",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Agility", "Nasty Plot", "Thunderbolt", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "name": "Би хөгжимд хайртай",
+      "species": "Aerodactyl",
+      "item": "Focus Sash",
+      "ability": "Rock Head",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Taunt", "Defog", "Roar"]
+    }
+  ]
+}

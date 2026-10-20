@@ -1,0 +1,65 @@
+{
+  "name": "Venusaur Magnezone Stall",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Venusaur",
+      "item": "Venusaurite",
+      "ability": "Chlorophyll",
+      "gender": "M",
+      "nature": "Modest",
+      "evs": { "hp": 248, "def": 40, "spa": 80, "spd": 84, "spe": 56 },
+      "moves": ["Giga Drain", "Sludge Bomb", "Knock Off", "Synthesis"]
+    },
+    {
+      "species": "Clefable",
+      "item": "Leftovers",
+      "ability": "Magic Guard",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "moves": ["Stealth Rock", "Moonblast", "Knock Off", "Soft-Boiled"]
+    },
+    {
+      "species": "Magnezone",
+      "item": "Choice Scarf",
+      "ability": "Magnet Pull",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 24, "spa": 232, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Thunderbolt", "Hidden Power Fire", "Volt Switch", "Thunder Wave"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Chansey",
+      "item": "Eviolite",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Thunder Wave", "Seismic Toss", "Heal Bell", "Soft-Boiled"]
+    },
+    {
+      "species": "Quagsire",
+      "item": "Leftovers",
+      "ability": "Unaware",
+      "gender": "M",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Toxic", "Haze", "Recover"]
+    },
+    {
+      "species": "Skarmory",
+      "item": "Rocky Helmet",
+      "ability": "Sturdy",
+      "gender": "M",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Spikes", "Counter", "Defog", "Roost"]
+    }
+  ]
+}

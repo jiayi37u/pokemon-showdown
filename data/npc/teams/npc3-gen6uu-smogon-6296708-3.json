@@ -1,0 +1,60 @@
+{
+  "name": "Decision Maker's Mega Swampert Tyrantrum Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Torrent",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Rain Dance", "Earthquake", "Waterfall", "Ice Punch"]
+    },
+    {
+      "species": "Tyrantrum",
+      "item": "Choice Band",
+      "ability": "Rock Head",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Outrage", "Head Smash", "Earthquake", "Crunch"]
+    },
+    {
+      "species": "Entei",
+      "item": "Assault Vest",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "hp": 16, "atk": 252, "spe": 240 },
+      "moves": ["Flare Blitz", "Sacred Fire", "Extreme Speed", "Stone Edge"],
+      "shiny": true
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Life Orb",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "evs": { "hp": 56, "def": 4, "spa": 252, "spe": 196 },
+      "moves": ["Moonblast", "Tailwind", "Encore", "Giga Drain"],
+      "shiny": true,
+      "happiness": 0
+    },
+    {
+      "species": "Crobat",
+      "item": "Black Sludge",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "hp": 248, "atk": 40, "spe": 220 },
+      "moves": ["Taunt", "Brave Bird", "Roost", "Defog"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Iron Head", "Volt Switch", "Close Combat"],
+      "shiny": true
+    }
+  ]
+}

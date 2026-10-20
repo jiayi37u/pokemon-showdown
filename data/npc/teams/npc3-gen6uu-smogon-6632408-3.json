@@ -1,0 +1,56 @@
+{
+  "name": "Kreme's Bulky Offense Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Hydreigon",
+      "item": "Choice Specs",
+      "ability": "Levitate",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["U-turn", "Draco Meteor", "Dark Pulse", "Flash Cannon"]
+    },
+    {
+      "species": "Doublade",
+      "item": "Eviolite",
+      "ability": "No Guard",
+      "nature": "Adamant",
+      "evs": { "hp": 240, "atk": 252, "spe": 16 },
+      "moves": ["Swords Dance", "Shadow Claw", "Shadow Sneak", "Iron Head"]
+    },
+    {
+      "species": "Toxicroak",
+      "item": "Life Orb",
+      "ability": "Dry Skin",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Gunk Shot", "Drain Punch", "Swords Dance", "Sucker Punch"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Damp",
+      "nature": "Adamant",
+      "evs": { "hp": 212, "atk": 252, "spe": 44 },
+      "moves": ["Stealth Rock", "Waterfall", "Earthquake", "Ice Punch"]
+    },
+    {
+      "species": "Cresselia",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spe": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Thunder Wave", "Psyshock", "Moonlight", "Lunar Dance"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Pixie Plate",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Stun Spore", "U-turn", "Encore", "Moonblast"]
+    }
+  ]
+}

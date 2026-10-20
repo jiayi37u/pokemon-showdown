@@ -1,0 +1,61 @@
+{
+  "name": "Tyranitar Screens",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Tyranitar",
+      "item": "Tyranitarite",
+      "ability": "Sand Stream",
+      "nature": "Jolly",
+      "evs": { "hp": 16, "atk": 240, "spe": 252 },
+      "moves": ["Dragon Dance", "Stone Edge", "Ice Punch", "Brick Break"]
+    },
+    {
+      "species": "Latias",
+      "item": "Light Clay",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Reflect", "Safeguard", "Light Screen", "Healing Wish"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Light Clay",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 252, "spa": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Leaf Storm", "Reflect", "Light Screen", "Glare"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Life Orb",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Earthquake", "Iron Head", "Return"]
+    },
+    {
+      "species": "Volcarona",
+      "item": "Life Orb",
+      "ability": "Flame Body",
+      "nature": "Modest",
+      "evs": { "hp": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 1, "spa": 30, "spd": 30 },
+      "moves": ["Quiver Dance", "Fire Blast", "Hidden Power Ground", "Giga Drain"],
+      "hpType": "Ground"
+    },
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Focus Sash",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Imprison", "Earthquake", "Explosion"]
+    }
+  ]
+}

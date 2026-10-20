@@ -1,0 +1,63 @@
+{
+  "name": "Diancie Spikes Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Diancie",
+      "item": "Diancite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Hasty",
+      "evs": { "atk": 176, "spa": 80, "spe": 252 },
+      "moves": ["Protect", "Diamond Storm", "Earth Power", "Moonblast"]
+    },
+    {
+      "species": "Victini",
+      "item": "Choice Scarf",
+      "ability": "Victory Star",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["V-create", "Bolt Strike", "U-turn", "Trick"]
+    },
+    {
+      "species": "Keldeo",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Surf", "Secret Sword", "Taunt", "Calm Mind"]
+    },
+    {
+      "species": "Ferrothorn",
+      "item": "Chople Berry",
+      "ability": "Iron Barbs",
+      "gender": "M",
+      "nature": "Relaxed",
+      "evs": { "hp": 252, "atk": 144, "def": 88, "spd": 24 },
+      "ivs": { "spe": 8 },
+      "moves": ["Spikes", "Power Whip", "Explosion", "Gyro Ball"]
+    },
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 248, "def": 20, "spd": 8, "spe": 232 },
+      "moves": ["Stealth Rock", "Earthquake", "Smack Down", "U-turn"]
+    },
+    {
+      "species": "Dragonite",
+      "item": "Choice Band",
+      "ability": "Multiscale",
+      "gender": "M",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Outrage", "Extreme Speed", "Iron Head", "Superpower"]
+    }
+  ]
+}

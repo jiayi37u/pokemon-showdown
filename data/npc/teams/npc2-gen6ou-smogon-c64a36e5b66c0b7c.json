@@ -1,0 +1,62 @@
+{
+  "name": "Mega Metagross + Hydreigon",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Metagross",
+      "item": "Metagrossite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Bullet Punch", "Zen Headbutt", "Hammer Arm", "Pursuit"]
+    },
+    {
+      "species": "Hydreigon",
+      "item": "Choice Specs",
+      "ability": "Levitate",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Dark Pulse", "Draco Meteor", "Flash Cannon", "Fire Blast"]
+    },
+    {
+      "species": "Heatran",
+      "item": "Leftovers",
+      "ability": "Flash Fire",
+      "nature": "Calm",
+      "evs": { "hp": 252, "spd": 212, "spe": 44 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Lava Plume", "Toxic", "Taunt"]
+    },
+    {
+      "species": "Jellicent",
+      "item": "Colbur Berry",
+      "ability": "Water Absorb",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 216, "spe": 44 },
+      "moves": ["Recover", "Will-O-Wisp", "Scald", "Taunt"]
+    },
+    {
+      "name": "Garfield",
+      "species": "Landorus-Therian",
+      "item": "Choice Scarf",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 208, "def": 68, "spe": 232 },
+      "moves": ["Earthquake", "Stone Edge", "U-turn", "Stealth Rock"],
+      "shiny": true
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "spa": 8, "spe": 252 },
+      "moves": ["Hurricane", "Taunt", "U-turn", "Knock Off"]
+    }
+  ]
+}

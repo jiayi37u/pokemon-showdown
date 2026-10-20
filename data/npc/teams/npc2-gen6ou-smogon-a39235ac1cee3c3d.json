@@ -1,0 +1,59 @@
+{
+  "name": "Mega Scizor + Assault Vest Kyurem",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Scizor",
+      "item": "Scizorite",
+      "ability": "Technician",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 16, "def": 12, "spd": 16, "spe": 216 },
+      "moves": ["Swords Dance", "Roost", "Bullet Punch", "Superpower"]
+    },
+    {
+      "species": "Kyurem",
+      "item": "Assault Vest",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 232, "spd": 72, "spe": 204 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Draco Meteor", "Ice Beam", "Ancient Power", "Hidden Power Fire"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Slowbro",
+      "item": "Leftovers",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 176, "spd": 80 },
+      "moves": ["Scald", "Slack Off", "Thunder Wave", "Ice Beam"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Knock Off", "U-turn"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "spd": 136, "spe": 120 },
+      "moves": ["Earthquake", "Iron Head", "Toxic", "Rapid Spin"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Life Orb",
+      "ability": "Rough Skin",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Earthquake", "Outrage", "Swords Dance", "Stealth Rock"]
+    }
+  ]
+}

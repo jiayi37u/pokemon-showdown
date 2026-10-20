@@ -1,0 +1,62 @@
+{
+  "name": "Mega Medicham + CM Roar Suicune",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Medicham",
+      "item": "Medichamite",
+      "ability": "Pure Power",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "Zen Headbutt", "Fake Out", "Bullet Punch"],
+      "shiny": true
+    },
+    {
+      "species": "Heatran",
+      "item": "Leftovers",
+      "ability": "Flash Fire",
+      "nature": "Timid",
+      "evs": { "hp": 252, "def": 44, "spe": 212 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Magma Storm", "Taunt", "Will-O-Wisp"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "U-turn", "Knock Off", "Heat Wave"]
+    },
+    {
+      "species": "Suicune",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "moves": ["Scald", "Rest", "Roar", "Calm Mind"]
+    },
+    {
+      "species": "Ferrothorn",
+      "item": "Leftovers",
+      "ability": "Iron Barbs",
+      "nature": "Relaxed",
+      "evs": { "hp": 252, "def": 88, "spd": 168 },
+      "ivs": { "spe": 0 },
+      "moves": ["Spikes", "Leech Seed", "Gyro Ball", "Power Whip"]
+    },
+    {
+      "species": "Latias",
+      "item": "Colbur Berry",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 252, "spa": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Ice Beam", "Defog", "Recover", "Thunder Wave"]
+    }
+  ]
+}

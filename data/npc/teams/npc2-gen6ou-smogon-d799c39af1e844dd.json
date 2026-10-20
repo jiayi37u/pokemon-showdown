@@ -1,0 +1,60 @@
+{
+  "name": "Spanish Webs",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Shuckle",
+      "item": "Mental Herb",
+      "ability": "Sturdy",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Sticky Web", "Encore", "Infestation"]
+    },
+    {
+      "species": "Scizor",
+      "item": "Scizorite",
+      "ability": "Light Metal",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Bullet Punch", "Bug Bite", "Superpower"]
+    },
+    {
+      "species": "Azumarill",
+      "item": "Sitrus Berry",
+      "ability": "Huge Power",
+      "nature": "Adamant",
+      "evs": { "hp": 80, "atk": 252, "spe": 176 },
+      "moves": ["Belly Drum", "Aqua Jet", "Play Rough", "Knock Off"]
+    },
+    {
+      "species": "Hoopa",
+      "item": "Choice Scarf",
+      "ability": "Magician",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Hyperspace Hole", "Shadow Ball", "Focus Blast", "Trick"]
+    },
+    {
+      "species": "Thundurus",
+      "item": "Leftovers",
+      "ability": "Prankster",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Focus Blast", "Hidden Power Ice", "Nasty Plot", "Thunderbolt"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Bisharp",
+      "item": "Black Glasses",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Iron Head", "Knock Off", "Sucker Punch", "Swords Dance"]
+    }
+  ]
+}

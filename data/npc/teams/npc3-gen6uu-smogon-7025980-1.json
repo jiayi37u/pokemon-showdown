@@ -1,0 +1,60 @@
+{
+  "name": "Double Wish Pass Stall",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Cresselia",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Modest",
+      "evs": { "hp": 240, "spa": 252, "spd": 16 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Moonblast", "Substitute", "Psyshock"]
+    },
+    {
+      "species": "Alomomola",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "nature": "Careful",
+      "evs": { "hp": 4, "def": 252, "spd": 252 },
+      "moves": ["Wish", "Knock Off", "Magic Coat", "Toxic"]
+    },
+    {
+      "species": "Florges",
+      "item": "Leftovers",
+      "ability": "Flower Veil",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spa": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Aromatherapy", "Calm Mind", "Moonblast", "Wish"]
+    },
+    {
+      "species": "Forretress",
+      "item": "Rocky Helmet",
+      "ability": "Overcoat",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Toxic Spikes", "Volt Switch", "Rapid Spin"]
+    },
+    {
+      "species": "Doublade",
+      "item": "Eviolite",
+      "ability": "No Guard",
+      "nature": "Adamant",
+      "evs": { "hp": 252, "atk": 56, "spd": 200 },
+      "moves": ["Iron Head", "Sacred Sword", "Shadow Sneak", "Swords Dance"]
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Aerodactylite",
+      "ability": "Rock Head",
+      "nature": "Jolly",
+      "evs": { "hp": 20, "atk": 252, "def": 20, "spe": 216 },
+      "moves": ["Aqua Tail", "Stone Edge", "Hone Claws", "Fire Fang"],
+      "shiny": true
+    }
+  ]
+}

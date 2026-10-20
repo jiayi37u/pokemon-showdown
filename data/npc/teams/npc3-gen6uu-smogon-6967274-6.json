@@ -1,0 +1,61 @@
+{
+  "name": "obii's Bulky Offence Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Beedrill",
+      "item": "Beedrillite",
+      "ability": "Swarm",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Protect", "U-turn", "Poison Jab", "Drill Run"]
+    },
+    {
+      "species": "Entei",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Sacred Fire", "Extreme Speed", "Stone Edge", "Flare Blitz"],
+      "shiny": true
+    },
+    {
+      "species": "Gligar",
+      "item": "Eviolite",
+      "ability": "Immunity",
+      "nature": "Impish",
+      "evs": { "hp": 240, "def": 24, "spd": 244 },
+      "moves": ["Stealth Rock", "Earthquake", "U-turn", "Roost"]
+    },
+    {
+      "species": "Empoleon",
+      "item": "Leftovers",
+      "ability": "Torrent",
+      "nature": "Calm",
+      "evs": { "hp": 248, "def": 76, "spd": 184 },
+      "moves": ["Stealth Rock", "Scald", "Defog", "Knock Off"]
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Mow",
+      "item": "Choice Scarf",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Leaf Storm", "Thunderbolt", "Volt Switch", "Trick"]
+    },
+    {
+      "species": "Cresselia",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 232, "def": 180, "spe": 96 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Psyshock", "Moonblast", "Moonlight"]
+    }
+  ]
+}

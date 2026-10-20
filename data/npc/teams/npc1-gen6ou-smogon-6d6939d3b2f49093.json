@@ -1,0 +1,57 @@
+{
+  "name": "Lopunny Cofagrigus Semi-Stall",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Lopunny",
+      "item": "Lopunnite",
+      "ability": "Limber",
+      "gender": "F",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Return", "Fake Out", "High Jump Kick", "Encore"]
+    },
+    {
+      "species": "Heatran",
+      "item": "Leftovers",
+      "ability": "Flash Fire",
+      "nature": "Calm",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Lava Plume", "Roar", "Protect", "Stealth Rock"]
+    },
+    {
+      "species": "Clefable",
+      "item": "Life Orb",
+      "ability": "Magic Guard",
+      "nature": "Modest",
+      "evs": { "hp": 252, "def": 152, "spa": 80, "spe": 24 },
+      "moves": ["Moonblast", "Knock Off", "Calm Mind", "Soft-Boiled"]
+    },
+    {
+      "species": "Cofagrigus",
+      "item": "Leftovers",
+      "ability": "Mummy",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spe": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Night Shade", "Will-O-Wisp", "Toxic Spikes", "Pain Split"]
+    },
+    {
+      "species": "Gastrodon",
+      "item": "Leftovers",
+      "ability": "Storm Drain",
+      "nature": "Sassy",
+      "evs": { "hp": 248, "spd": 240, "spe": 20 },
+      "moves": ["Scald", "Earthquake", "Clear Smog", "Recover"]
+    },
+    {
+      "species": "Skarmory",
+      "item": "Rocky Helmet",
+      "ability": "Sturdy",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "moves": ["Iron Head", "Roost", "Whirlwind", "Spikes"]
+    }
+  ]
+}

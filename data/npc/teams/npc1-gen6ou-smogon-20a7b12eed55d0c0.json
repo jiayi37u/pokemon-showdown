@@ -1,0 +1,60 @@
+{
+  "name": "Tyranitar Sand BO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Clefable",
+      "item": "Life Orb",
+      "ability": "Magic Guard",
+      "nature": "Modest",
+      "evs": { "hp": 252, "def": 172, "spa": 72, "spe": 12 },
+      "ivs": { "atk": 0 },
+      "moves": ["Moonblast", "Flamethrower", "Soft-Boiled", "Calm Mind"]
+    },
+    {
+      "species": "Keldeo",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Secret Sword", "Calm Mind", "Substitute"]
+    },
+    {
+      "species": "Slowbro",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 220, "spd": 36 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Slack Off", "Thunder Wave", "Psyshock"]
+    },
+    {
+      "species": "Tyranitar",
+      "item": "Tyranitarite",
+      "ability": "Sand Stream",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 124, "spd": 120, "spe": 16 },
+      "moves": ["Pursuit", "Crunch", "Stone Edge", "Stealth Rock"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Air Balloon",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "hp": 32, "atk": 108, "def": 56, "spd": 108, "spe": 204 },
+      "moves": ["Earthquake", "Rock Slide", "Iron Head", "Rapid Spin"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Knock Off", "U-turn"]
+    }
+  ]
+}

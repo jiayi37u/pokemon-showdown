@@ -1,0 +1,62 @@
+{
+  "name": "Venusaur Weavile Semi-Stall",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Venusaur",
+      "item": "Venusaurite",
+      "ability": "Chlorophyll",
+      "nature": "Modest",
+      "evs": { "hp": 248, "def": 4, "spa": 200, "spe": 56 },
+      "ivs": { "atk": 0 },
+      "moves": ["Synthesis", "Sludge Bomb", "Giga Drain", "Growth"]
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Icicle Crash", "Pursuit", "Ice Shard"]
+    },
+    {
+      "species": "Manaphy",
+      "item": "Leftovers",
+      "ability": "Hydration",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 252, "spa": 200, "spe": 56 },
+      "ivs": { "atk": 0 },
+      "moves": ["Tail Glow", "Substitute", "Surf", "Energy Ball"]
+    },
+    {
+      "species": "Chansey",
+      "item": "Eviolite",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Healing Wish", "Seismic Toss", "Thunder Wave", "Soft-Boiled"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 216, "spd": 252, "spe": 40 },
+      "moves": ["Stealth Rock", "Earthquake", "Rapid Spin", "Iron Head"]
+    },
+    {
+      "species": "Zapdos",
+      "item": "Leftovers",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 224, "spa": 20, "spe": 16 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Hidden Power Ice", "Heat Wave", "Roost", "Volt Switch"],
+      "hpType": "Ice"
+    }
+  ]
+}

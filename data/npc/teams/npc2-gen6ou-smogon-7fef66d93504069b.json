@@ -1,0 +1,67 @@
+{
+  "name": "Altaria Screens",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "name": "Landorus",
+      "species": "Landorus-Therian",
+      "item": "Focus Sash",
+      "ability": "Intimidate",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Imprison", "Rock Tomb", "Explosion"]
+    },
+    {
+      "name": "GOD MIWA",
+      "species": "Manaphy",
+      "item": "Sitrus Berry",
+      "ability": "Hydration",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 200, "spa": 176, "spd": 16, "spe": 116 },
+      "ivs": { "atk": 0 },
+      "moves": ["Tail Glow", "Surf", "Ice Beam", "Energy Ball"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Light Clay",
+      "ability": "Contrary",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 100, "spa": 156, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Reflect", "Light Screen", "Leaf Storm", "Taunt"],
+      "shiny": true
+    },
+    {
+      "species": "Volcarona",
+      "item": "Lum Berry",
+      "ability": "Flame Body",
+      "nature": "Modest",
+      "evs": { "hp": 96, "spa": 252, "spe": 160 },
+      "ivs": { "atk": 1, "spa": 30, "spd": 30 },
+      "moves": ["Quiver Dance", "Flamethrower", "Giga Drain", "Hidden Power Ground"],
+      "hpType": "Ground"
+    },
+    {
+      "species": "Altaria",
+      "item": "Altarianite",
+      "ability": "Natural Cure",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 16, "spe": 240 },
+      "moves": ["Dragon Dance", "Substitute", "Frustration", "Earthquake"],
+      "happiness": 0
+    },
+    {
+      "species": "Latias",
+      "item": "Light Clay",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 252, "spa": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Defog", "Reflect", "Light Screen", "Healing Wish"]
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "name": "EKANSSNAKE's Mega Beedrill Webs",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Beedrill",
+      "item": "Beedrillite",
+      "ability": "Swarm",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["U-turn", "Poison Jab", "Knock Off", "Drill Run"]
+    },
+    {
+      "species": "Dragalge",
+      "item": "Choice Specs",
+      "ability": "Adaptability",
+      "nature": "Modest",
+      "evs": { "hp": 248, "spa": 252, "spd": 8 },
+      "moves": ["Draco Meteor", "Dragon Pulse", "Sludge Wave", "Hydro Pump"]
+    },
+    {
+      "species": "Chandelure",
+      "item": "Choice Scarf",
+      "ability": "Flash Fire",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Fire Blast", "Energy Ball", "Shadow Ball", "Psychic"]
+    },
+    {
+      "species": "Infernape",
+      "item": "Focus Sash",
+      "ability": "Blaze",
+      "nature": "Hasty",
+      "evs": { "atk": 252, "spa": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Overheat", "Blaze Kick", "Close Combat"]
+    },
+    {
+      "species": "Galvantula",
+      "item": "Life Orb",
+      "ability": "Compound Eyes",
+      "nature": "Hasty",
+      "evs": { "atk": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Thunder", "Bug Buzz", "Sucker Punch", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Honchkrow",
+      "item": "Leftovers",
+      "ability": "Moxie",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 252, "spd": 8 },
+      "moves": ["Substitute", "Sucker Punch", "Brave Bird", "Pursuit"]
+    }
+  ]
+}

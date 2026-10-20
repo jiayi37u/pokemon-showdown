@@ -1,0 +1,67 @@
+{
+  "name": "Alakazam Zapdos Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "name": "Wizardry",
+      "species": "Alakazam",
+      "item": "Alakazite",
+      "ability": "Magic Guard",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Taunt", "Focus Blast", "Shadow Ball", "Psychic"]
+    },
+    {
+      "name": "Necromancer",
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Ice Shard", "Pursuit", "Icicle Crash", "Knock Off"]
+    },
+    {
+      "name": "Blue Sorcerer",
+      "species": "Keldeo-Resolute",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 56, "def": 4, "spa": 196, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Rest", "Sleep Talk", "Secret Sword", "Scald"]
+    },
+    {
+      "name": "Magic-Black",
+      "species": "Kyurem-Black",
+      "item": "Assault Vest",
+      "ability": "Teravolt",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "hp": 40, "atk": 252, "spd": 144, "spe": 72 },
+      "moves": ["Fusion Bolt", "Iron Head", "Ice Beam", "Outrage"]
+    },
+    {
+      "name": "Enchanted",
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 176, "atk": 12, "def": 28, "spd": 252, "spe": 40 },
+      "moves": ["Stealth Rock", "Rapid Spin", "Iron Head", "Earthquake"]
+    },
+    {
+      "name": "Yellow",
+      "species": "Zapdos",
+      "item": "Rocky Helmet",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 228, "spe": 32 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Roost", "Hidden Power Ice", "Heat Wave", "Volt Switch"],
+      "hpType": "Ice"
+    }
+  ]
+}

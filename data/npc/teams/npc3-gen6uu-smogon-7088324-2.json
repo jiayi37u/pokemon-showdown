@@ -1,0 +1,58 @@
+{
+  "name": "2.0 - Choice Banded Mienshoa Balance (Anti- Bulky Water)",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Mienshao",
+      "item": "Choice Band",
+      "ability": "Reckless",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "U-turn", "Poison Jab", "Knock Off"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Dread Plate",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Pursuit", "Stealth Rock", "Earthquake"]
+    },
+    {
+      "species": "Slowking",
+      "item": "Leftovers",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spe": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Slack Off", "Scald", "Psyshock"]
+    },
+    {
+      "species": "Sceptile",
+      "item": "Sceptilite",
+      "ability": "Overgrow",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Giga Drain", "Leaf Storm", "Dragon Pulse", "Focus Blast"],
+      "shiny": true
+    },
+    {
+      "species": "Crobat",
+      "item": "Choice Band",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Brave Bird", "U-turn", "Cross Poison", "Pursuit"]
+    },
+    {
+      "species": "Empoleon",
+      "item": "Leftovers",
+      "ability": "Torrent",
+      "nature": "Calm",
+      "evs": { "hp": 252, "spd": 252, "spe": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Defog", "Roar", "Ice Beam"]
+    }
+  ]
+}

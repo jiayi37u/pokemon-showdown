@@ -1,0 +1,59 @@
+{
+  "name": "Icey Tea and dodmen's Offence Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Krookodile",
+      "item": "Rocky Helmet",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Taunt", "Knock Off", "Earthquake"]
+    },
+    {
+      "species": "Haxorus",
+      "item": "Life Orb",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Dragon Dance", "Earthquake", "Dragon Claw", "Iron Tail"]
+    },
+    {
+      "species": "Metagross",
+      "item": "Life Orb",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Mild",
+      "evs": { "atk": 184, "spa": 144, "spe": 180 },
+      "ivs": { "atk": 30, "spa": 30, "spe": 30 },
+      "moves": ["Grass Knot", "Meteor Mash", "Hidden Power Fire", "Explosion"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Celebi",
+      "item": "Colbur Berry",
+      "ability": "Natural Cure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Nasty Plot", "Giga Drain", "Dazzling Gleam", "Earth Power"]
+    },
+    {
+      "species": "Mienshao",
+      "item": "Choice Scarf",
+      "ability": "Reckless",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "U-turn", "Stone Edge", "Knock Off"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Swampertite",
+      "ability": "Damp",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Rain Dance", "Power-Up Punch", "Earthquake", "Waterfall"]
+    }
+  ]
+}

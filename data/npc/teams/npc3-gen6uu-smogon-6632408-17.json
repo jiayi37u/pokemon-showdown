@@ -1,0 +1,57 @@
+{
+  "name": "Najo's Balance team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Aerodactyl",
+      "item": "Aerodactylite",
+      "ability": "Rock Head",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "atk": 160, "spe": 96 },
+      "moves": ["Roost", "Pursuit", "Earthquake", "Stone Edge"]
+    },
+    {
+      "species": "Florges",
+      "item": "Leftovers",
+      "ability": "Flower Veil",
+      "gender": "F",
+      "nature": "Calm",
+      "evs": { "hp": 252, "def": 232, "spd": 24 },
+      "moves": ["Calm Mind", "Aromatherapy", "Moonblast", "Synthesis"]
+    },
+    {
+      "species": "Jellicent",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 112, "spe": 148 },
+      "moves": ["Scald", "Will-O-Wisp", "Recover", "Taunt"]
+    },
+    {
+      "species": "Slowking",
+      "item": "Leftovers",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spa": 4 },
+      "moves": ["Scald", "Slack Off", "Psyshock", "Calm Mind"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Shuca Berry",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Close Combat", "Iron Head", "Swords Dance", "Stealth Rock"]
+    },
+    {
+      "species": "Gligar",
+      "item": "Eviolite",
+      "ability": "Hyper Cutter",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 12, "spd": 244 },
+      "ivs": { "spe": 30 },
+      "moves": ["Defog", "U-turn", "Earthquake", "Roost"]
+    }
+  ]
+}

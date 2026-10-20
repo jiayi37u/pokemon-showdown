@@ -1,0 +1,63 @@
+{
+  "name": "Standard Lopunny BO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Lopunny",
+      "item": "Lopunnite",
+      "ability": "Limber",
+      "gender": "F",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Frustration", "High Jump Kick", "Fake Out", "Quick Attack"],
+      "happiness": 0
+    },
+    {
+      "species": "Serperior",
+      "item": "Chesto Berry",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 208, "spa": 48, "spe": 252 },
+      "ivs": { "atk": 1, "def": 30, "spd": 30, "spe": 30 },
+      "moves": ["Leaf Storm", "Hidden Power Rock", "Glare", "Rest"],
+      "hpType": "Rock"
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Knock Off", "Icicle Crash", "Ice Shard", "Pursuit"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Impish",
+      "evs": { "hp": 176, "def": 252, "spd": 40, "spe": 40 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Stealth Rock"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Assault Vest",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 248, "spa": 56, "spd": 144, "spe": 60 },
+      "ivs": { "atk": 0 },
+      "moves": ["Steam Eruption", "Flamethrower", "Earth Power", "Sludge Bomb"]
+    },
+    {
+      "species": "Zapdos",
+      "item": "Rocky Helmet",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 244, "spe": 16 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Heat Wave", "Hidden Power Ice", "Roost"],
+      "hpType": "Ice"
+    }
+  ]
+}

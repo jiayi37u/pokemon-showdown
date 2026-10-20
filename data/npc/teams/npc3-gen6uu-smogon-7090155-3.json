@@ -1,0 +1,58 @@
+{
+  "name": "Bi + Bee Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Celebi",
+      "item": "Leftovers",
+      "ability": "Natural Cure",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Psychic", "Giga Drain", "Nasty Plot", "Leech Seed"]
+    },
+    {
+      "species": "Beedrill",
+      "item": "Beedrillite",
+      "ability": "Swarm",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Poison Jab", "Drill Run", "Protect", "U-turn"]
+    },
+    {
+      "species": "Infernape",
+      "item": "Choice Band",
+      "ability": "Iron Fist",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Flare Blitz", "Close Combat", "U-turn", "Mach Punch"]
+    },
+    {
+      "species": "Forretress",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "nature": "Sassy",
+      "evs": { "hp": 252, "atk": 4, "spd": 252 },
+      "ivs": { "spe": 0 },
+      "moves": ["Spikes", "Rapid Spin", "Volt Switch", "Heavy Slam"]
+    },
+    {
+      "species": "Sylveon",
+      "item": "Leftovers",
+      "ability": "Pixilate",
+      "nature": "Calm",
+      "evs": { "hp": 248, "def": 156, "spd": 96, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Wish", "Protect", "Heal Bell", "Hyper Voice"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Leftovers",
+      "ability": "Torrent",
+      "nature": "Relaxed",
+      "evs": { "hp": 248, "def": 252, "spe": 8 },
+      "moves": ["Scald", "Earthquake", "Roar", "Stealth Rock"]
+    }
+  ]
+}

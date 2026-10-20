@@ -1,0 +1,59 @@
+{
+  "name": "Manipulative's Offence Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Tornadus",
+      "item": "Life Orb",
+      "ability": "Prankster",
+      "gender": "M",
+      "nature": "Hasty",
+      "evs": { "atk": 4, "spa": 252, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Superpower", "Tailwind"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Choice Band",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Earthquake", "Pursuit", "Superpower"]
+    },
+    {
+      "species": "Mienshao",
+      "item": "Choice Scarf",
+      "ability": "Reckless",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Knock Off", "High Jump Kick", "U-turn", "Stone Edge"]
+    },
+    {
+      "species": "Blastoise",
+      "item": "Blastoisinite",
+      "ability": "Torrent",
+      "nature": "Modest",
+      "evs": { "hp": 144, "spa": 252, "spe": 112 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Dark Pulse", "Rapid Spin", "Aura Sphere"]
+    },
+    {
+      "species": "Roserade",
+      "item": "Life Orb",
+      "ability": "Natural Cure",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Giga Drain", "Sludge Bomb", "Leaf Storm", "Sleep Powder"]
+    },
+    {
+      "species": "Metagross",
+      "item": "Life Orb",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Meteor Mash", "Explosion", "Bullet Punch", "Stealth Rock"],
+      "shiny": true
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "name": "Altaria Magnezone Stall",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Altaria",
+      "item": "Altarianite",
+      "ability": "Natural Cure",
+      "gender": "M",
+      "nature": "Careful",
+      "evs": { "hp": 248, "spd": 68, "spe": 192 },
+      "moves": ["Dragon Dance", "Return", "Earthquake", "Roost"]
+    },
+    {
+      "species": "Mew",
+      "item": "Leftovers",
+      "ability": "Synchronize",
+      "gender": "N",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 228, "spe": 32 },
+      "moves": ["Stealth Rock", "Knock Off", "Will-O-Wisp", "Soft-Boiled"]
+    },
+    {
+      "species": "Magnezone",
+      "item": "Choice Scarf",
+      "ability": "Magnet Pull",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 24, "spa": 232, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Thunderbolt", "Hidden Power Fire", "Volt Switch", "Thunder Wave"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Chansey",
+      "item": "Eviolite",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "ivs": { "atk": 0, "spe": 30 },
+      "moves": ["Seismic Toss", "Toxic", "Heal Bell", "Soft-Boiled"]
+    },
+    {
+      "species": "Quagsire",
+      "item": "Leftovers",
+      "ability": "Unaware",
+      "gender": "M",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Toxic", "Haze", "Recover"],
+      "shiny": true
+    },
+    {
+      "species": "Zapdos",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 228, "spe": 32 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Discharge", "Hidden Power Ice", "Defog", "Roost"],
+      "hpType": "Ice"
+    }
+  ]
+}

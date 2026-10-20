@@ -1,0 +1,62 @@
+{
+  "name": "Tyranitar Sand HO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Tyranitar",
+      "item": "Tyranitarite",
+      "ability": "Sand Stream",
+      "nature": "Jolly",
+      "evs": { "hp": 8, "atk": 252, "spe": 248 },
+      "moves": ["Dragon Dance", "Substitute", "Rock Slide", "Crunch"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Rocky Helmet",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 252, "def": 4, "spe": 252 },
+      "ivs": { "atk": 1, "def": 30, "spd": 30, "spe": 30 },
+      "moves": ["Glare", "Taunt", "Hidden Power Rock", "Leaf Storm"],
+      "hpType": "Rock"
+    },
+    {
+      "species": "Manaphy",
+      "item": "Leftovers",
+      "ability": "Hydration",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 252, "spa": 240, "spe": 16 },
+      "ivs": { "atk": 0 },
+      "moves": ["Substitute", "Tail Glow", "Psychic", "Scald"]
+    },
+    {
+      "species": "Volcarona",
+      "item": "Leftovers",
+      "ability": "Swarm",
+      "nature": "Modest",
+      "evs": { "hp": 64, "spa": 216, "spe": 228 },
+      "ivs": { "atk": 0 },
+      "moves": ["Substitute", "Quiver Dance", "Flamethrower", "Bug Buzz"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Air Balloon",
+      "ability": "Sand Rush",
+      "nature": "Adamant",
+      "evs": { "hp": 32, "atk": 60, "def": 56, "spd": 108, "spe": 252 },
+      "moves": ["Stealth Rock", "Rapid Spin", "Iron Head", "Earthquake"]
+    },
+    {
+      "species": "Thundurus",
+      "item": "Leftovers",
+      "ability": "Prankster",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 216, "spa": 40, "spe": 252 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Thunder Wave", "Hidden Power Ice", "Knock Off", "Volt Switch"],
+      "hpType": "Ice"
+    }
+  ]
+}

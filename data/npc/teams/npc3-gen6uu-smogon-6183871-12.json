@@ -1,0 +1,63 @@
+{
+  "name": "NV's Mandibuzz Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Florges",
+      "item": "Leftovers",
+      "ability": "Symbiosis",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Wish", "Protect", "Aromatherapy", "Moonblast"]
+    },
+    {
+      "species": "Mandibuzz",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "gender": "F",
+      "nature": "Careful",
+      "evs": { "hp": 248, "spd": 200, "spe": 60 },
+      "moves": ["Foul Play", "Roost", "Knock Off", "Taunt"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Substitute", "Swords Dance", "Close Combat", "Iron Head"]
+    },
+    {
+      "species": "Blastoise",
+      "item": "Blastoisinite",
+      "ability": "Torrent",
+      "gender": "M",
+      "nature": "Modest",
+      "evs": { "hp": 248, "spa": 252, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Ice Beam", "Aura Sphere", "Rapid Spin"]
+    },
+    {
+      "species": "Nidoqueen",
+      "item": "Life Orb",
+      "ability": "Sheer Force",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 244, "spe": 16 },
+      "ivs": { "atk": 0 },
+      "moves": ["Earth Power", "Ice Beam", "Stealth Rock", "Toxic Spikes"]
+    },
+    {
+      "species": "Snorlax",
+      "item": "Leftovers",
+      "ability": "Thick Fat",
+      "gender": "M",
+      "nature": "Careful",
+      "evs": { "hp": 144, "def": 188, "spd": 176 },
+      "moves": ["Body Slam", "Curse", "Rest", "Sleep Talk"]
+    }
+  ]
+}

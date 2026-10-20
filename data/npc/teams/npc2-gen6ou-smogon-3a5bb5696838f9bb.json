@@ -1,0 +1,63 @@
+{
+  "name": "Diancie Weavile T-Spikes",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Knock Off", "Icicle Crash", "Ice Shard", "Pursuit"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 52, "spe": 208 },
+      "moves": ["Hurricane", "Knock Off", "U-turn", "Taunt"]
+    },
+    {
+      "species": "Diancie",
+      "item": "Diancite",
+      "ability": "Clear Body",
+      "gender": "N",
+      "nature": "Hasty",
+      "evs": { "atk": 4, "spa": 252, "spe": 252 },
+      "moves": ["Moonblast", "Diamond Storm", "Earth Power", "Protect"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "gender": "F",
+      "nature": "Jolly",
+      "evs": { "hp": 56, "atk": 36, "def": 80, "spd": 84, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Stealth Rock"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Leftovers",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 152, "spd": 76, "spe": 32 },
+      "ivs": { "atk": 0 },
+      "moves": ["Steam Eruption", "Flamethrower", "Protect", "Toxic"]
+    },
+    {
+      "species": "Cofagrigus",
+      "item": "Leftovers",
+      "ability": "Mummy",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 244, "spe": 16 },
+      "ivs": { "atk": 0 },
+      "moves": ["Shadow Ball", "Will-O-Wisp", "Pain Split", "Toxic Spikes"]
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "name": "Latias Spikes Balanced",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Latias",
+      "item": "Latiasite",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 252, "def": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Thunder Wave", "Thunderbolt", "Ice Beam", "Recover"]
+    },
+    {
+      "species": "Clefable",
+      "item": "Leftovers",
+      "ability": "Magic Guard",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 248, "spd": 4, "spe": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Moonblast", "Flamethrower", "Soft-Boiled"]
+    },
+    {
+      "species": "Slowbro",
+      "item": "Leftovers",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 248, "spd": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Thunder Wave", "Protect", "Slack Off"]
+    },
+    {
+      "species": "Ferrothorn",
+      "item": "Leftovers",
+      "ability": "Iron Barbs",
+      "gender": "M",
+      "nature": "Impish",
+      "evs": { "hp": 252, "def": 8, "spd": 248 },
+      "moves": ["Leech Seed", "Spikes", "Power Whip", "Knock Off"]
+    },
+    {
+      "species": "Hippowdon",
+      "item": "Leftovers",
+      "ability": "Sand Stream",
+      "gender": "M",
+      "nature": "Careful",
+      "evs": { "hp": 248, "def": 8, "spd": 252 },
+      "moves": ["Stealth Rock", "Earthquake", "Rock Slide", "Slack Off"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 252, "def": 40, "spe": 216 },
+      "moves": ["Taunt", "Hurricane", "Knock Off", "U-turn"]
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "name": "Sacri's Offence Team",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Cresselia",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 160, "spe": 96 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Psyshock", "Moonlight", "Moonblast"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Pixie Plate",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Moonblast", "Encore", "U-turn", "Energy Ball"]
+    },
+    {
+      "species": "Nidoqueen",
+      "item": "Life Orb",
+      "ability": "Sheer Force",
+      "gender": "F",
+      "nature": "Modest",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Earth Power", "Sludge Wave", "Ice Beam"]
+    },
+    {
+      "species": "Blastoise",
+      "item": "Blastoisinite",
+      "ability": "Torrent",
+      "nature": "Modest",
+      "evs": { "hp": 104, "spa": 252, "spe": 152 },
+      "ivs": { "atk": 0 },
+      "moves": ["Ice Beam", "Aura Sphere", "Rapid Spin", "Hydro Pump"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Shuca Berry",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Close Combat", "Iron Head", "X-Scissor"]
+    },
+    {
+      "species": "Haxorus",
+      "item": "Lum Berry",
+      "ability": "Mold Breaker",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Dragon Dance", "Earthquake", "Outrage", "Poison Jab"]
+    }
+  ]
+}

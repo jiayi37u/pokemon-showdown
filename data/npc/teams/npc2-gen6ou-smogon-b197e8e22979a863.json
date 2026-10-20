@@ -1,0 +1,65 @@
+{
+  "name": "Mega-Altaria Stall",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Quagsire",
+      "item": "Leftovers",
+      "ability": "Unaware",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spa": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Haze", "Toxic", "Recover"]
+    },
+    {
+      "species": "Altaria",
+      "item": "Altarianite",
+      "ability": "Natural Cure",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 136, "spd": 96, "spe": 28 },
+      "moves": ["Dragon Dance", "Frustration", "Heal Bell", "Roost"],
+      "happiness": 0
+    },
+    {
+      "species": "Magnezone",
+      "item": "Choice Scarf",
+      "ability": "Magnet Pull",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0, "spa": 30, "spe": 30 },
+      "moves": ["Thunderbolt", "Flash Cannon", "Hidden Power Fire", "Volt Switch"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Suicune",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Scald", "Rest", "Roar"]
+    },
+    {
+      "species": "Zapdos",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Calm",
+      "evs": { "hp": 252, "def": 60, "spd": 180, "spe": 16 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Thunderbolt", "Hidden Power Ice", "Roost", "Defog"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Chansey",
+      "item": "Eviolite",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "moves": ["Stealth Rock", "Seismic Toss", "Soft-Boiled", "Toxic"]
+    }
+  ]
+}

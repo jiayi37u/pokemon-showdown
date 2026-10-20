@@ -1,0 +1,56 @@
+{
+  "name": "Mega Ampharos Semi-Stall",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Ampharos",
+      "item": "Ampharosite",
+      "ability": "Static",
+      "nature": "Modest",
+      "evs": { "hp": 176, "spa": 252, "spe": 80 },
+      "moves": ["Focus Blast", "Thunderbolt", "Dragon Pulse", "Thunder Wave"]
+    },
+    {
+      "species": "Escavalier",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 56, "spd": 204 },
+      "moves": ["Megahorn", "Iron Head", "Swords Dance", "Knock Off"]
+    },
+    {
+      "species": "Sylveon",
+      "item": "Leftovers",
+      "ability": "Pixilate",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Wish", "Protect", "Hyper Voice", "Heal Bell"]
+    },
+    {
+      "species": "Swampert",
+      "item": "Leftovers",
+      "ability": "Damp",
+      "nature": "Relaxed",
+      "evs": { "hp": 240, "def": 252, "spd": 16 },
+      "moves": ["Earthquake", "Scald", "Stealth Rock", "Roar"]
+    },
+    {
+      "species": "Tentacruel",
+      "item": "Black Sludge",
+      "ability": "Liquid Ooze",
+      "nature": "Bold",
+      "evs": { "hp": 240, "def": 172, "spe": 96 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Haze", "Toxic Spikes", "Rapid Spin"]
+    },
+    {
+      "species": "Snorlax",
+      "item": "Leftovers",
+      "ability": "Thick Fat",
+      "nature": "Careful",
+      "evs": { "hp": 144, "def": 188, "spd": 176 },
+      "moves": ["Curse", "Rest", "Body Slam", "Earthquake"]
+    }
+  ]
+}

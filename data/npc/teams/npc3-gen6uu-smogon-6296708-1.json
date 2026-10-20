@@ -1,0 +1,63 @@
+{
+  "name": "Decision Maker's Mega Abomasnow Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Abomasnow",
+      "item": "Abomasite",
+      "ability": "Soundproof",
+      "nature": "Adamant",
+      "evs": { "hp": 248, "atk": 252, "spd": 8 },
+      "moves": ["Swords Dance", "Ice Shard", "Seed Bomb", "Earthquake"],
+      "shiny": true
+    },
+    {
+      "species": "Heliolisk",
+      "item": "Choice Specs",
+      "ability": "Dry Skin",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Thunderbolt", "Volt Switch", "Hyper Voice", "Focus Blast"]
+    },
+    {
+      "species": "Gligar",
+      "item": "Eviolite",
+      "ability": "Hyper Cutter",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 236, "spe": 24 },
+      "moves": ["Defog", "Earthquake", "Roost", "Stealth Rock"],
+      "shiny": true
+    },
+    {
+      "species": "Blissey",
+      "item": "Leftovers",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 216, "def": 252, "spd": 40 },
+      "ivs": { "atk": 0 },
+      "moves": ["Thunder Wave", "Seismic Toss", "Soft-Boiled", "Aromatherapy"],
+      "shiny": true
+    },
+    {
+      "species": "Cresselia",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 224, "spe": 36 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Psyshock", "Rest", "Ice Beam"]
+    },
+    {
+      "species": "Quagsire",
+      "item": "Leftovers",
+      "ability": "Unaware",
+      "nature": "Relaxed",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "moves": ["Earthquake", "Recover", "Scald", "Encore"],
+      "shiny": true
+    }
+  ]
+}

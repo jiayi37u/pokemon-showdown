@@ -1,0 +1,66 @@
+{
+  "name": "Medicham Manaphy Bulky Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Manaphy",
+      "item": "Sitrus Berry",
+      "ability": "Hydration",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 108, "spa": 148, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Tail Glow", "Surf", "Energy Ball", "Ice Beam"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 28, "atk": 32, "def": 80, "spd": 200, "spe": 168 },
+      "moves": ["Earthquake", "Rapid Spin", "Stealth Rock", "Iron Head"]
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Wash",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 200, "spa": 4, "spd": 44, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Volt Switch", "Hydro Pump", "Will-O-Wisp", "Pain Split"],
+      "shiny": true
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "spa": 8, "spe": 252 },
+      "moves": ["Air Slash", "Heat Wave", "U-turn", "Knock Off"]
+    },
+    {
+      "species": "Medicham",
+      "item": "Medichamite",
+      "ability": "Pure Power",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Fake Out", "High Jump Kick", "Ice Punch", "Thunder Punch"]
+    },
+    {
+      "species": "Clefable",
+      "item": "Leftovers",
+      "ability": "Magic Guard",
+      "gender": "M",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 168, "spd": 88 },
+      "ivs": { "atk": 0 },
+      "moves": ["Moonblast", "Thunder Wave", "Soft-Boiled", "Encore"]
+    }
+  ]
+}

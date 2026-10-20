@@ -1,0 +1,61 @@
+{
+  "name": "Decision Maker's Mega Audino Heliolisk Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Suicune",
+      "item": "Leftovers",
+      "ability": "Pressure",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 240, "def": 208, "spe": 60 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Scald", "Rest", "Roar"]
+    },
+    {
+      "species": "Heliolisk",
+      "item": "Choice Specs",
+      "ability": "Dry Skin",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Dragon Tail", "Volt Switch", "Hyper Voice", "Thunderbolt"]
+    },
+    {
+      "species": "Cobalion",
+      "item": "Leftovers",
+      "ability": "Justified",
+      "gender": "N",
+      "nature": "Jolly",
+      "evs": { "hp": 4, "atk": 252, "spe": 252 },
+      "moves": ["Substitute", "Swords Dance", "Iron Head", "Close Combat"],
+      "shiny": true
+    },
+    {
+      "species": "Crobat",
+      "item": "Leftovers",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "hp": 248, "atk": 40, "spe": 220 },
+      "moves": ["Brave Bird", "Taunt", "Roost", "Defog"]
+    },
+    {
+      "species": "Audino",
+      "item": "Audinite",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spd": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Wish", "Dazzling Gleam", "Protect", "Heal Bell"],
+      "shiny": true
+    },
+    {
+      "species": "Rhyperior",
+      "item": "Leftovers",
+      "ability": "Solid Rock",
+      "nature": "Impish",
+      "evs": { "hp": 248, "def": 16, "spd": 244 },
+      "moves": ["Stealth Rock", "Earthquake", "Toxic", "Stone Edge"]
+    }
+  ]
+}

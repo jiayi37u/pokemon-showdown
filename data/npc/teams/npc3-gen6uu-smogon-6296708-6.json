@@ -1,0 +1,56 @@
+{
+  "name": "Decision Maker's Mega Audino Tyrantrum Balance",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Crobat",
+      "item": "Black Sludge",
+      "ability": "Infiltrator",
+      "nature": "Jolly",
+      "evs": { "hp": 248, "atk": 40, "spe": 220 },
+      "moves": ["Brave Bird", "Roost", "Toxic", "Defog"]
+    },
+    {
+      "species": "Mamoswine",
+      "item": "Life Orb",
+      "ability": "Thick Fat",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Earthquake", "Ice Shard", "Stealth Rock", "Icicle Crash"]
+    },
+    {
+      "species": "Doublade",
+      "item": "Eviolite",
+      "ability": "No Guard",
+      "nature": "Adamant",
+      "evs": { "hp": 240, "atk": 252, "spd": 16 },
+      "moves": ["Swords Dance", "Shadow Sneak", "Iron Head", "Sacred Sword"]
+    },
+    {
+      "species": "Tyrantrum",
+      "item": "Choice Band",
+      "ability": "Rock Head",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Head Smash", "Outrage", "Crunch", "Earthquake"]
+    },
+    {
+      "species": "Heliolisk",
+      "item": "Choice Scarf",
+      "ability": "Dry Skin",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "moves": ["Volt Switch", "Hyper Voice", "Thunderbolt", "Dragon Tail"]
+    },
+    {
+      "species": "Audino",
+      "item": "Audinite",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spa": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Protect", "Wish", "Dazzling Gleam", "Toxic"],
+      "shiny": true
+    }
+  ]
+}

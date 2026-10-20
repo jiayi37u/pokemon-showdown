@@ -1,0 +1,64 @@
+{
+  "name": "Gallade Weavile Bulky Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Clefable",
+      "item": "Leftovers",
+      "ability": "Magic Guard",
+      "gender": "F",
+      "nature": "Calm",
+      "evs": { "hp": 248, "def": 212, "spd": 32, "spe": 16 },
+      "ivs": { "atk": 0 },
+      "moves": ["Stealth Rock", "Moonblast", "Thunder Wave", "Soft-Boiled"]
+    },
+    {
+      "species": "Zapdos",
+      "item": "Rocky Helmet",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 236, "spe": 24 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Heat Wave", "Hidden Power Ice", "Roost"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Weavile",
+      "item": "Choice Band",
+      "ability": "Pressure",
+      "gender": "F",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Pursuit", "Ice Shard", "Knock Off", "Icicle Crash"]
+    },
+    {
+      "species": "Gallade",
+      "item": "Galladite",
+      "ability": "Justified",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 152, "atk": 100, "def": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Drain Punch", "Psycho Cut", "Shadow Sneak"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 32, "atk": 8, "def": 56, "spd": 160, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Substitute"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Choice Scarf",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Overheat", "Steam Eruption", "Flamethrower", "Toxic"]
+    }
+  ]
+}

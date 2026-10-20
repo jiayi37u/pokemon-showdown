@@ -1,0 +1,59 @@
+{
+  "name": "Kiyo's Mixed Attacker Offense",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Froslass",
+      "item": "Focus Sash",
+      "ability": "Cursed Body",
+      "gender": "F",
+      "nature": "Timid",
+      "evs": { "hp": 252, "spd": 4, "spe": 252 },
+      "moves": ["Taunt", "Destiny Bond", "Spikes", "Icy Wind"]
+    },
+    {
+      "species": "Doublade",
+      "item": "Eviolite",
+      "ability": "No Guard",
+      "nature": "Adamant",
+      "evs": { "hp": 240, "atk": 252, "spd": 16 },
+      "moves": ["Swords Dance", "Iron Head", "Shadow Sneak", "Shadow Claw"]
+    },
+    {
+      "species": "Infernape",
+      "item": "Life Orb",
+      "ability": "Blaze",
+      "nature": "Hasty",
+      "evs": { "atk": 4, "spa": 252, "spe": 252 },
+      "moves": ["Fire Blast", "Grass Knot", "Close Combat", "Nasty Plot"]
+    },
+    {
+      "species": "Abomasnow",
+      "item": "Abomasite",
+      "ability": "Soundproof",
+      "nature": "Lonely",
+      "evs": { "hp": 76, "atk": 252, "spe": 180 },
+      "ivs": { "atk": 30, "spa": 30, "spe": 30 },
+      "moves": ["Swords Dance", "Wood Hammer", "Ice Shard", "Hidden Power Fire"],
+      "hpType": "Fire"
+    },
+    {
+      "species": "Porygon-Z",
+      "item": "Silk Scarf",
+      "ability": "Adaptability",
+      "gender": "N",
+      "nature": "Rash",
+      "evs": { "atk": 252, "spa": 156, "spe": 100 },
+      "moves": ["Frustration", "Tri Attack", "Dark Pulse", "Recover"],
+      "happiness": 0
+    },
+    {
+      "species": "Swampert",
+      "item": "Leftovers",
+      "ability": "Torrent",
+      "nature": "Relaxed",
+      "evs": { "hp": 240, "atk": 16, "def": 252 },
+      "moves": ["Stealth Rock", "Earthquake", "Scald", "Ice Beam"]
+    }
+  ]
+}

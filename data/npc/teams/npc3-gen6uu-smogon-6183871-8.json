@@ -1,0 +1,55 @@
+{
+  "name": "Brendannn's Offense ft. D-Bond Houndoom",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "species": "Mienshao",
+      "item": "Choice Scarf",
+      "ability": "Reckless",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "U-turn", "Stone Edge", "Knock Off"]
+    },
+    {
+      "species": "Houndoom",
+      "item": "Houndoominite",
+      "ability": "Flash Fire",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Nasty Plot", "Fire Blast", "Dark Pulse", "Destiny Bond"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Pixie Plate",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "evs": { "spa": 252, "spd": 4, "spe": 252 },
+      "moves": ["Moonblast", "U-turn", "Stun Spore", "Encore"]
+    },
+    {
+      "species": "Feraligatr",
+      "item": "Life Orb",
+      "ability": "Sheer Force",
+      "nature": "Jolly",
+      "evs": { "atk": 220, "spd": 36, "spe": 252 },
+      "moves": ["Substitute", "Swords Dance", "Waterfall", "Crunch"]
+    },
+    {
+      "species": "Krookodile",
+      "item": "Dread Plate",
+      "ability": "Intimidate",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Knock Off", "Earthquake", "Taunt"]
+    },
+    {
+      "species": "Empoleon",
+      "item": "Shuca Berry",
+      "ability": "Torrent",
+      "nature": "Calm",
+      "evs": { "hp": 248, "spa": 168, "spd": 92 },
+      "moves": ["Scald", "Grass Knot", "Ice Beam", "Defog"]
+    }
+  ]
+}

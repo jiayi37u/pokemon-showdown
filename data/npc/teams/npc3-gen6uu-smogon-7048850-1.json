@@ -1,0 +1,70 @@
+{
+  "name": "Pink Mania",
+  "formats": ["gen6uu"],
+  "pokemon": [
+    {
+      "name": "PINK FISH",
+      "species": "Alomomola",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "nature": "Bold",
+      "evs": { "hp": 40, "def": 252, "spd": 216 },
+      "ivs": { "atk": 0 },
+      "moves": ["Scald", "Wish", "Protect", "Toxic"]
+    },
+    {
+      "name": "PINK BLOB",
+      "species": "Blissey",
+      "item": "Leftovers",
+      "ability": "Natural Cure",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 252, "spe": 8 },
+      "ivs": { "atk": 0 },
+      "moves": ["Thunder Wave", "Soft-Boiled", "Seismic Toss", "Toxic"]
+    },
+    {
+      "name": "PINK BIRD",
+      "species": "Mandibuzz",
+      "item": "Leftovers",
+      "ability": "Overcoat",
+      "gender": "F",
+      "nature": "Careful",
+      "evs": { "spd": 216, "spe": 52 },
+      "moves": ["Roost", "Knock Off", "Whirlwind", "Defog"],
+      "shiny": true
+    },
+    {
+      "name": "PINK JELLY",
+      "species": "Jellicent",
+      "item": "Colbur Berry",
+      "ability": "Water Absorb",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 128, "def": 252, "spe": 128 },
+      "ivs": { "atk": 0 },
+      "moves": ["Recover", "Scald", "Will-O-Wisp", "Taunt"]
+    },
+    {
+      "name": "PINK FLOWER",
+      "species": "Florges",
+      "item": "Leftovers",
+      "ability": "Flower Veil",
+      "gender": "F",
+      "nature": "Bold",
+      "evs": { "hp": 160, "def": 252, "spe": 96 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Synthesis", "Moonblast", "Aromatherapy"],
+      "shiny": true
+    },
+    {
+      "name": "COLOR BLIND SHHH",
+      "species": "Steelix",
+      "item": "Steelixite",
+      "ability": "Sturdy",
+      "nature": "Impish",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Stealth Rock", "Roar", "Heavy Slam", "Earthquake"]
+    }
+  ]
+}

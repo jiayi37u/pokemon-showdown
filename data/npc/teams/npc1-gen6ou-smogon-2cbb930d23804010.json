@@ -1,0 +1,61 @@
+{
+  "name": "Gallade Crawdaunt BO",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Gallade",
+      "item": "Galladite",
+      "ability": "Justified",
+      "gender": "M",
+      "nature": "Jolly",
+      "evs": { "hp": 224, "atk": 28, "def": 4, "spe": 252 },
+      "moves": ["Swords Dance", "Shadow Sneak", "Psycho Cut", "Drain Punch"]
+    },
+    {
+      "species": "Serperior",
+      "item": "Lum Berry",
+      "ability": "Contrary",
+      "nature": "Timid",
+      "evs": { "hp": 136, "spa": 120, "spe": 252 },
+      "ivs": { "atk": 1, "def": 30, "spd": 30, "spe": 30 },
+      "moves": ["Glare", "Synthesis", "Hidden Power Rock", "Leaf Storm"],
+      "hpType": "Rock"
+    },
+    {
+      "species": "Crawdaunt",
+      "item": "Choice Band",
+      "ability": "Adaptability",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Aqua Jet", "Crunch", "Crabhammer", "Knock Off"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 32, "def": 56, "spd": 168, "spe": 252 },
+      "moves": ["Swords Dance", "Rapid Spin", "Iron Head", "Earthquake"]
+    },
+    {
+      "species": "Clefable",
+      "item": "Rocky Helmet",
+      "ability": "Magic Guard",
+      "nature": "Bold",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 0 },
+      "moves": ["Encore", "Stealth Rock", "Soft-Boiled", "Moonblast"]
+    },
+    {
+      "species": "Zapdos",
+      "item": "Leftovers",
+      "ability": "Static",
+      "gender": "N",
+      "nature": "Calm",
+      "evs": { "hp": 248, "def": 68, "spd": 176, "spe": 16 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Roost", "Hidden Power Ice", "Heat Wave", "Volt Switch"],
+      "hpType": "Ice"
+    }
+  ]
+}

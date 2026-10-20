@@ -1,0 +1,62 @@
+{
+  "name": "Alakazam Bisharp Offense",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Alakazam",
+      "item": "Alakazite",
+      "ability": "Magic Guard",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0 },
+      "moves": ["Calm Mind", "Focus Blast", "Shadow Ball", "Psychic"]
+    },
+    {
+      "species": "Bisharp",
+      "item": "Black Glasses",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "spd": 4, "spe": 252 },
+      "moves": ["Pursuit", "Sucker Punch", "Iron Head", "Knock Off"]
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Wash",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 132, "spe": 128 },
+      "ivs": { "atk": 0 },
+      "moves": ["Thunder Wave", "Will-O-Wisp", "Hydro Pump", "Volt Switch"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 32, "def": 56, "spd": 168, "spe": 252 },
+      "moves": ["Toxic", "Rapid Spin", "Iron Head", "Earthquake"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Rocky Helmet",
+      "ability": "Rough Skin",
+      "nature": "Impish",
+      "evs": { "hp": 240, "def": 120, "spd": 148 },
+      "moves": ["Stealth Rock", "Fire Blast", "Rock Tomb", "Earthquake"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 100, "spa": 156, "spe": 252 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Hidden Power Ice", "Hurricane", "Knock Off", "U-turn"],
+      "hpType": "Ice"
+    }
+  ]
+}

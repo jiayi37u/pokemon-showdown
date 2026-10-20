@@ -1,0 +1,61 @@
+{
+  "name": "Mega Medicham + Black Glasses Pursuit Bisharp (alt version of xray's MZam team)",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Medicham",
+      "item": "Medichamite",
+      "ability": "Pure Power",
+      "nature": "Adamant",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["High Jump Kick", "Ice Punch", "Zen Headbutt", "Fake Out"]
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 208, "spa": 108, "spe": 192 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Hurricane", "Knock Off", "U-turn", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Garchomp",
+      "item": "Rocky Helmet",
+      "ability": "Rough Skin",
+      "nature": "Jolly",
+      "evs": { "hp": 240, "atk": 12, "def": 100, "spd": 148, "spe": 8 },
+      "moves": ["Stealth Rock", "Earthquake", "Rock Tomb", "Flamethrower"]
+    },
+    {
+      "species": "Bisharp",
+      "item": "Black Glasses",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "evs": { "hp": 112, "atk": 252, "spd": 4, "spe": 140 },
+      "moves": ["Pursuit", "Sucker Punch", "Knock Off", "Iron Head"]
+    },
+    {
+      "name": "Rotom",
+      "species": "Rotom-Wash",
+      "item": "Leftovers",
+      "ability": "Levitate",
+      "gender": "N",
+      "nature": "Bold",
+      "evs": { "hp": 248, "def": 80, "spa": 24, "spe": 156 },
+      "ivs": { "atk": 0 },
+      "moves": ["Volt Switch", "Hydro Pump", "Will-O-Wisp", "Thunder Wave"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Choice Scarf",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "atk": 252, "def": 4, "spe": 252 },
+      "moves": ["Earthquake", "Iron Head", "Rock Slide", "Rapid Spin"]
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "name": "Mega Manectric + Assault Vest Volcanion & Pursuit Bisharp",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Manectric",
+      "item": "Manectite",
+      "ability": "Lightning Rod",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Thunderbolt", "Volt Switch", "Overheat", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "def": 8, "spe": 252 },
+      "moves": ["Hurricane", "Heat Wave", "Knock Off", "U-turn"]
+    },
+    {
+      "species": "Volcanion",
+      "item": "Assault Vest",
+      "ability": "Water Absorb",
+      "gender": "N",
+      "nature": "Modest",
+      "evs": { "hp": 240, "spa": 140, "spd": 64, "spe": 64 },
+      "ivs": { "atk": 30, "spa": 30 },
+      "moves": ["Steam Eruption", "Flamethrower", "Stone Edge", "Hidden Power Grass"],
+      "hpType": "Grass"
+    },
+    {
+      "species": "Bisharp",
+      "item": "Black Glasses",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "evs": { "hp": 112, "atk": 252, "spd": 4, "spe": 140 },
+      "moves": ["Pursuit", "Sucker Punch", "Knock Off", "Iron Head"]
+    },
+    {
+      "species": "Tangrowth",
+      "item": "Eject Button",
+      "ability": "Regenerator",
+      "nature": "Relaxed",
+      "evs": { "hp": 252, "def": 252, "spd": 4 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Sleep Powder", "Giga Drain", "Knock Off", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 252, "spd": 136, "spe": 120 },
+      "moves": ["Earthquake", "Iron Head", "Rapid Spin", "Stealth Rock"]
+    }
+  ]
+}

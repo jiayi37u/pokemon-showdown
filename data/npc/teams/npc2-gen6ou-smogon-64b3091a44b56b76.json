@@ -1,0 +1,60 @@
+{
+  "name": "Mega Manectric + CB Azumarill",
+  "formats": ["gen6ou"],
+  "pokemon": [
+    {
+      "species": "Manectric",
+      "item": "Manectite",
+      "ability": "Lightning Rod",
+      "nature": "Timid",
+      "evs": { "def": 4, "spa": 252, "spe": 252 },
+      "ivs": { "atk": 0, "def": 30 },
+      "moves": ["Volt Switch", "Thunderbolt", "Overheat", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "name": "Tornadus",
+      "species": "Tornadus-Therian",
+      "item": "Assault Vest",
+      "ability": "Regenerator",
+      "gender": "M",
+      "nature": "Timid",
+      "evs": { "hp": 248, "spd": 52, "spe": 208 },
+      "moves": ["U-turn", "Knock Off", "Hurricane", "Heat Wave"]
+    },
+    {
+      "species": "Azumarill",
+      "item": "Choice Band",
+      "ability": "Huge Power",
+      "nature": "Adamant",
+      "evs": { "hp": 172, "atk": 252, "spe": 84 },
+      "moves": ["Play Rough", "Waterfall", "Aqua Jet", "Superpower"]
+    },
+    {
+      "species": "Tangrowth",
+      "item": "Rocky Helmet",
+      "ability": "Regenerator",
+      "nature": "Relaxed",
+      "evs": { "hp": 248, "def": 216, "spd": 44 },
+      "ivs": { "atk": 30, "def": 30 },
+      "moves": ["Sleep Powder", "Giga Drain", "Brick Break", "Hidden Power Ice"],
+      "hpType": "Ice"
+    },
+    {
+      "species": "Garchomp",
+      "item": "Leftovers",
+      "ability": "Rough Skin",
+      "nature": "Careful",
+      "evs": { "hp": 252, "def": 4, "spd": 252 },
+      "moves": ["Stealth Rock", "Toxic", "Earthquake", "Dragon Tail"]
+    },
+    {
+      "species": "Excadrill",
+      "item": "Leftovers",
+      "ability": "Mold Breaker",
+      "nature": "Jolly",
+      "evs": { "hp": 4, "def": 68, "spd": 184, "spe": 252 },
+      "moves": ["Rapid Spin", "Earthquake", "Iron Head", "Protect"]
+    }
+  ]
+}

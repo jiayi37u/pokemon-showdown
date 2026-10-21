@@ -15,6 +15,7 @@ import type { FieldConditions } from '../types';
 import { Dex, toID } from '../../../../../sim/dex';
 import { abilityStatModifier, effectiveAbility, formeAbility, hasNeutralizingGas, normalizeWeather } from './mechanics';
 import { defaultBoosts, type AIPokemon } from '../types';
+import { BattleEvidenceTracker } from './battle-evidence';
 
 /** Only facts available in our request; never store inferred models or scoring state here. */
 type RequestPokemonFacts = Pick<AIPokemon, 'species' | 'types' | 'baseStats' | 'ability' | 'moves' | 'item'>;
@@ -147,6 +148,8 @@ interface EntryObservations {
  * ```
  */
 export class BattleTracker {
+	private opponentPreview: { side: string, details: string }[] = [];
+	readonly evidence = new BattleEvidenceTracker();
 	/** Which player we are (p1 or p2) */
 	private readonly ourSide: 'p1' | 'p2';
 
@@ -356,6 +359,7 @@ export class BattleTracker {
 			this.skipPrivateLine = true;
 			return;
 		}
+		this.evidence.observe(parts);
 		this.handleAbilityEvent(parts);
 		this.recordAttackHit(parts);
 		if (this.currentAttack?.stellarType &&
@@ -373,6 +377,12 @@ export class BattleTracker {
 		if (entry && ['-status', '-curestatus'].includes(parts[0])) entry.toxicTicks = 0;
 
 		switch (command) {
+		case 'clearpoke':
+			this.opponentPreview = [];
+			break;
+		case 'poke':
+			if (!this.isOurTeamSide(parts[1])) this.opponentPreview.push({ side: parts[1], details: parts[2] });
+			break;
 		case 'teamsize':
 			this.teamSizes.set(parts[1], Number(parts[2]));
 			break;
@@ -429,8 +439,9 @@ export class BattleTracker {
 		case '-heal':
 			this.handleHPChange(parts);
 			const item = parts.find(p => p.startsWith('[from] item: '));
-			if (item && !parts.some(p => p.startsWith('[of]'))) {
-				this.handleItem(['-item', parts[1], item.slice('[from] item: '.length)], true);
+			if (item) {
+				const holder = parts.find(p => p.startsWith('[of] '))?.slice('[of] '.length) || parts[1];
+				this.handleItem(['-item', holder, item.slice('[from] item: '.length)], true);
 			}
 			break;
 		case '-block':
@@ -1678,6 +1689,25 @@ export class BattleTracker {
 		return Array.from(this.opponentTeam.values());
 	}
 
+	/** Preview-only members stay separate from observed identities, including fainted members. */
+	getUnseenOpponentPreview(): TrackedPokemon[] {
+		const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
+		const seen = new Map<string, number>();
+		for (const mon of this.getOpponentTeam()) {
+			const key = `${(mon.ident || mon.position).slice(0, 2)}:${dex.species.get(mon.species).baseSpecies}`;
+			seen.set(key, (seen.get(key) || 0) + 1);
+		}
+		return this.opponentPreview.flatMap(({ side, details }) => {
+			const species = dex.species.get(details.split(',')[0]);
+			if (!species.exists) return [];
+			const key = `${side}:${species.baseSpecies}`;
+			if (seen.get(key)) { seen.set(key, seen.get(key)! - 1); return []; }
+			return [{ species: species.name, types: species.types, level: Number(/, L(\d+)/.exec(details)?.[1] || 100),
+				ability: '', item: '', itemLost: false, hpPercent: 100, status: '', knownMoves: [], lastMove: '',
+				active: false, position: side, boosts: { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0 } }];
+		});
+	}
+
 	/**
 	 * Get opponent's last used move (for singles)
 	 * Used by Encore/Disable evaluation in CFRU
@@ -2105,7 +2135,7 @@ export class BattleTracker {
 	}
 
 	getUsedMoves(position: string): string[] {
-		return [...(this.entries.get(position)?.moves || [])].map(toID);
+		return [...(this.getIdentityEntry(position)?.moves || [])].map(toID);
 	}
 
 	getTerastallized(pokemon: string): string | undefined {
@@ -2206,6 +2236,8 @@ export class BattleTracker {
 
 	/** Reset tracker state for a new battle. */
 	reset(): void {
+		this.opponentPreview = [];
+		this.evidence.reset();
 		this.turn = 0;
 		this.acted.clear();
 		this.slotEffects.clear();

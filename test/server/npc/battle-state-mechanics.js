@@ -923,7 +923,7 @@ describe('Shared public state pipeline across game types', () => {
 					const models = [{ name: 'test', pokemon: { ...foe, moveKnowledge: undefined }, weight: 1,
 						moves: ['tackle', 'watergun'].map(id => ({ id, availability: 1 })) }];
 					const actions = predictOpponent(state, foe, state.self.active[0], 'gen9customgame',
-						(s, user, moves) => moves.map(move => ({ move, score: 100 })), models);
+						(s, user, moves) => moves.map(move => ({ move, score: 100, flags: {} })), models);
 					assert.equal(actions.some(a => a.move?.id === 'watergun'), room);
 					assert.equal(!!game.battle.p1.activeRequest.active[0].moves[1].disabled, !room);
 				}

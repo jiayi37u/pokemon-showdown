@@ -928,6 +928,19 @@ export function calculateDamage(
 		const defenderMaxHp = defender.maxHp || Math.floor(defender.hp / Math.max(defender.hpPercent, 1) * 100);
 		const currentHp = Math.floor(defenderMaxHp * defender.hpPercent / 100);
 		const avg = Math.floor((fixed.min + fixed.max) / 2);
+		let hitsToKO = avg > 0 ? Math.ceil(currentHp / avg) : Infinity;
+		if (['superfang', 'naturesmadness', 'ruination'].includes(move.id)) {
+			// Each hit uses the remaining HP, not the first hit's damage.
+			let remaining = currentHp;
+			hitsToKO = 0;
+			while (remaining > 0) {
+				remaining -= Math.max(1, Math.floor(remaining / 2));
+				hitsToKO++;
+			}
+		} else if (['endeavor', 'guardianofalola', 'finalgambit'].includes(move.id) && avg < currentHp) {
+			// Endeavor stops at our HP; Z-Moves and self-sacrifice cannot be repeated.
+			hitsToKO = Infinity;
+		}
 		const result: DamageResult = {
 			min: fixed.min,
 			max: fixed.max,
@@ -938,7 +951,7 @@ export function calculateDamage(
 			effectiveness: 1, // Immunities were checked above; fixed damage ignores resistance and weakness.
 			canKO: fixed.max >= currentHp,
 			guaranteedKO: fixed.min >= currentHp,
-			hitsToKO: avg > 0 ? Math.ceil(currentHp / avg) : Infinity,
+			hitsToKO,
 		};
 		if (cache) cache.damageCalc.set(cacheKey, result);
 		return result;

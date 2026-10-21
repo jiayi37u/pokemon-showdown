@@ -5,14 +5,20 @@
  */
 import { FS } from '../../../../lib';
 import { Dex, toID } from '../../../../sim/dex';
-import type { AIPokemon, AIMove, BattleState, MoveScore, OpponentModel as OpponentHypothesis } from '../cfru/types';
+import {
+	DISCOURAGED_SCORE, type AIPokemon, type AIMove, type BattleState, type MoveScore,
+	type OpponentModel as OpponentHypothesis,
+} from '../cfru/types';
 export type { OpponentModel as OpponentHypothesis } from '../cfru/types';
+import { calculateDamage } from '../cfru/util/damage-calc';
+import { compareActionOrder } from '../cfru/util/speed';
 import { effectiveItem, replaceActivePokemon } from '../cfru/util/mechanics';
 import { inferRandomBattle } from '../cfru/util/random-presets';
-import { canRestoreUserHp } from '../cfru/util/move-effects';
+import { canRestoreUserHp, mustSkipMove } from '../cfru/util/move-effects';
 import { buildAIMove } from '../cfru/state-builder';
 import {
-	computeStatsFromPreset, getOpponentPreset, getOpponentMoveKnowledge, canHaveOpponentMoves, compatibleMoveSlots,
+	computeStatsFromPreset, getOpponentPreset, getOpponentMoveKnowledge,
+	canHaveOpponentMoves, compatibleMoveSlots, presetSpeciesId,
 } from '../cfru/util/opponent-presets';
 
 export type FightingStyle = 'attacker' | 'setup' | 'stall' | 'hazards' | 'screens' | 'cleric' | 'phazer' |
@@ -69,7 +75,9 @@ interface StrategySet {
 	ivs?: Partial<AIPokemon['baseStats']>[];
 }
 
-const strategyFormats: Record<string, string> = { gen7ou: 'gen7ou', gen7customgame: 'gen7ou' };
+const strategyFormats: Record<string, string> = {
+	gen6ou: 'gen6ou', gen6customgame: 'gen6ou', gen7ou: 'gen7ou', gen7customgame: 'gen7ou',
+};
 const strategies = new Map<string, Record<string, StrategySet[]>>();
 function strategyData(formatId: string): Record<string, StrategySet[]> {
 	const source = strategyFormats[toID(formatId)];
@@ -100,7 +108,7 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	const revealed: string[] = [...new Set(opponent.moves.map(toID))];
 	const data = strategyData(formatId);
 	// Forme identity comes from public protocol, never from a guessed Mega Stone.
-	const sets = data[species.id] || [];
+	const sets = data[species.id] || data[presetSpeciesId(opponent.species, formatId)] || [];
 	const hypotheses: OpponentHypothesis[] = [];
 	for (const set of sets) {
 		if (!compatibleSlots(set.moves, revealed)) continue;
@@ -178,8 +186,93 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	}];
 }
 
+/**
+ * Open formats can contain sets absent from the catalogue. Generate complete, legal stat profiles
+ * around the existing move priors; evidence.ts decides which of these explanations remain plausible.
+ * This does not add moves to observations or allow a random-battle set outside its published pool.
+ */
+export function* alternativeOpponentModels(
+	opponent: AIPokemon, models: OpponentHypothesis[], formatId: string
+): Generator<OpponentHypothesis> {
+	if (opponent.presetModels || formatId.includes('randombattle')) return;
+	const dex = Dex.forFormat(formatId);
+	const species = dex.species.get(opponent.species);
+	if (!species.exists || dex.gen < 3) return;
+	const preset = getOpponentPreset(opponent.species, formatId);
+	const sets = strategyData(formatId)[presetSpeciesId(opponent.species, formatId)] || [];
+	// Public item identity, including a consumed item, constrains the original configuration.
+	const fixedItem = toID(opponent.originalItem || (opponent.itemKnown ? opponent.item : ''));
+	const items = fixedItem || opponent.itemKnown || opponent.itemLost ? [fixedItem] : [...new Set([
+		...models.map(m => toID(m.pokemon.item)), ...sets.flatMap(s => s.items), toID(preset?.item),
+		'choiceband', 'choicespecs', 'choicescarf', 'lifeorb', 'leftovers', 'assaultvest', 'eviolite',
+	])];
+	const abilities = opponent.observedAbility ? [toID(opponent.observedAbility)] :
+		[...new Set(Object.values(species.abilities).map(toID))].filter(id => dex.abilities.get(id).gen <= dex.gen);
+	const seen = new Set<string>();
+	for (const model of models) {
+		// Each profile spends at most 508 EVs. Never combine max attack, defenses and speed independently.
+		const profiles: { name: string, stats: AIPokemon['baseStats'], prior: number }[] = [
+			{ name: 'prior spread', stats: model.pokemon.baseStats, prior: 4 },
+		];
+		const add = (name: string, nature: string, evs: Partial<AIPokemon['baseStats']>,
+			ivs?: Partial<AIPokemon['baseStats']>) => profiles.push({ name,
+			stats: computeStatsFromPreset(species.baseStats, opponent.level, { nature, evs, ivs }), prior: 1 });
+		if (preset?.evs) add('default spread', preset.nature || 'Hardy', preset.evs, preset.ivs);
+		for (const set of sets) for (const nature of set.natures) for (const evs of set.evs) {
+			for (const ivs of set.ivs || [{}]) add(`${set.name} spread`, dex.natures.get(nature).name, evs, ivs);
+		}
+		const categories = new Set(model.moves.map(m => dex.moves.get(m.id).category));
+		const physical = categories.has('Physical'), special = categories.has('Special');
+		if (physical) {
+			add('fast physical', 'Jolly', { atk: 252, spe: 252, spd: 4 });
+			add('strong physical', 'Adamant', { atk: 252, spe: 252, spd: 4 });
+			add('bulky physical', 'Adamant', { hp: 252, atk: 252, spd: 4 });
+		}
+		if (special) {
+			add('fast special', 'Timid', { spa: 252, spe: 252, spd: 4 });
+			add('strong special', 'Modest', { spa: 252, spe: 252, spd: 4 });
+			add('bulky special', 'Modest', { hp: 252, spa: 252, spd: 4 });
+		}
+		add('physical wall', physical ? 'Impish' : 'Bold', { hp: 252, def: 252, spd: 4 });
+		add('special wall', physical ? 'Careful' : 'Calm', { hp: 252, spd: 252, def: 4 });
+		if (physical && special) add('mixed attacker', 'Naive', { atk: 128, spa: 128, spe: 252 });
+		const uniqueProfiles = profiles.filter((profile, i) => profiles.findIndex(p =>
+			JSON.stringify(p.stats) === JSON.stringify(profile.stats)) === i);
+		for (const item of items) {
+			const data = dex.items.get(item);
+			if (item && (!data.exists || data.gen > dex.gen)) continue;
+			if (item === 'eviolite' && !species.nfe) continue;
+			const exchangesItem = model.moves.some(m => ['trick', 'switcheroo'].includes(m.id));
+			if (!fixedItem && !exchangesItem &&
+				(item === 'choiceband' && !physical || item === 'choicespecs' && !special)) continue;
+			if (species.requiredItems?.length && !species.requiredItems.some(id => toID(id) === item)) continue;
+			if (species.isMega && data.megaStone?.[species.baseSpecies] !== species.name) continue;
+			// An actual Mega stone cannot coexist with an invented Choice item before Mega evolution either.
+			if (data.megaStone && !data.megaStone[species.baseSpecies]) continue;
+			const moves = model.moves.filter(m => item !== 'assaultvest' || dex.moves.get(m.id).category !== 'Status');
+			if (item === 'assaultvest' && opponent.moves.some(id => dex.moves.get(id).category === 'Status')) continue;
+			for (const ability of abilities) for (const profile of uniqueProfiles) {
+				const key = JSON.stringify([item, ability, profile.stats, moves, model.pokemon.moveKnowledge]);
+				if (seen.has(key)) continue;
+				seen.add(key);
+				const stats = profile.stats;
+				yield { ...model, name: `inferred ${data.name || 'no item'}, ${profile.name}, ${ability}`,
+					matched: false, weight: model.weight * profile.prior, moves,
+					pokemon: { ...model.pokemon, baseStats: stats, maxHp: stats.hp,
+						hp: Math.max(opponent.fainted ? 0 : 1, Math.floor(stats.hp * opponent.hpPercent / 100)),
+						item: opponent.itemLost ? '' : item, itemAssumed: true,
+						ability: opponent.abilityChanged ? opponent.ability : ability,
+					},
+				};
+			}
+		}
+	}
+}
+
 export interface PredictedAction {
 	move: AIMove | null;
+	/** The selected action can call a different move (for example, Sleep Talk). */
+	selectedMove?: AIMove;
 	/** Heuristic weights, not measured player frequencies. */
 	weight: number;
 	switching: boolean;
@@ -191,7 +284,7 @@ export interface PredictedAction {
 export function predictOpponent(
 	state: BattleState, opponent: AIPokemon, target: AIPokemon, formatId: string,
 	score: (state: BattleState, actor: AIPokemon, moves: AIMove[], target: AIPokemon) => MoveScore[],
-	hypotheses = inferOpponent(opponent, formatId)
+	hypotheses = inferOpponent(opponent, formatId), switchConfidence = 0.6
 ): PredictedAction[] {
 	const dex = formatId ? Dex.forFormat(formatId) : Dex;
 	const actions: PredictedAction[] = [];
@@ -202,11 +295,15 @@ export function predictOpponent(
 			dex.moves.get(m.id).isNonstandard !== 'Future' &&
 			(!user.moveKnowledge || canHaveOpponentMoves(user.moveKnowledge, [m.id])));
 		if (user.lastMove && ['choiceband', 'choicespecs', 'choicescarf'].includes(effectiveItem(user, projected.field))) {
-			candidates = candidates.filter(m => toID(m.id) === toID(user.lastMove));
+			candidates = candidates.filter(m => toID(m.id) === toID(user.lastMove) ||
+				toID(user.lastMove) === 'hiddenpower' && m.id.startsWith('hiddenpower'));
 		}
 		if (user.lastMove) candidates = candidates.filter(m => m.id !== 'fakeout');
 		if (user.volatiles.has('taunt')) candidates = candidates.filter(m => dex.moves.get(m.id).category !== 'Status');
-		if (!candidates.length) {
+		if (user.status === 'slp' && (user.sleepTurns || 0) > 1) {
+			candidates = candidates.filter(m => dex.moves.get(m.id).sleepUsable);
+		}
+		if (!candidates.length || mustSkipMove(user, candidates.map(m => m.id), projected.field)) {
 			actions.push({ move: null, weight: hypothesis.weight, switching: false, user, preset: hypothesis.name });
 			continue;
 		}
@@ -216,15 +313,35 @@ export function predictOpponent(
 			const known = user.moveKnowledge?.revealedMoves || user.moves.map(toID);
 			const conditional = { ...user, moves: [...new Set([...known, candidate.id])].filter(id =>
 				!(id === 'hiddenpower' && candidate.id !== 'hiddenpower' && candidate.id.startsWith('hiddenpower'))) };
-			const projected = replaceActivePokemon(state, opponent, conditional);
-			return score({ ...projected, self: projected.opponent, opponent: projected.self }, conditional,
+			const conditionalState = replaceActivePokemon(state, opponent, conditional);
+			return score({ ...conditionalState, self: conditionalState.opponent, opponent: conditionalState.self }, conditional,
 				[hardMove(candidate.id, 1, formatId)], target)[0];
 		});
 		const best = Math.max(...scores.map(m => m.score));
 		// CFRU's all-bad-moves switch prediction is evidence, never certainty.
-		const canSwitch = (state.opponent.remaining || 0) > state.opponent.active.filter(p => !p.fainted).length ||
-			state.opponent.reserve.some(p => !p.fainted);
-		const switchWeight = best < 100 && canSwitch ? 0.6 : 0;
+		const owner = user.ownerSide;
+		const remaining = owner && state.opponent.remainingByOwner ?
+			state.opponent.remainingByOwner[owner] : state.opponent.remaining;
+		const ownParty = (p: AIPokemon) => !p.fainted && (!owner || p.ownerSide === owner);
+		const canSwitch = (remaining || 0) > state.opponent.active.filter(ownParty).length ||
+			state.opponent.reserve.some(ownParty);
+		const attacks = target.moves.map((id, i) => hardMove(id, i + 1, formatId)).filter(m => m.category !== 'Status');
+		const userCanFinish = scores.some(s => s.flags.canKO && !s.flags.hasNoEffect && attacks.every(attack =>
+			compareActionOrder(user, target, s.move, [attack], projected.field,
+				projected.opponent.conditions, projected.self.conditions) > 0));
+		const threatened = !userCanFinish && attacks.some(attack => {
+			const damage = calculateDamage(target, user, attack, projected.field, undefined, {
+				isDoubles: projected.isDoubles, numAliveTargets: projected.opponent.active.filter(p => !p.fainted).length,
+				attackerSideConditions: projected.self.conditions, defenderSideConditions: projected.opponent.conditions,
+				activePokemon: [...projected.self.active, ...projected.opponent.active], defenderAllies: projected.opponent.active,
+			});
+			return damage.average >= user.hp && scores.some(s => s.score >= best - 5 &&
+				compareActionOrder(target, user, attack, [s.move], projected.field,
+					projected.self.conditions, projected.opponent.conditions) > 0);
+		});
+		// Slightly weak moves are weaker evidence than no useful action or an imminent first-strike KO.
+		const retreatSignal = threatened ? 1 : Math.max(0, Math.min(1, (100 - best) / (100 - DISCOURAGED_SCORE)));
+		const switchWeight = canSwitch && !user.volatiles.has('trapped') ? switchConfidence * retreatSignal : 0;
 		if (switchWeight) actions.push({ move: null, weight: hypothesis.weight * switchWeight,
 			switching: true, user, preset: hypothesis.name });
 		const weighted = scores.map((result, i) => ({ result,
@@ -232,8 +349,24 @@ export function predictOpponent(
 		}));
 		const total = weighted.reduce((sum, a) => sum + a.weight, 0);
 		for (const { result, weight } of weighted) {
-			actions.push({ move: result.move, weight: hypothesis.weight * (1 - switchWeight) * weight / total,
-				switching: false, user, preset: hypothesis.name });
+			const probability = hypothesis.weight * (1 - switchWeight) * weight / total;
+			if (result.move.id === 'sleeptalk' && !result.flags.hasNoEffect) {
+				const called = hypothesis.moves.filter(candidate => {
+					const move = dex.moves.get(candidate.id);
+					return move.exists && !move.flags.nosleeptalk && !move.flags.charge && !move.isZ && !move.isMax &&
+						(!user.moveKnowledge || canHaveOpponentMoves(user.moveKnowledge, ['sleeptalk', candidate.id]));
+				});
+				const available = called.reduce((sum, candidate) => sum + candidate.availability, 0);
+				if (available) {
+					for (const candidate of called) actions.push({
+						move: hardMove(candidate.id, 1, formatId), selectedMove: result.move,
+						weight: probability * candidate.availability / available,
+						switching: false, user, preset: hypothesis.name,
+					});
+					continue;
+				}
+			}
+			actions.push({ move: result.move, weight: probability, switching: false, user, preset: hypothesis.name });
 		}
 	}
 	return actions;

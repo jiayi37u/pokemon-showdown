@@ -743,12 +743,13 @@ describe('NPC public mechanics and utility regressions from random battles', () 
 	});
 
 	it('Substitute is discouraged when its HP cost makes residual damage lethal, but immunity/recovery can save it', () => {
+		const target = pokemon({ moves: ['splash'], moveKnowledge: { revealedMoves: ['splash'], presetCandidates: [], remainingSlots: 0 } });
 		const actor = pokemon({ hp: 85, maxHp: 272, hpPercent: 85 / 272 * 100, status: 'psn', item: 'Leftovers' });
-		assert.equal(score('substitute', { actor }).score, 60);
-		assert(score('substitute', { actor: { ...actor, ability: 'Magic Guard' } }).score > 60);
-		assert(score('substitute', { actor: { ...actor, ability: 'Poison Heal' } }).score > 60);
-		assert(score('substitute', { actor, field: { terrain: 'grassy' } }).score > 60);
-		assert.equal(score('substitute', { actor: { ...actor, hp: 68, hpPercent: 25 } }).score, 0);
+		assert.equal(score('substitute', { target, actor }).score, 60);
+		assert(score('substitute', { target, actor: { ...actor, ability: 'Magic Guard' } }).score > 60);
+		assert(score('substitute', { target, actor: { ...actor, ability: 'Poison Heal' } }).score > 60);
+		assert(score('substitute', { target, actor, field: { terrain: 'grassy' } }).score > 60);
+		assert.equal(score('substitute', { target, actor: { ...actor, hp: 68, hpPercent: 25 } }).score, 0);
 	});
 
 	it('hazards are discouraged only with publicly confirmed absence of replacements, including Multi', () => {

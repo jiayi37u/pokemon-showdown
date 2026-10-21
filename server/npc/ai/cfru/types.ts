@@ -62,6 +62,8 @@ export interface OpponentModel {
 
 /** Simplified Pokemon data for AI evaluation */
 export interface AIPokemon {
+	/** Public identity, stable across field positions and switches. */
+	ident?: string;
 	/** Public owner and sleep source; Multi clauses apply to each player's party. */
 	ownerSide?: string;
 	sleepSelfInflicted?: boolean;
@@ -155,6 +157,10 @@ export interface AIPokemon {
 		spd: number;
 		spe: number;
 	};
+
+	/** Gen 6 Mega projections retain the speed used when this turn's order was queued. */
+	queuedSpeed?: number;
+	queuedPriorityAbility?: string;
 
 	/** Stat boosts (-6 to +6) */
 	boosts: {
@@ -267,6 +273,8 @@ export interface FieldConditions {
 
 /** Complete battle state for AI evaluation */
 export interface BattleState {
+	/** Historical public observations; only Hard uses them to refine hidden configurations. */
+	opponentEvidence?: readonly import('./util/battle-evidence').BattleEvidence[];
 	/** Current turn number */
 	turn: number;
 
@@ -275,6 +283,8 @@ export interface BattleState {
 
 	/** AI's side (self) */
 	self: {
+		/** Publicly used Mega evolution per trainer, including a Mega that has already fainted. */
+		megaUsedByOwner?: Record<string, boolean>,
 		/** Active Pokemon (1 for singles, 2 for doubles) */
 		active: AIPokemon[];
 		/** Reserve Pokemon */
@@ -287,6 +297,7 @@ export interface BattleState {
 
 	/** Opponent's side */
 	opponent: {
+		megaUsedByOwner?: Record<string, boolean>,
 		/** Public team size minus observed fainted members. */
 		remaining?: number;
 		remainingByOwner?: Record<string, number | undefined>,
@@ -294,6 +305,8 @@ export interface BattleState {
 		active: AIPokemon[];
 		/** Previously observed opposing party members. */
 		reserve: AIPokemon[];
+		/** Species/level from public team preview, not yet associated with an observed identity. */
+		preview?: AIPokemon[];
 		/** All Pokemon */
 		team: AIPokemon[];
 		/** Side conditions */
@@ -462,6 +475,9 @@ export interface MoveScoreFlags {
 
 	/** Move is super effective */
 	isSuperEffective: boolean;
+
+	/** Legal but lacks a useful tactical opportunity; advanced rewards must respect this limit. */
+	discouraged?: boolean;
 
 	/** Move has no effect (other than immunity) */
 	hasNoEffect: boolean;

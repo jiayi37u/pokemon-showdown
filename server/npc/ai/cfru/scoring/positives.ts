@@ -19,10 +19,11 @@ import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../uti
 import { actsBeforeTarget, attacksFirst, compareSpeedOrder } from '../util/speed';
 import {
 	recoveryRecipients, recoveryCuresStatus, secondaryEffectFailure, statusFailure, canRestoreUserHp, recoveryKind,
+	protectsPendingWish,
 } from '../util/move-effects';
 import { getTypeEffectiveness, resolveMove } from '../util/type-calc';
 import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
-import { getHazeBenefit, painSplitValue } from './negatives';
+import { getHazeBenefit, painSplitValue, spinClearingBenefit } from './negatives';
 
 /** Ordinary speed order, independent of either move's priority bracket. */
 function speedOrder(ctx: ScoringContext): number {
@@ -813,6 +814,14 @@ export const rewardDefensiveSetup: PositiveScoringFunction = (ctx) => {
 // =============================================================================
 // Entry Hazard Rewards
 // =============================================================================
+
+export const rewardSpinClearing: PositiveScoringFunction = ctx => {
+	const amount = spinClearingBenefit(ctx);
+	if (amount) ctx.adjustments.push({
+		reason: 'Spin removes harmful hazards or trapping effects', amount, category: 'positive',
+	});
+	return amount;
+};
 
 /**
  * Reward entry hazards
@@ -2022,6 +2031,13 @@ export const rewardHaze: PositiveScoringFunction = ctx => {
 // Export all positive scorers
 // =============================================================================
 
+export const rewardWishProtection: PositiveScoringFunction = ctx => {
+	if (!protectsPendingWish(ctx.state, ctx.attacker, ctx.move)) return 0;
+	const amount = Math.min(40, Math.floor((100 - ctx.attacker.hpPercent) * 0.8));
+	if (amount) ctx.adjustments.push({ reason: 'Protect to receive pending Wish', amount, category: 'positive' });
+	return amount;
+};
+
 export const allPositiveScorers: PositiveScoringFunction[] = [
 	// Damage moves
 	rewardKnockout,
@@ -2042,6 +2058,7 @@ export const allPositiveScorers: PositiveScoringFunction[] = [
 	rewardDefensiveSetup,
 
 	// Entry hazards
+	rewardSpinClearing,
 	rewardHazards,
 
 	// Utility moves
@@ -2049,6 +2066,7 @@ export const allPositiveScorers: PositiveScoringFunction[] = [
 	rewardDrainMove,
 	rewardPivotMove,
 	rewardHealing,
+	rewardWishProtection,
 	rewardPainSplit,
 	rewardScreens,
 	rewardTrickRoom,

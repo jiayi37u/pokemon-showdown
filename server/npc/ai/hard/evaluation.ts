@@ -5,18 +5,28 @@
  * This is a bounded heuristic evaluator, not a simulator or an exhaustive CFRU port.
  */
 import { Dex, toID } from '../../../../sim/dex';
-import { DEFAULT_AI_CONFIG, type AIPokemon, type AIMove, type BattleState, type MoveScore } from '../cfru/types';
+import { refineOpponentModels } from './evidence';
+import {
+	DEFAULT_AI_CONFIG, DISCOURAGED_SCORE, type AIPokemon, type AIMove, type BattleState, type MoveScore,
+} from '../cfru/types';
 import { ScoringEngine, allNegativeScorers, allPositiveScorers } from '../cfru/scoring';
 import {
 	rewardSetupMove, rewardDefensiveSetup, rewardHealing, rewardTaunt, rewardPivotMove, rewardScreens,
+	rewardWishProtection,
 } from '../cfru/scoring/positives';
+import { checkRecoverySurvival } from '../cfru/scoring/negatives';
 import { createCache } from '../cfru/util/cache';
-import { calculateDamage, getSecondaryEffectDamage } from '../cfru/util/damage-calc';
+import { calculateDamage, getSecondaryEffectDamage, getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { resolveMove } from '../cfru/util/type-calc';
-import { recoveryKind } from '../cfru/util/move-effects';
+import {
+	protectionMoves, protectsPendingWish, recoveryCuresStatus, estimatedMoveAccuracy,
+} from '../cfru/util/move-effects';
+import {
+	directRecoveryAmount, selfActionOutcome, needsResidualReset, entryHazardDamage, flinchesOnHit,
+} from '../cfru/util/turn-outcome';
 import { compareActionOrder } from '../cfru/util/speed';
 import {
-	effectiveAbility, effectiveItem, grounded, replaceActivePokemon,
+	effectiveAbility, effectiveItem, replaceActivePokemon,
 } from '../cfru/util/mechanics';
 import {
 	fightingStyle, hardMove, inferOpponent, predictOpponent, type OpponentHypothesis, type PredictedAction,
@@ -24,16 +34,22 @@ import {
 
 const replacedRewards = new Set([
 	rewardSetupMove, rewardDefensiveSetup, rewardHealing, rewardTaunt, rewardPivotMove, rewardScreens,
-]);
-const protectionMoves = new Set([
-	'protect', 'detect', 'kingsshield', 'spikyshield', 'banefulbunker', 'silktrap', 'burningbulwark',
+	rewardWishProtection,
 ]);
 
 export interface SwitchEvaluation {
 	pokemon: AIPokemon;
 	score: number;
 	safe: boolean;
+	hasFollowUp?: boolean;
 	reasons: string[];
+}
+
+interface ReplacementHypothesis {
+	pokemon: AIPokemon;
+	weight: number;
+	prior: number;
+	threat: number;
 }
 
 export class HardEvaluation {
@@ -41,13 +57,15 @@ export class HardEvaluation {
 	readonly state: BattleState;
 	readonly formatId: string;
 	private models = new Map<AIPokemon, OpponentHypothesis[]>();
+	readonly inferenceNotes = new Map<AIPokemon, string[]>();
 	private opposing = new Set<AIPokemon>();
 	constructor(state: BattleState, formatId: string) {
 		this.state = { ...state, field: { ...state.field, formatId } };
 		this.formatId = formatId;
 		this.dex = formatId ? Dex.forFormat(formatId) : Dex;
-		for (const foe of state.opponent.team) {
-			const models = inferOpponent(foe, formatId);
+		for (const foe of [...state.opponent.team, ...(state.opponent.preview || [])]) {
+			const { models, notes } = refineOpponentModels(foe, inferOpponent(foe, formatId), state.opponentEvidence);
+			this.inferenceNotes.set(foe, notes);
 			this.models.set(foe, models);
 			this.opposing.add(foe);
 			for (const model of models) this.opposing.add(model.pokemon);
@@ -77,15 +95,21 @@ export class HardEvaluation {
 		// Each perspective/target gets its own cache; slot numbers overlap between sides.
 		const config = { ...DEFAULT_AI_CONFIG, formatId: this.formatId, isDoubles: state.isDoubles };
 		const engine = new ScoringEngine(config, createCache(state.turn));
-		if (!prediction) engine.setScorers(allNegativeScorers, allPositiveScorers.filter(fn => !replacedRewards.has(fn)));
+		if (!prediction) engine.setScorers(allNegativeScorers.filter(fn => fn !== checkRecoverySurvival),
+			allPositiveScorers.filter(fn => !replacedRewards.has(fn)));
 		return engine.scoreMoves(state, actor, moves, target);
 	}
 
 	predictions(actor: AIPokemon): Map<AIPokemon, PredictedAction[]> {
 		return new Map(this.state.opponent.active.filter(p => !p.fainted).map(foe => [foe,
-			predictOpponent(this.state, foe, actor, this.formatId, (state, attacker, moves, target) =>
-				this.baseScores(state, attacker, moves, target, true), this.models.get(foe)),
+			predictOpponent(this.calculationState(actor), foe, actor, this.formatId, (state, attacker, moves, target) =>
+				this.baseScores(state, attacker, moves, target, true), this.models.get(foe), this.retreatConfidence(actor, foe)),
 		]));
+	}
+
+	/** The same evidence-refined hypotheses feed scoring and disposable search worlds. */
+	opponentModels(pokemon: AIPokemon): readonly OpponentHypothesis[] {
+		return this.models.get(pokemon) || inferOpponent(pokemon, this.formatId);
 	}
 
 	/** Priority and speed order, including speed ties (50%, never a guaranteed first strike). */
@@ -93,6 +117,11 @@ export class HardEvaluation {
 		const state = this.calculationState(actor, foe);
 		return (compareActionOrder(actor, foe, move, [response], state.field,
 			state[this.sideOf(actor)].conditions, state[this.sideOf(foe)].conditions) + 1) / 2;
+	}
+
+	private responseFirst(actor: AIPokemon, foe: AIPokemon, move: AIMove, response: PredictedAction): number {
+		const selected = response.selectedMove || response.move;
+		return selected ? this.first(actor, response.user || foe, move, selected) : 1;
 	}
 
 	damage(actor: AIPokemon, target: AIPokemon, move: AIMove, defenderAllies?: readonly AIPokemon[]) {
@@ -142,33 +171,127 @@ export class HardEvaluation {
 
 	/** An upper weighted quantile prevents a likely switch from making a lethal attack look safe. */
 	incomingRisk(
-		actor: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>, defenderAllies?: readonly AIPokemon[]
+		actor: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>, defenderAllies?: readonly AIPokemon[],
+		beforeMove?: AIMove, respectRevealedAttacks = false
 	): number {
 		let risk = 0;
+		let expected = 0;
 		for (const [foe, actions] of predictions) {
 			const outcomes = actions.map(a => ({ weight: a.weight,
-				damage: a.move ? this.damage(a.user || foe, actor, a.move, defenderAllies).max : 0,
+				damage: a.move ? this.damage(a.user || foe, actor, a.move, defenderAllies).max *
+				(beforeMove && this.responseFirst(actor, foe, beforeMove, a) === 1 ? 0 : 1) : 0,
 			})).sort((a, b) => a.damage - b.damage);
+			expected += outcomes.reduce((sum, outcome) => sum + outcome.weight * outcome.damage, 0);
+			if (respectRevealedAttacks) {
+				// Choosing a move is uncertain; an observed lethal option is still an unsafe entry.
+				const revealed = new Set<string>(foe.moves.map(toID));
+				const known = new Map<string, { damage: number, weight: number }>();
+				for (const action of actions) {
+					if (!action.move || action.move.category === 'Status' || !revealed.has(action.move.id)) continue;
+					const value = known.get(action.move.id) || { damage: 0, weight: 0 };
+					value.damage += action.weight * this.damage(action.user || foe, actor, action.move, defenderAllies).average;
+					value.weight += action.weight;
+					known.set(action.move.id, value);
+				}
+				const floor = Math.max(0, ...[...known.values()].filter(v => v.weight > 0).map(v => v.damage / v.weight));
+				for (const outcome of outcomes) outcome.damage = Math.max(outcome.damage, floor);
+			}
 			let cumulative = 0;
 			for (const outcome of outcomes) {
 				cumulative += outcome.weight;
 				if (cumulative >= 0.85) { risk += outcome.damage; break; }
 			}
 		}
-		return Math.max(risk, this.incoming(actor, predictions, defenderAllies));
+		return Math.max(risk, beforeMove ? expected : this.incoming(actor, predictions, defenderAllies));
+	}
+
+	/** Expected progress uses each response's configuration, and never spends damage after fainting. */
+	private attackOutlook(actor: AIPokemon, target: AIPokemon, move: AIMove,
+		predictions: Map<AIPokemon, PredictedAction[]>) {
+		if (move.category === 'Status') return { progress: 0, finish: 0 };
+		const responses = predictions.get(target) || [];
+		let progress = 0, finish = 0, staying = 0;
+		for (const response of responses) {
+			if (response.switching) continue;
+			const foe = response.user || target;
+			const damage = this.damage(actor, foe, move).average;
+			const incoming = response.move ? this.damage(foe, actor, response.move).average : 0;
+			const first = this.responseFirst(actor, target, move, response);
+			const hit = estimatedMoveAccuracy(actor, foe, move, this.state.field) / 100;
+			const canAct = incoming >= actor.hp ? first : 1;
+			progress += response.weight * hit * canAct * Math.min(1, damage / Math.max(1, foe.hp));
+			if (!foe.volatiles.has('substitute') && damage >= foe.hp) finish += response.weight * first * hit;
+			staying += response.weight;
+		}
+		return { progress: staying ? progress / staying : 0, finish: staying ? finish / staying : 0 };
 	}
 
 	private recoveryAmount(actor: AIPokemon, move: AIMove): number {
-		if (recoveryKind(move, this.state.field) !== 'direct') return 0;
-		const data = this.dex.moves.get(move.id);
-		if (data.heal) return actor.maxHp * data.heal[0] / data.heal[1];
-		if (move.id === 'rest') return actor.maxHp;
-		const weather = this.state.field.weather;
-		if (['synthesis', 'moonlight', 'morningsun'].includes(move.id)) {
-			return actor.maxHp * (weather === 'sun' ? 2 / 3 : weather ? 1 / 4 : 1 / 2);
+		return directRecoveryAmount(actor, move, this.state.field);
+	}
+
+	/** Keep lethal branches separate until after evaluating action order and residual damage. */
+	private recoveryOutlook(actor: AIPokemon, move: AIMove, predictions: Map<AIPokemon, PredictedAction[]>) {
+		let branches = [{ weight: 1, before: 0, after: 0 }];
+		for (const [foe, actions] of predictions) {
+			const responses = actions.flatMap(action => {
+				const user = action.user || foe;
+				const damage = action.move ? this.damage(user, actor, action.move).average : 0;
+				const first = this.responseFirst(actor, foe, move, action);
+				return [
+					{ weight: action.weight * first, before: 0, after: damage },
+					{ weight: action.weight * (1 - first), before: damage, after: 0 },
+				].filter(r => r.weight > 0);
+			});
+			if (!responses.length) continue;
+			branches = branches.flatMap(b => responses.map(r => ({
+				weight: b.weight * r.weight, before: b.before + r.before, after: b.after + r.after,
+			})));
 		}
-		if (move.id === 'shoreup') return actor.maxHp * (weather === 'sand' ? 2 / 3 : 1 / 2);
-		return 0;
+		const ability = [...predictions.keys()].some(p => effectiveAbility(p, this.state.field) === 'baddreams') ?
+			'baddreams' : '';
+		let survival = 0, recovered = 0, preventsKO = 0;
+		for (const branch of branches) {
+			const outcome = selfActionOutcome(actor, move, this.state.field, branch.before, branch.after, ability);
+			if (outcome.endHp > 0) survival += branch.weight;
+			if (outcome.acted) recovered += branch.weight * outcome.recovered;
+			if (outcome.endHp > 0 && outcome.recovered > 0 &&
+				selfActionOutcome(actor, hardMove('splash', 1, this.formatId), this.state.field,
+					branch.before, branch.after, ability).endHp <= 0) preventsKO += branch.weight;
+		}
+		return { survival, recovered, preventsKO };
+	}
+
+	/** Public reserves and preview species bound switch predictions; no actual opposing sets are read. */
+	private switchTargets(actor: AIPokemon, outgoing: AIPokemon): ReplacementHypothesis[] {
+		const attacks = actor.moves.map((id, i) => hardMove(id, i + 1, this.formatId)).filter(m => m.category !== 'Status');
+		const targets = [...this.state.opponent.reserve, ...(this.state.opponent.preview || [])]
+			.filter(p => !p.fainted && (!outgoing.ownerSide || p.ownerSide === outgoing.ownerSide))
+			.flatMap(p => (this.models.get(p) || inferOpponent(p, this.formatId)).flatMap(model => {
+				const pokemon = { ...model.pokemon, slot: outgoing.slot };
+				pokemon.hp -= this.entryDamage(pokemon, this.state.opponent.conditions);
+				if (pokemon.hp <= 0) return [];
+				pokemon.hpPercent = 100 * pokemon.hp / pokemon.maxHp;
+				const threat = Math.max(0, ...attacks.map(m => this.damage(actor, pokemon, m).average / pokemon.hp));
+				return [{ pokemon, weight: model.weight / (0.2 + threat), prior: model.weight, threat }];
+			}));
+		const total = targets.reduce((n, p) => n + p.weight, 0);
+		return targets.map(p => ({ ...p, weight: p.weight / total }));
+	}
+
+	/** A bad current matchup is not enough: retreat needs a plausible destination. */
+	private retreatConfidence(actor: AIPokemon, foe: AIPokemon): number {
+		const destinations = new Map<string, { safe: number, total: number }>();
+		for (const candidate of this.switchTargets(actor, foe)) {
+			const p = candidate.pokemon;
+			const key = p.ident || `${p.ownerSide}:${p.species}`;
+			const value = destinations.get(key) || { safe: 0, total: 0 };
+			value.total += candidate.prior;
+			if (candidate.threat < 0.5) value.safe += candidate.prior;
+			destinations.set(key, value);
+		}
+		// Unknown reserves remain possible, but do not justify treating a switch as the likely action.
+		return [...destinations.values()].some(value => value.safe >= value.total / 2) ? 0.6 : 0.2;
 	}
 
 	scoreMoves(
@@ -185,6 +308,7 @@ export class HardEvaluation {
 			result.flags = { ...result.flags,
 				isImmune: groups.every(g => g.scores[i].flags.isImmune),
 				hasNoEffect: groups.every(g => g.scores[i].flags.hasNoEffect),
+				discouraged: groups.every(g => g.scores[i].flags.discouraged),
 			};
 			result.breakdown = { ...result.breakdown, final: result.score,
 				negatives: groups.reduce((n, g) => n + g.weight * g.scores[i].breakdown.negatives, 0),
@@ -193,6 +317,8 @@ export class HardEvaluation {
 			};
 		}
 		const role = fightingStyle(actor, this.formatId);
+		const switchProbability = (predictions.get(target) || []).reduce((n, a) => n + (a.switching ? a.weight : 0), 0);
+		const switchTargets = switchProbability ? this.switchTargets(actor, target) : [];
 		for (const result of scores) {
 			const { move } = result;
 			const data = this.dex.moves.get(move.id);
@@ -201,49 +327,67 @@ export class HardEvaluation {
 				result.breakdown.styleAdjust += amount;
 				result.breakdown.details.push({ amount, reason, category: 'style' });
 			};
-			if (result.flags.hasNoEffect || result.flags.isImmune) {
+			let canHitReplacement = false;
+			if (move.category !== 'Status' && (!this.state.isDoubles ||
+				['normal', 'any', 'adjacentFoe'].includes(move.target)) && switchTargets.length) {
+				const switchedScore = switchTargets.reduce((sum, candidate) => {
+					const state = replaceActivePokemon(this.state, target, candidate.pokemon);
+					const score = this.baseScores(state, actor, [move], candidate.pokemon)[0];
+					if (!score.flags.hasNoEffect && !score.flags.isImmune) canHitReplacement = true;
+					return sum + candidate.weight * score.score;
+				}, 0);
+				add(switchProbability * (switchedScore - result.score),
+					'Predicted switch: evaluate damage against public replacement candidates');
+			}
+			if ((result.flags.hasNoEffect || result.flags.isImmune) && !canHitReplacement) {
 				add(-result.score, 'Move has no effect');
 				result.breakdown.final = result.score;
 				continue;
 			}
+			if (canHitReplacement) result.flags = { ...result.flags, hasNoEffect: false, isImmune: false };
 			const actions = predictions.get(target) || [];
 			const incoming = this.incoming(actor, predictions);
-			const outgoing = this.damage(actor, target, move);
 			const fakeOut = move.id === 'fakeout';
-			const canFlinch = !actor.activeMoveActions && !actor.lastMove &&
-				!['innerfocus', 'shielddust'].includes(effectiveAbility(target, this.state.field)) &&
-				!target.volatiles.has('substitute');
-			let prevented = 0;
+			const canFlinch = flinchesOnHit(actor, target, move, this.state.field);
 			let beforeDamage = 0;
 			for (const [foe, responses] of predictions) {
 				for (const response of responses) {
 					if (!response.move) continue;
 					const damage = this.damage(response.user || foe, actor, response.move).average;
-					const first = this.first(actor, response.user || foe, move, response.move);
+					const first = this.responseFirst(actor, foe, move, response);
 					beforeDamage += response.weight * damage * (1 - first);
-					if (foe === target && !target.volatiles.has('substitute') && (outgoing.min >= target.hp || (fakeOut && canFlinch))) {
-						prevented += response.weight * damage * first * (move.accuracy === true ? 1 : move.accuracy / 100);
-					}
 				}
 			}
 			if (move.category !== 'Status') {
 				if (fakeOut && canFlinch) add(22, 'CFRU Fake Out: free damage on entry');
-				add(-35 * Math.min(1, Math.max(0, incoming - prevented) / Math.max(1, actor.hp)),
-					'Expected damage after accounting for first-strike KO');
+				const outlook = this.attackOutlook(actor, target, move, predictions);
+				const replacementProgress = switchTargets.reduce((sum, candidate) => sum + candidate.weight *
+					Math.min(1, this.damage(actor, candidate.pokemon, move).average / candidate.pokemon.hp), 0);
+				// Unseen reserves in no-preview formats are unknown, not guaranteed damage immunity.
+				const knownSwitchWeight = switchTargets.length ? switchProbability : 0;
+				add(24 * ((1 - knownSwitchWeight) * outlook.progress + knownSwitchWeight * replacementProgress),
+					'Expected damage progress across staying and switching responses');
+				add(20 * (1 - switchProbability) * outlook.finish, 'First-strike finishing opportunity across opponent sets');
 				if (beforeDamage >= actor.hp) add(-65, 'Predicted to faint before attacking');
 				if (data.selfSwitch && this.state.self.reserve.some(p => !p.fainted)) {
 					add(incoming > actor.hp / 2 ? 10 : 3, 'CFRU pivot: deal damage while leaving a bad matchup');
 				}
+			} else if (['healingwish', 'lunardance'].includes(move.id)) {
+				const recipient = this.sacrificeRecipient(actor);
+				const value = recipient && beforeDamage < actor.hp ?
+					60 + recipient.value - 0.6 * actor.hpPercent : 0;
+				add(value - result.score, 'Sacrifice recovery: value a specific recipient against losing the user');
 			} else if (this.recoveryAmount(actor, move)) {
-				const heal = this.recoveryAmount(actor, move);
-				const recovered = Math.min(heal, Math.max(0, actor.maxHp - actor.hp + beforeDamage));
-				if (beforeDamage >= actor.hp || actor.hp + recovered <= incoming) {
-					add(-result.score, 'CFRU ShouldRecover: healing cannot prevent the predicted KO');
+				const outlook = this.recoveryOutlook(actor, move, predictions);
+				const cures = actor.status && (recoveryCuresStatus(move) || move.id === 'rest' && actor.status !== 'slp');
+				if (outlook.survival < 0.85) {
+					add(Math.min(result.score, DISCOURAGED_SCORE * outlook.survival) - result.score,
+						'Recovery is unsafe across predicted actions and residual damage');
+				} else if (outlook.recovered <= 0 && !cures) {
+					add(Math.min(result.score, DISCOURAGED_SCORE) - result.score, 'Recovery has no HP or status benefit');
 				} else {
-					add(30 * recovered / actor.maxHp, 'Recovery value after action order and missing HP');
-					if (incoming >= actor.hp && actor.hp + recovered > incoming) {
-						add(22, 'Healing prevents the predicted KO');
-					}
+					add(30 * outlook.recovered / actor.maxHp, 'Recovery value across surviving action branches');
+					add(22 * outlook.preventsKO, 'Healing prevents KO in predicted surviving branches');
 					if (role === 'stall' || role === 'cleric') add(4, 'Recovery supports this fighting style');
 					if (move.id === 'rest' && !['chesto', 'lum'].some(id => effectiveItem(actor, this.state.field) === `${id}berry`)) {
 						add(-8, 'Rest incurs sleep');
@@ -252,8 +396,8 @@ export class HardEvaluation {
 			} else if (move.id === 'taunt') {
 				let blocked = 0;
 				for (const action of actions) {
-					if (action.move?.category === 'Status') {
-						blocked += action.weight * this.first(actor, action.user || target, move, action.move);
+					if ((action.selectedMove || action.move)?.category === 'Status') {
+						blocked += action.weight * this.responseFirst(actor, target, move, action);
 					}
 				}
 				add(blocked * 25, 'CFRU Taunt: interrupt predicted status action');
@@ -268,14 +412,17 @@ export class HardEvaluation {
 					effectiveAbility(actor, this.state.field), this.state.field);
 				const passiveHeal = actor.hp < actor.maxHp && (item === 'leftovers' ||
 					(item === 'blacksludge' && actor.types.includes('Poison')));
-				const pendingWish = this.state.self.conditions.wishes?.[actor.slot] === 1 && actor.hp < actor.maxHp;
+				const pendingWish = protectsPendingWish(this.state, actor, move);
 				const usefulOrb = !actor.status &&
 					((item === 'toxicorb' && ability === 'poisonheal') || (item === 'flameorb' && ability === 'guts'));
 				const ownResidual = getSecondaryEffectDamage(actor, this.state.field.weather,
 					effectiveAbility(target, this.state.field), this.state.field);
-				add(ownResidual >= actor.hp ? -90 : pendingWish ? 40 :
+				add(pendingWish ? Math.min(40, Math.floor((100 - actor.hpPercent) * 0.8)) : ownResidual >= actor.hp ? -90 :
 					residual > 0 || passiveHeal || usefulOrb || target.volatiles.has('yawn') ? 16 : -12,
 				'CFRU ShouldProtect: wait only when the turn produces a benefit');
+				if (!pendingWish && !(residual > 0 || passiveHeal || usefulOrb || target.volatiles.has('yawn'))) {
+					add(Math.min(result.score, DISCOURAGED_SCORE) - result.score, 'Protection has no concrete end-of-turn benefit');
+				}
 				if (actor.lastMove && protectionMoves.has(toID(actor.lastMove))) {
 					add(-35, 'Repeated protection risks failure');
 				}
@@ -300,7 +447,7 @@ export class HardEvaluation {
 					const category = response.move.category;
 					if (move.id === 'auroraveil' || category === (move.id === 'reflect' ? 'Physical' : 'Special')) {
 						reduced += response.weight * this.damage(response.user || foe, actor, response.move).average *
-							this.first(actor, response.user || foe, move, response.move) * (this.state.isDoubles ? 1 / 3 : 1 / 2);
+							this.responseFirst(actor, foe, move, response) * (this.state.isDoubles ? 1 / 3 : 1 / 2);
 					}
 				}
 				add(reduced ? 12 + 30 * reduced / actor.maxHp : -15, 'CFRU screens: prioritize the predicted damage category');
@@ -311,7 +458,7 @@ export class HardEvaluation {
 				for (const response of actions) {
 					if (response.switching) { useful += response.weight; continue; }
 					if (!response.move) continue;
-					const first = this.first(actor, response.user || target, move, response.move);
+					const first = this.responseFirst(actor, target, move, response);
 					const blocked = response.move.category === 'Status' && response.move.target !== 'self';
 					const survives = response.move.category !== 'Status' &&
 						this.damage(response.user || target, actor, response.move).max < cost;
@@ -359,8 +506,16 @@ export class HardEvaluation {
 			if (role === 'screens' && ['reflect', 'lightscreen', 'auroraveil'].includes(move.id)) {
 				add(4, 'Screen support fighting style');
 			}
+			if (move.category === 'Status' &&
+				this.incomingRisk(actor, predictions, undefined, move) >= actor.hp) {
+				add(Math.min(result.score, DISCOURAGED_SCORE) - result.score,
+					'Support is unsafe before acting across predicted responses');
+			}
 			if (move.category === 'Status' && beforeDamage >= actor.hp) {
 				add(-result.score, 'Cannot use support before the predicted KO');
+			}
+			if (result.flags.discouraged && !this.recoveryAmount(actor, move)) {
+				add(Math.min(result.score, DISCOURAGED_SCORE) - result.score, 'Retain the shared tactical opportunity limit');
 			}
 			result.score = Math.max(0, result.score);
 			result.breakdown.final = result.score;
@@ -368,19 +523,23 @@ export class HardEvaluation {
 		return scores;
 	}
 
-	entryDamage(pokemon: AIPokemon): number {
-		if (effectiveAbility(pokemon, this.state.field) === 'magicguard' ||
-			effectiveItem(pokemon, this.state.field) === 'heavydutyboots') return 0;
-		const conditions = this.state.self.conditions;
-		let damage = conditions.stealthrock ? Math.max(1, Math.floor(pokemon.maxHp / 8 *
-			2 ** this.dex.getEffectiveness('Rock', pokemon.types))) : 0;
-		if (grounded(pokemon, this.state.field) && conditions.spikes) {
-			damage += Math.max(1, Math.floor(pokemon.maxHp * [0, 1 / 8, 1 / 6, 1 / 4][conditions.spikes]));
-		}
-		return damage;
+	entryDamage(pokemon: AIPokemon, conditions = this.state.self.conditions): number {
+		return entryHazardDamage(pokemon, conditions, this.state.field);
 	}
 
-	/** CFRU replacement weights: KO +31, outspeed +14, resist all +17, 2HKO +2, faint -39. */
+	/** Plan the immediate recipient as part of choosing a sacrifice, rather than generic replacement ranking. */
+	sacrificeRecipient(actor: AIPokemon): { pokemon: AIPokemon, value: number } | undefined {
+		return this.state.self.reserve.filter(p => !p.fainted && (!actor.ownerSide || p.ownerSide === actor.ownerSide) &&
+			(p.hpPercent < 75 || p.status) && (this.dex.gen <= 4 ? p.hp : p.maxHp) > this.entryDamage(p)).map(pokemon => {
+			const healed = { ...pokemon, hp: pokemon.maxHp, hpPercent: 100, status: '', sleepTurns: 0 };
+			const evaluation = this.scoreSwitch(healed, this.predictions(healed), true);
+			const value = 80 * (1 - pokemon.hp / pokemon.maxHp) + (pokemon.status ? 20 : 0) +
+				Math.min(15, Math.max(-30, evaluation.score / 2));
+			return { pokemon, value };
+		}).sort((a, b) => b.value - a.value)[0];
+	}
+
+	/** Replacement value combines entry cost, attainable damage, initiative and survival. */
 	scoreSwitch(pokemon: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>, forced: boolean,
 		actor?: AIPokemon): SwitchEvaluation {
 		if (actor && this.state.self.active.includes(actor)) {
@@ -391,44 +550,70 @@ export class HardEvaluation {
 		const entered = { ...pokemon, hp: Math.max(0, pokemon.hp - hazards) };
 		entered.hpPercent = 100 * entered.hp / entered.maxHp;
 		const allies = this.state.self.active.filter(p => p !== actor && p !== pokemon);
-		const incoming = forced ? 0 : this.incomingRisk(entered, predictions, allies);
-		const remaining = entered.hp - incoming;
+		const incoming = forced ? 0 : this.incomingRisk(entered, predictions, allies, undefined, true);
+		const afterHit = { ...entered, hp: entered.hp - incoming };
+		const remaining = forced ? afterHit.hp : getEffectiveHpAfterSecondary(afterHit, this.state.field.weather,
+			this.state.opponent.active.some(p => effectiveAbility(p, this.state.field) === 'baddreams') ? 'baddreams' : '',
+			this.state.field);
 		const reasons = [`Entry hazards ${hazards} HP; predicted switch-in damage ${incoming.toFixed(1)} HP`];
 		let score = -25 * hazards / pokemon.maxHp - 35 * incoming / Math.max(1, pokemon.hp);
 		if (remaining <= 0) {
 			return { pokemon, score: score - 100, safe: false,
-				reasons: [...reasons, 'Would faint on entry or to the predicted attack'] };
+				reasons: [...reasons, 'Would faint on entry, to the predicted attack, or to residual damage'] };
 		}
 		if (!forced && actor && this.state.self.conditions.wishes?.[actor.slot] === 1) {
 			const healing = Math.min(pokemon.maxHp - remaining, actor.maxHp / 2);
 			score += 40 * healing / pokemon.maxHp;
 			reasons.push(`Wish recipient can recover ${healing.toFixed(1)} HP after surviving entry`);
 		}
+		let hasFollowUp = false;
+		const nextTurn = { ...entered, hp: remaining, hpPercent: 100 * remaining / entered.maxHp };
+		// The entry attack is already committed; the following turn can target the replacement.
+		const nextPredictions = this.predictions(nextTurn);
 		const matchups: number[] = [];
 		for (const foe of this.state.opponent.active.filter(p => !p.fainted)) {
 			const moves = pokemon.moves.map((id, i) => hardMove(id, i + 1, this.formatId));
-			const best = Math.max(0, ...moves.map(move => this.damage(entered, foe, move).average));
-			const responses = predictions.get(foe) || [];
-			let matchup = best >= foe.hp ? 31 : best * 2 >= foe.hp ? 2 : 0;
-			const attacking = moves.find(move => move.category !== 'Status');
-			if (attacking && responses.length &&
-				responses.every(r => !r.move || this.first(entered, r.user || foe, attacking, r.move) === 1)) {
-				matchup += 14;
+			const responses = nextPredictions.get(foe) || [];
+			if (moves.some(move => move.category !== 'Status' &&
+				this.damage(nextTurn, foe, move).average >= Math.min(foe.hp, foe.maxHp / 10) &&
+				this.incomingRisk(nextTurn, nextPredictions, allies, move) < remaining)) hasFollowUp = true;
+			// A replacement only earns offensive value for damage it can deliver before fainting.
+			let matchup = Math.max(0, ...moves.filter(move => move.category !== 'Status').map(move =>
+				responses.reduce((value, response) => {
+					const user = response.user || foe;
+					const damage = this.damage(nextTurn, user, move).average;
+					const retaliation = response.move ? this.damage(user, nextTurn, response.move, allies).average : 0;
+					const first = this.responseFirst(nextTurn, foe, move, response);
+					const available = retaliation >= remaining ? first : 1;
+					const progress = Math.min(1, damage / Math.max(1, user.hp));
+					return value + response.weight * available * (12 * progress +
+						(damage >= user.hp ? 31 : damage * 2 >= user.hp && retaliation * 2 < remaining ? 8 : 0));
+				}, 0)));
+			if (moves.some(move => this.recoveryAmount(nextTurn, move) &&
+				this.recoveryOutlook(nextTurn, move, nextPredictions).survival >= 0.85)) hasFollowUp = true;
+			const attacking = moves.filter(move => move.category !== 'Status').sort((a, b) =>
+				this.damage(nextTurn, foe, b).average - this.damage(nextTurn, foe, a).average)[0];
+			let first = 0, resisted = 0, lost = 0;
+			for (const response of responses) {
+				if (!response.move) continue;
+				const user = response.user || foe;
+				const damage = this.damage(user, nextTurn, response.move, allies);
+				const order = attacking ? this.responseFirst(nextTurn, foe, attacking, response) : 0;
+				first += response.weight * order;
+				if (response.move.category !== 'Status' && (damage.effectiveness < 1 || damage.average === 0)) {
+					resisted += response.weight;
+				}
+				if (damage.average >= remaining) {
+					const finish = attacking && this.damage(nextTurn, user, attacking).average >= user.hp;
+					lost += response.weight * (finish ? 1 - order : 1);
+				}
 			}
-			const resistsAll = responses.some(r => r.move && r.move.category !== 'Status') && responses.every(r => {
-				if (!r.move || r.move.category === 'Status') return true;
-				const damage = this.damage(r.user || foe, entered, r.move, allies);
-				return damage.effectiveness < 1 || damage.average === 0;
-			});
-			if (resistsAll) matchup += 17;
-			if (responses.some(r => r.move && this.damage(r.user || foe, entered, r.move, allies).average >= remaining)) {
-				matchup -= 39;
-			}
+			matchup += 14 * first + 17 * resisted - 39 * lost;
 			matchups.push(matchup);
 		}
 		score += matchups.length ? Math.min(...matchups) : 0;
 		reasons.push(`CFRU replacement matchup score ${score.toFixed(1)}`);
-		return { pokemon, score, safe: true, reasons };
+		return { pokemon, score, safe: true, hasFollowUp, reasons };
 	}
 
 	/** Return a reason only when switching beats a useful action, with urgent effects bypassing cooldown. */
@@ -441,17 +626,39 @@ export class HardEvaluation {
 		const incoming = this.incomingRisk(actor, predictions);
 		const move = bestMove.move;
 		const foes = this.state.opponent.active.filter(p => !p.fainted);
-		// A safe first-strike KO takes precedence over saving HP, exactly as in CFRU's Regenerator check.
-		if (foes.length === 1 && !foes[0].volatiles.has('substitute') &&
-			(move.accuracy === true || move.accuracy === 100) && this.damage(actor, foes[0], move).min >= foes[0].hp &&
-			(predictions.get(foes[0]) || []).every(a => !a.move || this.first(actor, a.user || foes[0], move, a.move) === 1)) {
+		// High-confidence first-strike finishes take precedence over preserving HP.
+		if (foes.length === 1 && this.attackOutlook(actor, foes[0], move, predictions).finish >= 0.8) return null;
+
+		if (foes.length === 1 && move.accuracy === 100 && !bestMove.flags.hasNoEffect && !bestMove.flags.isImmune &&
+			getEffectiveHpAfterSecondary(actor, this.state.field.weather, effectiveAbility(foes[0], this.state.field),
+				this.state.field) > 0 && (predictions.get(foes[0]) || []).every(response =>
+			response.switching || flinchesOnHit(actor, response.user || foes[0], move, this.state.field) &&
+			this.damage(actor, response.user || foes[0], move).average > 0 &&
+			(!response.move || this.responseFirst(actor, foes[0], move, response) === 1))) {
 			return null;
 		}
+
 		if (this.state.self.conditions.wishes?.[actor.slot] === 1 &&
 			actor.hpPercent >= 65 && replacement.pokemon.hpPercent < 65) {
 			return 'CFRU Wish: pass delayed recovery to a safe injured teammate';
 		}
-		if (bestMove.score >= 115 && this.recoveryAmount(actor, move)) return null;
+		const foeAbility = foes[0] ? effectiveAbility(foes[0], this.state.field) : '';
+		const recovery = this.recoveryAmount(actor, move) ? this.recoveryOutlook(actor, move, predictions) : undefined;
+		const curesAttrition = (move.id === 'rest' || recoveryCuresStatus(move)) && recovery && recovery.survival >= 0.85;
+		if (!curesAttrition && needsResidualReset(actor, this.state.field, foeAbility) && replacement.score > -20) {
+			return 'CFRU residual damage: reset escalating attrition before spending another turn';
+		}
+		if (bestMove.score >= 115 && recovery && recovery.survival >= 0.85 && recovery.recovered > 0) return null;
+		if (bestMove.score <= DISCOURAGED_SCORE && (replacement.score >= 0 || replacement.hasFollowUp)) {
+			return 'CFRU no useful action: leave an unproductive matchup';
+		}
+		if (bestMove.score >= 115 && protectsPendingWish(this.state, actor, move)) return null;
+		if (move.category === 'Status' && bestMove.score > 60 && !bestMove.flags.hasNoEffect && !bestMove.flags.isImmune &&
+			this.dex.moves.get(move.id).selfSwitch && (move.accuracy === true || move.accuracy === 100) &&
+			this.incomingRisk(actor, predictions, undefined, move) < actor.hp) {
+			// Support pivots leave without contact/recoil damage; damaging pivots need that extra risk assessment.
+			return null;
+		}
 		if (incoming >= actor.hp && replacement.score > -20) {
 			return 'CFRU avoid death: a surviving replacement can take the predicted move';
 		}
@@ -467,11 +674,7 @@ export class HardEvaluation {
 			incoming >= actor.hp / 3 && replacement.score >= 14) {
 			return 'CFRU sleep: avoid giving away another damaging turn';
 		}
-		const foeAbility = foes[0] ? effectiveAbility(foes[0], this.state.field) : '';
-		if (getSecondaryEffectDamage(actor, this.state.field.weather, foeAbility, this.state.field) >= actor.maxHp / 4 &&
-			replacement.score >= 14 && (actor.status === 'tox' || actor.volatiles.has('leechseed'))) {
-			return 'CFRU residual damage: reset escalating attrition';
-		}
+
 		if (actor.volatiles.has('yawn') && !actor.status && actor.hpPercent > 25 &&
 			!['naturalcure', 'earlybird', 'shedskin', 'insomnia', 'vitalspirit'].includes(ability) &&
 			!['lumberry', 'chestoberry'].includes(item) &&

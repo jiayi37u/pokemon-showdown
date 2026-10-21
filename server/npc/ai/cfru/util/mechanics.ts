@@ -109,7 +109,7 @@ export function effectivePriority(
 	move: Pick<AIMove, 'priority' | 'category' | 'type' | 'flags'> & Partial<Pick<AIMove, 'id' | 'calledMove'>>,
 	field: Partial<FieldConditions>
 ): number {
-	const ability = effectiveAbility(pokemon, field);
+	const ability = pokemon.queuedPriorityAbility ?? effectiveAbility(pokemon, field);
 	if (move.calledMove) move = rulesDex(field).moves.get(move.id);
 	let priority = move.priority;
 	if (ability === 'prankster' && move.category === 'Status') priority++;

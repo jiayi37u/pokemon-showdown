@@ -147,6 +147,7 @@ export function buildBattleStateFromRequests(
 			const active = mon.active ?? i < (request.active || request.forceSwitch || []).length;
 			const position = tracker.getPosition(side, i);
 			const pokemon = buildPokemonFromRequest(mon, active ? tracker.getFieldSlot(position) : i + 1, active, formatId);
+			pokemon.ident = mon.ident;
 			pokemon.ownerSide = side;
 			const forme = active && tracker.getForme(position);
 			if (forme) {
@@ -201,16 +202,26 @@ export function buildBattleStateFromRequests(
 		const pokemon = opponentActive.find(p => p.slot === tracker.getFieldSlot(position));
 		if (pokemon?.status === 'slp') pokemon.sleepTurns = tracker.getSleepTurns(position, effectiveAbility(pokemon, field));
 	}
-	return {
+	const state: BattleState = {
 		turn, isDoubles,
 		self: { active: selfActive, reserve: selfReserve, team: [...selfActive, ...selfReserve],
+			megaUsedByOwner: Object.fromEntries([...selfActive, ...selfReserve].filter(p =>
+				(formatId ? Dex.forFormat(formatId) : Dex).species.get(p.species).isMega).map(p => [p.ownerSide!, true])),
 			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(), futureMoves: tracker.getFutureMoves() } },
 		opponent: { remaining: tracker.getRemainingOpponents(),
+			megaUsedByOwner: Object.fromEntries(tracker.getOpponentTeam().filter(p =>
+				(formatId ? Dex.forFormat(formatId) : Dex).species.get(p.species).isMega)
+				.map(p => [(p.ident || p.position).slice(0, 2), true])),
 			remainingByOwner: Object.fromEntries(opponentActive.map(p =>
 				[p.ownerSide!, tracker.getRemainingOpponents(p.ownerSide)])), active: opponentActive, reserve: opponentReserve,
+			preview: tracker.getUnseenOpponentPreview().map((p, i) =>
+				trackedPokemonToAIPokemon(p, opponentActive.length + opponentReserve.length + i + 1, false, formatId)),
 			team: [...opponentActive, ...opponentReserve], conditions: buildOpponentConditionsFromTracker(tracker) },
 		field,
 	};
+	tracker.evidence.begin(state);
+	state.opponentEvidence = tracker.evidence.getHistory();
+	return state;
 }
 
 /** Single-controller adapter; the battle reference supplies only the public turn number. */
@@ -332,6 +343,7 @@ export function trackedPokemonToAIPokemon(
 	pokemon.volatiles = new Set(tracked.volatiles);
 	pokemon.abilityStatMod = abilityStatModifier(pokemon.volatiles);
 	pokemon.ownerSide = (tracked.ident || tracked.position).slice(0, 2);
+	pokemon.ident = tracked.ident;
 	pokemon.sleepSelfInflicted = tracked.sleepSelfInflicted;
 	pokemon.sleepTurns = pokemon.status === 'slp' ? sleepTurns : 0;
 	pokemon.itemKnown = !!tracked.item || tracked.itemLost;

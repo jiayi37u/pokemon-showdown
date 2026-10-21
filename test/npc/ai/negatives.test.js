@@ -591,7 +591,8 @@ function runNegativesScoringTests() {
 
 	function createMockScoringContext(moveType, targetTypes, moveCategory = 'Physical', damagePercent = null) {
 		return {
-			move: { type: moveType, category: moveCategory, priority: 0 },
+			dex: require('../../../dist/sim').Dex,
+			move: { id: 'tackle', type: moveType, category: moveCategory, priority: 0 },
 			target: { types: targetTypes },
 			cache: { typeEffectiveness: new Map() },
 			adjustments: [],

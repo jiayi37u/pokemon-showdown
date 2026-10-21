@@ -81,11 +81,24 @@ function loadPresetsIfNeeded(): PresetFile {
 	}
 }
 
+/** Cosmetic forms and move-unlocked forms with identical battle traits share configuration priors. */
+export function presetSpeciesId(name: string, formatId = ''): string {
+	const dex = formatId ? Dex.forFormat(formatId) : Dex;
+	const species = dex.species.get(name);
+	if (species.isCosmeticForme) return toID(species.baseSpecies);
+	const base = dex.species.get(species.baseSpecies);
+	if (species.requiredMove && !species.battleOnly && !species.requiredItem &&
+		Object.entries(species.baseStats).every(([stat, value]) => base.baseStats[stat as StatKey] === value) &&
+		JSON.stringify(species.types) === JSON.stringify(base.types) &&
+		JSON.stringify(species.abilities) === JSON.stringify(base.abilities)) return base.id;
+	return species.id;
+}
+
 /** 按 species 名字查 preset。找不到或字段非法时返回 null。 */
 export function getOpponentPreset(species: string, formatId = ''): OpponentPreset | null {
 	const presets = loadPresetsIfNeeded();
 	const key = toID(species);
-	const entry = presets[key];
+	const entry = presets[key] || presets[presetSpeciesId(species, formatId)];
 	if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
 	// 过滤以 "_" 开头的注释字段
 	if (species.startsWith('_')) return null;
@@ -106,7 +119,7 @@ export function getOpponentMoveKnowledge(
 	);
 	const remainingSlots = Math.max(0, 4 - revealed.size);
 	const candidates = new Set<string>();
-	const presetMoves = getOpponentPreset(species)?.moves;
+	const presetMoves = getOpponentPreset(species, formatId)?.moves;
 	if (remainingSlots && Array.isArray(presetMoves)) {
 		for (const name of presetMoves) {
 			if (typeof name !== 'string') continue;

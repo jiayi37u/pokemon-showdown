@@ -52,6 +52,83 @@ function oracle(g, id, tolerance = 0) {
 describe('NPC shared mechanism families', () => {
 	afterEach(() => { for (const b of games) b.destroy(); games = []; });
 	for (const mode of ['singles', 'doubles', 'multi']) {
+		it(`${mode}: does not treat current-HP damage or Endeavor as a repeatable 2HKO`, () => {
+			const g = game({ mode, actor: { ...passive, moves: ['superfang', 'endeavor', 'seismictoss'] } });
+			const s = g.state(), target = s.opponent.active[0];
+			target.hp = target.maxHp = 300; target.hpPercent = 100;
+			for (const id of ['superfang', 'naturesmadness', 'ruination', 'guardianofalola']) {
+				const result = calculateDamage(s.self.active[0], target, buildAIMove({ id }, 1, g.format), s.field);
+				assert(result.hitsToKO > 2, id);
+				assert(!g.score(id, s).flags.can2HKO, id);
+			}
+			s.self.active[0].hp = 20;
+			assert.equal(calculateDamage(s.self.active[0], target, buildAIMove({ id: 'endeavor' }, 1, g.format), s.field).hitsToKO, Infinity);
+			target.hp = target.maxHp = 2;
+			assert.equal(g.score('superfang', s).flags.can2HKO, true, 'At 2 HP, two minimum-damage hits do KO');
+			target.hp = target.maxHp = 200;
+			assert.equal(g.score('seismictoss', s).flags.can2HKO, true, 'Level damage remains constant');
+			const actual = g.b.p1.active[0];
+			actual.hp = 300;
+			g.b.actions.useMove('superfang', g.b.p2.active[0], { target: actual });
+			assert.equal(actual.hp, 150);
+			g.b.actions.useMove('superfang', g.b.p2.active[0], { target: actual });
+			assert.equal(actual.hp, 75);
+		});
+
+		it(`${mode}: rejects Belly Drum at maximum Attack, matching the engine`, () => {
+			const g = game({ mode, actor: { ...passive, moves: ['bellydrum'] } });
+			g.b.boost({ atk: 6 }, g.b.p2.active[0]);
+			g.b.makeRequest('move');
+			const result = g.score('bellydrum');
+			assert(result.flags.hasNoEffect);
+			assert.equal(result.score, 0);
+			const hp = g.b.p2.active[0].hp;
+			g.b.actions.useMove('bellydrum', g.b.p2.active[0]);
+			assert.equal(g.b.p2.active[0].hp, hp);
+			assert(g.b.log.some(line => line.startsWith('|-fail|p2a:')));
+		});
+
+		it(`${mode}: values a guaranteed eligible status independently of an attack's low damage`, () => {
+			const g = game({ mode, actor: { species: 'Pachirisu', ability: 'Volt Absorb', moves: ['nuzzle'] },
+				foe: { species: 'Blissey', ability: 'Natural Cure', moves: ['splash'] } });
+			const s = g.state(), target = s.opponent.active[0];
+			const lowDamage = () => g.score('nuzzle', s).breakdown.details.some(d => /low damage/i.test(d.reason));
+			assert(!lowDamage());
+			target.status = 'par';
+			assert(lowDamage(), 'Already-paralyzed targets offer only damage');
+			target.status = '';
+			target.ability = 'Shield Dust';
+			assert(lowDamage());
+			target.ability = 'Natural Cure';
+			target.item = 'Covert Cloak';
+			assert(lowDamage());
+			target.item = '';
+			target.volatiles.add('substitute');
+			assert(lowDamage());
+		});
+
+		it(`${mode}: rewards Protect for this slot's Wish, with public bypass and weather checks`, () => {
+			const g = game({ mode, actor: { ...passive, moves: ['wish', 'protect'] } });
+			const s = g.state(), actor = s.self.active[0], target = s.opponent.active[0];
+			actor.hp = Math.floor(actor.maxHp / 2); actor.hpPercent = actor.hp / actor.maxHp * 100;
+			s.self.conditions.wishes = { [actor.slot]: 1 };
+			for (const foe of s.opponent.active) { foe.moves = ['tackle']; foe.moveKnowledge = undefined; }
+			assert.equal(g.score('protect', s).score, 140);
+			actor.lastMove = 'protect';
+			assert.equal(g.score('protect', s).score, 60);
+			actor.lastMove = '';
+			s.self.conditions.wishes = { [actor.slot + 1]: 1 };
+			assert.equal(g.score('protect', s).score, 100);
+			s.self.conditions.wishes = { [actor.slot]: 1 };
+			target.moves = ['feint'];
+			assert.equal(g.score('protect', s).score, 100);
+			target.moves = ['tackle']; target.ability = 'Unseen Fist';
+			assert.equal(g.score('protect', s).score, 100);
+			target.ability = '';
+			s.field.weather = 'sand'; actor.hp = 1; actor.hpPercent = 100 / actor.maxHp;
+			assert.equal(g.score('protect', s).score, 100, 'Lethal weather resolves before Wish');
+		});
+
 		it(`${mode}: values Pain Split by capped HP gained, matching the simulator's absolute-HP split`, () => {
 			const g = game({ mode, actor: { ...passive, moves: ['painsplit'] } });
 			for (const [max, hp, targetMax, targetHp, expected] of [

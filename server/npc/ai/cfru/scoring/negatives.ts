@@ -10,23 +10,117 @@
 
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, NegativeScoringFunction } from './index';
-import { BASE_SCORE, DISCOURAGED_SCORE } from '../types';
+import { BASE_SCORE, DISCOURAGED_SCORE, type AIPokemon, type AIMove, type BattleState } from '../types';
 import { getTypeEffectiveness, getMoveInteraction, resolveMove } from '../util/type-calc';
 import { buildAIMove } from '../state-builder';
-import { effectiveAbility, defensiveAbility, effectiveItem, rulesDex } from '../util/mechanics';
+import { effectiveAbility, defensiveAbility, effectiveItem, grounded, rulesDex } from '../util/mechanics';
 import {
 	delayedMoveFailure, fieldEffectFailure, inflictedStatus, statusFailure, volatileEffectFailure,
 	beneficialTargets, recoveryRecipients, recoveryCuresStatus, boostRecipients, boostChanges, boostsCanChange,
-	recoveryKind, painSplitRecovery,
+	recoveryKind, painSplitRecovery, mustSkipMove,
 } from '../util/move-effects';
 import { itemMoveFailure, itemRemovalFailure } from '../util/items';
-import { compareSpeedOrder } from '../util/speed';
+import { compareActionOrder, compareSpeedOrder } from '../util/speed';
+import { directRecoveryAmount, selfActionOutcome } from '../util/turn-outcome';
 import { calculateDamage, willFaintFromSecondaryDamage } from '../util/damage-calc';
-import { canHaveOpponentMoves, getOpponentMoveKnowledge } from '../util/opponent-presets';
+import { canHaveOpponentMoves, getOpponentMoveKnowledge, getOpponentThreatMoves } from '../util/opponent-presets';
+
+/** Public attacks that can punish a status turn, with defensive boosts applied only after acting. */
+export function statusTurnIncomingDamage(
+	state: BattleState, attacker: AIPokemon, action: AIMove, beforeOnly = false, includeResidual = true
+): number {
+	const dex = rulesDex(state.field);
+	const after = { ...attacker, boosts: { ...attacker.boosts } };
+	const ability = effectiveAbility(attacker, state.field);
+	const multiplier = ability === 'contrary' ? -1 : ability === 'simple' ? 2 : 1;
+	for (const [stat, stages] of Object.entries(dex.moves.get(action.id).boosts || {})) {
+		const key = stat as keyof typeof after.boosts;
+		after.boosts[key] = Math.max(-6, Math.min(6, after.boosts[key] + stages * multiplier));
+	}
+	let total = 0;
+	const foes = state.opponent.active.filter(p => !p.fainted);
+	for (const foe of foes) {
+		const knowledge = foe.moveKnowledge;
+		const ids = knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] :
+			getOpponentThreatMoves(foe.species, foe.moves, state.field.formatId);
+		if (mustSkipMove(foe, ids, state.field)) continue;
+		let strongest = 0;
+		for (const id of ids) {
+			const move = buildAIMove({ id }, 1, state.field.formatId);
+			if (move.category === 'Status' || ['suckerpunch', 'thunderclap'].includes(move.id)) continue;
+			const first = compareActionOrder(attacker, foe, action, [move], state.field,
+				state.self.conditions, state.opponent.conditions) > 0;
+			if (beforeOnly && first) continue;
+			const defender = first ? after : attacker;
+			const spread = ['allAdjacent', 'allAdjacentFoes'].includes(move.target);
+			const targets = state.self.active.filter(p => !p.fainted).length +
+				(move.target === 'allAdjacent' ? state.opponent.active.filter(p => !p.fainted && p !== foe).length : 0);
+			const damage = calculateDamage(foe, defender, move, state.field, undefined, {
+				isDoubles: state.isDoubles, numAliveTargets: spread ? targets : 1,
+				attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
+				defenderAllies: state.self.active, activePokemon: [...state.self.active, ...state.opponent.active],
+			});
+			let incoming = damage.average;
+			// A single ordinary hit cannot bypass an intact substitute or full-health survival item.
+			// Multiple foes/hits can break that protection before the lethal hit, so retain their full threat.
+			if (foes.length === 1 && !move.multihit && effectiveAbility(foe, state.field) !== 'parentalbond') {
+				const bypasses = move.flags.bypasssub || dex.gen >= 6 && move.flags.sound ||
+					dex.gen >= 6 && effectiveAbility(foe, state.field) === 'infiltrator';
+				if (attacker.volatiles.has('substitute') && !bypasses) incoming = 0;
+				const survival = effectiveItem(attacker, state.field) === 'focussash' || dex.gen >= 5 &&
+					defensiveAbility(foe, attacker, move, state.field) === 'sturdy';
+				if (survival && attacker.hp === attacker.maxHp && action.id !== 'bellydrum') {
+					incoming = Math.min(incoming, attacker.hp - 1);
+				}
+			}
+			strongest = Math.max(strongest, incoming);
+		}
+		total += strongest;
+	}
+	const remaining = attacker.hp - total;
+	const survivor = { ...attacker, hp: remaining, hpPercent: remaining / attacker.maxHp * 100 };
+	if (includeResidual && remaining > 0 && willFaintFromSecondaryDamage(survivor, state.field.weather,
+		foes[0] ? effectiveAbility(foes[0], state.field) : '', state.field)) return attacker.hp;
+	return total;
+}
+
+/** A spin's clearing utility exists only after a successful hit, independently of its damage. */
+export function spinClearingBenefit(ctx: ScoringContext): number {
+	if (!['rapidspin', 'mortalspin'].includes(ctx.move.id) || ctx.flags.hasNoEffect || ctx.flags.isImmune ||
+		!ctx.damageResult?.max) return 0;
+	const { state, attacker, target } = ctx;
+	const ability = effectiveAbility(attacker, state.field);
+	const data = ctx.dex.moves.get(ctx.move.id);
+	if (ability === 'sheerforce' && (data.secondary || data.secondaries)) return 0;
+	if (ctx.move.flags.contact && ability !== 'magicguard' && ability !== 'longreach' &&
+		effectiveItem(attacker, state.field) !== 'protectivepads' && !target.volatiles.has('substitute')) {
+		const recoil = (effectiveItem(target, state.field) === 'rockyhelmet' ? Math.floor(attacker.maxHp / 6) : 0) +
+			(['roughskin', 'ironbarbs'].includes(effectiveAbility(target, state.field)) ? Math.floor(attacker.maxHp / 8) : 0);
+		if (recoil >= attacker.hp) return 0;
+	}
+	const own = state.self.conditions;
+	let saved = 0;
+	for (const mon of state.self.reserve.filter(p => !p.fainted)) {
+		if (effectiveItem(mon, state.field) === 'heavydutyboots') continue;
+		const monAbility = effectiveAbility(mon, state.field);
+		const magicGuard = monAbility === 'magicguard';
+		if (!magicGuard && own.stealthrock) saved += 12.5 * getTypeEffectiveness('Rock', mon.types);
+		if (!grounded(mon, state.field)) continue;
+		if (!magicGuard && own.spikes) saved += 100 / (own.spikes === 1 ? 8 : own.spikes === 2 ? 6 : 4);
+		if (own.toxicspikes && !mon.status && !mon.types.some(type => ['Poison', 'Steel'].includes(type)) &&
+			!['immunity', 'pastelveil', 'poisonheal', 'magicguard'].includes(monAbility)) saved += 10;
+		if (own.stickyweb && !['contrary', 'clearbody', 'whitesmoke', 'fullmetalbody'].includes(monAbility) &&
+			effectiveItem(mon, state.field) !== 'clearamulet') saved += 10;
+	}
+	const releases = ability !== 'magicguard' && attacker.volatiles.has('leechseed') ||
+		attacker.volatiles.has('partiallytrapped');
+	return (saved ? 12 + Math.min(18, Math.floor(saved / 5)) : 0) + (releases ? 8 : 0);
+}
 
 /** A legal but discouraged choice must not recover its baseline through unrelated rewards. */
 function discourageMove(ctx: ScoringContext, reason: string): number {
 	ctx.skipPositiveScoring = true;
+	ctx.flags.discouraged = true;
 	const amount = Math.min(0, DISCOURAGED_SCORE - (ctx.score ?? BASE_SCORE));
 	ctx.adjustments.push({ reason, amount, category: 'negative' });
 	return amount;
@@ -58,6 +152,10 @@ export const checkStatusOpportunity: NegativeScoringFunction = ctx => {
 	const nonGhostCurse = data.id === 'curse' && !ctx.attacker.types.includes('Ghost');
 	if ((setup || nonGhostCurse) && ctx.attacker.hpPercent <= 40) {
 		return discourageMove(ctx, 'Setup discouraged at 40% HP or less');
+	}
+	if ((setup || nonGhostCurse) && statusTurnIncomingDamage(ctx.state, ctx.attacker, ctx.move) >= ctx.attacker.hp -
+		(data.id === 'bellydrum' ? Math.floor(ctx.attacker.maxHp / 2) : 0)) {
+		return discourageMove(ctx, 'Setup cannot survive the available opposing attacks');
 	}
 	if (setup && data.boosts) {
 		const raised = Object.entries(data.boosts).filter(([, stages]) => stages > 0).map(([stat]) => stat);
@@ -125,10 +223,30 @@ export const checkStatusOpportunity: NegativeScoringFunction = ctx => {
 /** Legal utility moves need a concrete benefit; their failure checks remain independent. */
 export const checkUtilityOpportunity: NegativeScoringFunction = ctx => {
 	const { state, attacker, move } = ctx;
+	if (['healingwish', 'lunardance'].includes(move.id)) {
+		const reserves = state.self.reserve.filter(p => !p.fainted);
+		if (!reserves.length) {
+			ctx.flags.hasNoEffect = true;
+			ctx.adjustments.push({
+				reason: 'No replacement can receive the sacrificial healing', amount: -100, category: 'negative',
+			});
+			return -100;
+		}
+		const patient = reserves.some(p => p.hpPercent < 75 || p.status &&
+			!['guts', 'poisonheal', 'quickfeet'].includes(effectiveAbility(p, state.field)));
+		if (!patient) return discourageMove(ctx, 'No reserve needs enough healing to justify the sacrifice');
+		if (attacker.hpPercent > 80 && !attacker.status && statusTurnIncomingDamage(state, attacker, move) < attacker.hp) {
+			return discourageMove(ctx, 'Preserve a healthy supporter instead of sacrificing it');
+		}
+	}
 	if (['stealthrock', 'spikes', 'toxicspikes', 'stickyweb'].includes(move.id) &&
 		state.opponent.remaining !== undefined &&
 		state.opponent.remaining <= state.opponent.active.filter(p => !p.fainted).length) {
 		return discourageMove(ctx, 'No opposing reserve remains to hit entry hazards');
+	}
+	if (move.id === 'substitute' && !attacker.volatiles.has('substitute') &&
+		statusTurnIncomingDamage(state, attacker, move, true, false) + Math.floor(attacker.maxHp / 4) >= attacker.hp) {
+		return discourageMove(ctx, 'Cannot survive to pay the HP cost before acting');
 	}
 	if (move.id === 'substitute' && !attacker.volatiles.has('substitute') &&
 		state.self.conditions.wishes?.[attacker.slot] !== 1) {
@@ -187,6 +305,7 @@ export const checkFieldEffect: NegativeScoringFunction = ctx => {
  */
 export const checkTypeResistance: NegativeScoringFunction = (ctx) => {
 	if (ctx.move.category === 'Status') return 0;
+	if (ctx.damageResult && ctx.damageResult.average >= ctx.target.hp) return 0;
 
 	const effectiveness = ctx.damageResult?.effectiveness ??
 		getTypeEffectiveness(ctx.move.type, ctx.target.types, ctx.cache);
@@ -228,12 +347,18 @@ export const checkTypeResistance: NegativeScoringFunction = (ctx) => {
 export const checkLowDamage: NegativeScoringFunction = (ctx) => {
 	if (ctx.move.category === 'Status') return 0;
 	if (!ctx.damageResult) return 0;
+	if (ctx.damageResult.average >= ctx.target.hp || spinClearingBenefit(ctx) > 0) return 0;
 
 	const damagePercent = ctx.damageResult.averagePercent;
 
 	// Only penalize if below the threshold where rewardHighDamage kicks in
 	// This avoids double-penalizing already penalized immune/resisted moves
 	if (ctx.flags.isImmune || ctx.flags.hasNoEffect) return 0;
+	// Guaranteed, eligible status gives weak attacks an independent purpose.
+	const data = ctx.dex.moves.get(ctx.move.id);
+	const secondaries = data.secondaries || (data.secondary ? [data.secondary] : []);
+	if (secondaries.some(effect => effect.chance === 100 && effect.status &&
+		!statusFailure(ctx.state, ctx.attacker, ctx.target, ctx.move, effect.status))) return 0;
 
 	// CFRU thresholds: < 10% HP = basically no damage, < 20% = very low, < 33% HP = low damage
 	if (damagePercent < 10) {
@@ -869,6 +994,14 @@ export const checkRoar: NegativeScoringFunction = (ctx) => {
 		return amount;
 	}
 
+	if (ctx.move.category === 'Status') {
+		const hazards = ctx.state.opponent.conditions;
+		const boosted = Object.values(ctx.target.boosts).some(stage => stage > 0);
+		if (!boosted && !(hazards.stealthrock || hazards.spikes || hazards.toxicspikes || hazards.stickyweb)) {
+			return discourageMove(ctx, 'Phazing has no boosts to remove or entry hazards to exploit');
+		}
+	}
+
 	return 0;
 };
 
@@ -1015,6 +1148,10 @@ export const checkExplosion: NegativeScoringFunction = (ctx) => {
 		return 0;
 	}
 
+	if (ctx.dex.moves.get(moveId).selfdestruct && !ctx.flags.canKO && ctx.attacker.hpPercent > 50) {
+		return discourageMove(ctx, 'Sacrificing a healthy user without a KO is wasteful');
+	}
+
 	// Don't explode if we have healthy Pokemon and won't KO
 	if (!ctx.flags.canKO) {
 		// Check if attacker has high HP
@@ -1133,6 +1270,12 @@ export const checkBellyDrum: NegativeScoringFunction = (ctx) => {
 
 	if (moveId !== 'bellydrum') return 0;
 
+	if (ctx.attacker.boosts.atk >= 6) {
+		ctx.flags.hasNoEffect = true;
+		ctx.adjustments.push({ reason: 'Belly Drum fails at maximum Attack', amount: -100, category: 'negative' });
+		return -100;
+	}
+
 	// Belly Drum costs 50% HP to use
 	if (ctx.attacker.hpPercent <= 50) {
 		ctx.adjustments.push({
@@ -1191,6 +1334,21 @@ export const checkProtectOveruse: NegativeScoringFunction = (ctx) => {
 	if (!lastMoveWasProtect) return 0;
 
 	return discourageMove(ctx, 'Consecutive Protect usage (likely to fail)');
+};
+
+/** Normal uses the strongest public attack; Hard evaluates weighted response branches instead. */
+export const checkRecoverySurvival: NegativeScoringFunction = ctx => {
+	const recipients = recoveryRecipients(ctx.state, ctx.attacker, ctx.target, ctx.move);
+	if (directRecoveryAmount(ctx.attacker, ctx.move, ctx.state.field) && recipients.includes(ctx.attacker)) {
+		const before = statusTurnIncomingDamage(ctx.state, ctx.attacker, ctx.move, true, false);
+		const total = statusTurnIncomingDamage(ctx.state, ctx.attacker, ctx.move, false, false);
+		const outcome = selfActionOutcome(ctx.attacker, ctx.move, ctx.state.field, before,
+			Math.max(0, total - before), effectiveAbility(ctx.target, ctx.state.field));
+		if (!outcome.acted || outcome.endHp <= 0) {
+			return discourageMove(ctx, 'Recovery cannot keep the user alive through the turn');
+		}
+	}
+	return 0;
 };
 
 /**
@@ -1721,6 +1879,7 @@ export const checkPainSplit: NegativeScoringFunction = ctx => {
 	const value = painSplitValue(ctx);
 	if (value.score > BASE_SCORE) return 0;
 	ctx.skipPositiveScoring = true;
+	ctx.flags.discouraged = true;
 	const amount = Math.min(0, value.score - (ctx.score ?? BASE_SCORE));
 	ctx.adjustments.push({ reason: value.reason, amount, category: 'negative' });
 	return amount;
@@ -1945,6 +2104,7 @@ export const allNegativeScorers: NegativeScoringFunction[] = [
 	checkExplosion,
 	checkProtectOveruse,
 	checkHealingUnnecessary,
+	checkRecoverySurvival,
 
 	// Contact move risks (CFRU: ai_util.c 3011-3067)
 	checkContactRisk,

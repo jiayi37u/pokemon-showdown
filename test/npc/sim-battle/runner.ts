@@ -252,7 +252,8 @@ async function main(): Promise<void> {
 	}
 
 	const packTeam = (team: PokemonSet[], side: string) => {
-		const selected = limitTeamSize(team, maxTeamSize).map(set => ({ ...set, moves: [...set.moves] }));
+		// Packed team round-trip fills omitted IVs with 31 before Hidden Power/legendary legality checks.
+		const selected = Teams.unpack(Teams.pack(limitTeamSize(team, maxTeamSize)))!;
 		if (!args.allowIllegalTeams) {
 			const problems = new TeamValidator(args.format).validateTeam(selected);
 			if (problems) throw new Error(`${side} team validation failed:\n${problems.join('\n')}`);

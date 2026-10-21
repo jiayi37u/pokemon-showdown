@@ -3,15 +3,17 @@ import { moveTargets } from './cfru/util/move-effects';
 import type { ObjectReadWriteStream } from '../../../lib/streams';
 import type { ChoiceRequest } from '../../../sim/side';
 import type { PRNG, PRNGSeed } from '../../../sim/prng';
-import { Dex, toID } from '../../../sim/dex';
+import { Dex } from '../../../sim/dex';
 import { NPCBattleAI, type MoveChoice, type SwitchChoice } from './index';
-import { DEFAULT_AI_CONFIG, type AIPokemon, type BattleState, type CFRUAIConfig, type MoveScore } from './cfru/types';
+import { DEFAULT_AI_CONFIG, type BattleState, type CFRUAIConfig, type MoveScore } from './cfru/types';
 import { buildBattleStateWithTracker, buildPokemonFromRequest } from './cfru/state-builder';
 import { createBattleTracker } from './cfru/util/battle-tracker';
 import { createBattleLogger, type LogLevel } from './cfru/logger';
-import { effectiveAbility, fieldWithActivePokemon, replaceActivePokemon } from './cfru/util/mechanics';
+import { megaEvolutionState } from './cfru/util/forms';
 import { HardEvaluation } from './hard/evaluation';
 import { fightingStyle, hardMove } from './hard/opponent-model';
+import { searchPosition } from './hard/search';
+import { MatchupEvaluator } from './hard/matchups';
 
 export interface HardAIOptions {
 	side?: 'p2' | 'p4';
@@ -19,6 +21,8 @@ export interface HardAIOptions {
 	cfruConfig?: Partial<CFRUAIConfig>;
 	battleId?: string;
 	logging?: { console?: LogLevel, file?: LogLevel, logDir?: string };
+	/** Allows controlled comparisons against the heuristic policy in local simulations. */
+	search?: boolean;
 }
 
 export class HardAI extends NPCBattleAI {
@@ -30,10 +34,14 @@ export class HardAI extends NPCBattleAI {
 	private configCFRU: CFRUAIConfig;
 	private logger: ReturnType<typeof createBattleLogger>;
 	private lastSwitchTurn = new Map<number, number>();
+	private useSearch: boolean;
+	private matchups = new MatchupEvaluator();
+	private sacrificePlans = new Map<string, { turn: number, recipient: number, position: string, move: string }>();
 
 	constructor(stream: ObjectReadWriteStream<string>, options: HardAIOptions = {}, debug = false) {
 		super(stream, { useStatusMoves: true, canSwitch: true, damageCalc: 'full' }, { seed: options.seed }, debug);
 		this.configCFRU = { ...DEFAULT_AI_CONFIG, ...options.cfruConfig, usePrediction: true, useFightingStyle: true };
+		this.useSearch = options.search !== false;
 		this.logger = createBattleLogger(options.battleId || 'hard', options.side || 'p2', options.logging);
 	}
 
@@ -75,23 +83,18 @@ export class HardAI extends NPCBattleAI {
 		const slot = this.activeSlot + activeIndex;
 		const actor = state.self.active.find(p => p.slot === slot);
 		if (!actor || !state.opponent.active.length) return super.makeDecision(active, moves, switches, flags, activeIndex);
+		this.sacrificePlans.delete(actor.ident || actor.species);
 		const formatId = this.configCFRU.formatId;
 		const dex = Dex.forFormat(formatId);
 		const evaluator = new HardEvaluation(state, formatId);
 		const predictions = evaluator.predictions(actor);
 		const variants = [{ actor, evaluator, predictions, transform: undefined as 'mega' | undefined }];
-		const mega = flags.canMegaEvo ? this.megaForm(actor) : null;
-		if (mega) {
-			const megaState = replaceActivePokemon(state, actor, mega);
-			if (!['primordialsea', 'desolateland', 'deltastream'].includes(megaState.field.weatherId || '')) {
-				const ability = effectiveAbility(mega, megaState.field);
-				if (ability === 'drought') megaState.field.weatherId = 'sunnyday';
-				if (ability === 'drizzle') megaState.field.weatherId = 'raindance';
-				megaState.field = fieldWithActivePokemon(megaState.field,
-					[...megaState.self.active, ...megaState.opponent.active]);
-			}
+		const megaState = flags.canMegaEvo ? megaEvolutionState(state, actor) : null;
+		if (megaState) {
+			const mega = megaState.self.active.find(p => p.slot === actor.slot)!;
+			// The opponent does not observe our current choice before choosing its own action.
 			const evaluation = new HardEvaluation(megaState, formatId);
-			variants.push({ actor: mega, evaluator: evaluation, predictions: evaluation.predictions(mega), transform: 'mega' });
+			variants.push({ actor: mega, evaluator: evaluation, predictions, transform: 'mega' });
 		}
 		const candidates: { choice: MoveChoice, result: MoveScore, targetPos?: string, targetName: string,
 			variant: typeof variants[number], }[] = [];
@@ -143,17 +146,49 @@ export class HardAI extends NPCBattleAI {
 		}
 		const maxScore = Math.max(...candidates.map(c => c.result.score));
 		let top = candidates.filter(c => c.result.score === maxScore);
+		// A predicted bad outcome is preferable to a move known to have no effect.
+		if (top.some(c => !c.result.flags.hasNoEffect && !c.result.flags.isImmune)) {
+			top = top.filter(c => !c.result.flags.hasNoEffect && !c.result.flags.isImmune);
+		}
 		// If every action is predicted to fail, keep a damaging attempt instead of futile healing.
 		if (maxScore === 0 && top.some(c => c.result.move.category !== 'Status')) {
 			top = top.filter(c => c.result.move.category !== 'Status');
 		}
-		const best = this.prng.sample(top);
+		let best = this.prng.sample(top);
 		const replacements = switches.map(sw =>
 			evaluator.scoreSwitch(
 				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId), predictions, false, actor))
 			.sort((a, b) => b.score - a.score);
-		const replacement = replacements.find(p => p.safe);
-		if (!active.trapped && replacement) {
+		const replacement = replacements.find(p => p.safe && p.hasFollowUp);
+		// Keep established impossibility checks: a lucky rollout must not revive a redundant status move.
+		// Attacks remain available for a possible opposing switch into a different matchup.
+		const searchActions = candidates.filter(c => !c.choice.zMove && (c.result.move.category !== 'Status' ||
+			!c.result.flags.hasNoEffect && !c.result.flags.isImmune)).map(c => ({
+			id: `move ${c.choice.slot}${c.variant.transform ? ' mega' : ''}`, move: c.result.move.id,
+			mega: !!c.variant.transform, prior: c.result.score,
+		}));
+		const search = this.useSearch && !flags.canZMove ? searchPosition(state, evaluator, [...searchActions,
+			...(!active.trapped ? switches.map(sw => ({ id: `switch ${sw.slot}`,
+				switchTo: state.self.reserve.find(p => p.ident === sw.pokemon.ident)!, prior: 100 }))
+				.filter(a => a.switchTo) : [])],
+		new Map((active.moves || []).map((m: AnyObject) => [dex.moves.get(m.id || m.move).id, m.pp])),
+		this.matchups) : undefined;
+		if (search?.choice?.startsWith('switch')) {
+			const target = Number(search.choice.split(' ')[1]);
+			const sw = switches.find(s => s.slot === target)!;
+			const pokemon = buildPokemonFromRequest(sw.pokemon, sw.slot, false, formatId);
+			this.lastSwitchTurn.set(slot, state.turn);
+			this.logger.logSwitchDecision(state.turn, actor, pokemon, search.values.filter(v =>
+				v.id.startsWith('switch')).map(v => ({
+				pokemon: buildPokemonFromRequest(switches.find(s => s.slot === Number(v.id.split(' ')[1]))!.pokemon,
+					Number(v.id.split(' ')[1]), false, formatId).species,
+				score: v.value, reasons: ['Two-turn team-position value'],
+			})), search.reason, state);
+			return { type: 'switch', target };
+		}
+		if (search?.choice) best = candidates.find(c =>
+			`move ${c.choice.slot}${c.variant.transform ? ' mega' : ''}` === search.choice)!;
+		if (!search?.choice && !active.trapped && replacement) {
 			const reason = best.variant.evaluator.switchReason(
 				best.variant.actor, best.result, replacement, best.variant.predictions,
 				state.turn - (this.lastSwitchTurn.get(slot) ?? -10) <= 2);
@@ -165,10 +200,13 @@ export class HardAI extends NPCBattleAI {
 			}
 		}
 		const reasoning = [`Fighting style: ${fightingStyle(actor, this.configCFRU.formatId)}`];
+		if (search) reasoning.push(search.choice ? search.reason : `Search fallback: ${search.reason}`);
 		for (const [foe, actions] of predictions) {
+			reasoning.push(...(evaluator.inferenceNotes.get(foe) || []).map(note => `${foe.species}: ${note}`));
 			const summary = new Map<string, number>();
 			for (const action of actions) {
-				const name = action.switching ? 'switch' : action.move?.name || 'unknown';
+				const name = action.switching ? 'switch' : action.selectedMove ?
+					`${action.selectedMove.name} → ${action.move?.name || 'unknown'}` : action.move?.name || 'unknown';
 				summary.set(name, (summary.get(name) || 0) + action.weight);
 			}
 			reasoning.push(`${foe.species} sets: ${[...new Set(actions.map(a => a.preset))].join(' / ')}`);
@@ -177,29 +215,28 @@ export class HardAI extends NPCBattleAI {
 		}
 		this.logger.logMoveDecision(state.turn, actor, candidates.map(c => c.result), best.result.move,
 			state, reasoning, undefined, best.targetName);
+		if (['healingwish', 'lunardance'].includes(best.result.move.id)) {
+			const recipient = best.variant.evaluator.sacrificeRecipient(best.variant.actor);
+			if (recipient) this.sacrificePlans.set(actor.ident || actor.species, {
+				turn: state.turn, recipient: recipient.pokemon.slot,
+				position: `${actor.ownerSide || this.tracker.getOurSide()}${String.fromCharCode(96 + actor.slot)}`,
+				move: best.result.move.id });
+		}
 		return { type: 'move', slot: best.choice.slot, targetPos: best.targetPos,
 			zMove: best.choice.zMove, transform: best.variant.transform };
 	}
 
-	/** Own request exposes actual stats but not nature: bound the Mega stat delta conservatively. */
-	private megaForm(actor: AIPokemon): AIPokemon | null {
-		const dex = Dex.forFormat(this.configCFRU.formatId);
-		const item = dex.items.get(actor.item);
-		if (!item.megaStone) return null;
-		const before = dex.species.get(actor.species);
-		const evolution = item.megaStone[before.baseSpecies];
-		if (before.isMega || !evolution) return null;
-		const after = dex.species.get(evolution);
-		const stats = { ...actor.baseStats };
-		for (const stat of ['atk', 'def', 'spa', 'spd', 'spe'] as const) {
-			const delta = Math.floor(2 * (after.baseStats[stat] - before.baseStats[stat]) * actor.level / 100);
-			stats[stat] = Math.max(1, stats[stat] + Math.floor(delta * (delta > 0 ? 0.9 : 1.1)));
-		}
-		return { ...actor, species: after.name, types: after.types, ability: after.abilities[0], baseStats: stats };
-	}
-
 	protected override chooseSwitch(active: AnyObject | undefined, switches: SwitchChoice[]): number {
 		if (!this.state || !switches.length) return super.chooseSwitch(active, switches);
+		const plan = this.sacrificePlans.get(active?.ident);
+		this.sacrificePlans.delete(active?.ident);
+		const recipient = switches.find(sw => sw.slot === plan?.recipient);
+		if (recipient && this.state.turn === plan?.turn && this.tracker.getOurLastMove(plan.position) === plan.move) {
+			const pokemon = buildPokemonFromRequest(recipient.pokemon, recipient.slot, false, this.configCFRU.formatId);
+			this.logger.logSwitchDecision(this.state.turn, null, pokemon, [],
+				`Receive planned ${plan.move} recovery`, this.state);
+			return recipient.slot;
+		}
 		const evaluator = new HardEvaluation(this.state, this.configCFRU.formatId);
 		const candidates = switches.map(sw => {
 			const mon = buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId);

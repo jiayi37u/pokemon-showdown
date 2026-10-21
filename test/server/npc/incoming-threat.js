@@ -15,13 +15,21 @@ function pokemon(species, hp, maxHp = hp, moves = ['surf']) {
 }
 
 /** Haunter has no preset attacks. Level 70 Night Shade gives exact 70% / 40% boundaries without mocking damage or scoring. */
-function decision({ hp = 100, reserves = [pokemon('Swampert', 175)], revealed = true, weak = false, trapped = false, forced = false } = {}) {
+function decision({ hp = 100, reserves = [pokemon('Swampert', 175)], revealed = true, weak = false, trapped = false, forced = false, toxicTicks = 0, rocks = false } = {}) {
 	const ai = new NormalAI({ write() {} }, { seed: [1, 2, 3, 4] });
 	ai.getTracker().parseMessage('|switch|p1a: Haunter|Haunter, L70|100/100');
 	if (revealed) ai.getTracker().parseMessage('|move|p1a: Haunter|Night Shade|p2a: Blastoise');
 	const move = weak ? 'Tackle' : 'Surf'; // Haunter is immune to Tackle.
 	const current = { ...pokemon('Blastoise', hp, 200, [move.toLowerCase()]), active: true };
 	current.stats.spa = 100; // Keep Haunter outside KO range so these fixtures exercise the threat thresholds.
+	if (toxicTicks) {
+		current.condition += ' tox';
+		ai.getTracker().parseMessage(`|switch|p2a: Blastoise|Blastoise, L100|${current.condition}`);
+		for (let i = 0; i < toxicTicks; i++) {
+			ai.getTracker().parseMessage(`|-damage|p2a: Blastoise|${current.condition}|[from] psn`);
+		}
+	}
+	if (rocks) ai.getTracker().parseMessage('|-sidestart|p2: NPC|Stealth Rock');
 	const request = {
 		side: { id: 'p2', pokemon: [current, ...reserves] },
 		active: [{ trapped, moves: [{ move, id: move.toLowerCase(), pp: 10, maxpp: 10, target: weak ? 'normal' : 'allAdjacent' }] }],
@@ -38,6 +46,29 @@ function decision({ hp = 100, reserves = [pokemon('Swampert', 175)], revealed = 
 }
 
 describe('NormalAI incoming threat switching', () => {
+	for (const mode of ['doubles', 'multi']) it(`${mode}: adds each opponent's strongest attack`, () => {
+		const { ai } = decision();
+		const state = ai.battleState;
+		state.isDoubles = true;
+		const foe = state.opponent.active[0];
+		const partner = { ...foe, slot: 2, ownerSide: mode === 'multi' ? 'p3' : 'p1', ident: 'p1b: Haunter' };
+		state.opponent.active.push(partner);
+		const actor = state.self.active[0];
+		assert.equal(ai.getIncomingThreat(actor, [foe]), 0.7);
+		assert.equal(ai.getIncomingThreat(actor, state.opponent.active), 1.4);
+	});
+
+	it('does not retreat from an attack during confirmed sleep or recharge', () => {
+		const { ai } = decision();
+		const actor = ai.battleState.self.active[0], foe = ai.battleState.opponent.active[0];
+		foe.volatiles.add('mustrecharge');
+		assert.equal(ai.getIncomingThreat(actor, [foe]), 0);
+		foe.volatiles.delete('mustrecharge'); foe.status = 'slp'; foe.sleepTurns = 2;
+		assert.equal(ai.getIncomingThreat(actor, [foe]), 0);
+		foe.sleepTurns = undefined;
+		assert.equal(ai.getIncomingThreat(actor, [foe]), 0.7, 'Unknown wake time remains a threat');
+	});
+
 	it('distinguishes neutral damage, resistance and immunity when ranking replacements', () => {
 		const ai = new NormalAI({ write() {} });
 		ai.setBattle({ format: 'gen5pokemmorandombattle' });
@@ -171,6 +202,13 @@ describe('NormalAI incoming threat switching', () => {
 	it('should apply admission to low move scores too', () => {
 		assert.equal(decision({ hp: 200, weak: true }).choice, 'switch 2');
 		assert(decision({ hp: 200, weak: true, reserves: [pokemon('Swampert', 174)] }).choice.startsWith('move '));
+	});
+
+	it('accepts a surviving costlier entry to reset escalating poison, but never a fatal hazard entry', () => {
+		const reserves = [pokemon('Swampert', 140)]; // Night Shade costs 50%, above the ordinary limit.
+		assert(decision({ reserves }).choice.startsWith('move '));
+		assert.equal(decision({ reserves, toxicTicks: 4 }).choice, 'switch 2');
+		assert(decision({ reserves: [pokemon('Charizard', 140)], toxicTicks: 4, rocks: true }).choice.startsWith('move '));
 	});
 
 	it('should rank eligible replacements with existing scores, not by lowest threat', () => {

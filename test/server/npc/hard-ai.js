@@ -34,6 +34,17 @@ function setup(foes, team, { doubles = false, AI = HardAI, format = '' } = {}) {
 }
 
 describe('Hard CFRU tactical decisions', () => {
+	it('keeps redundant hazard checks when simulator search is enabled', () => {
+		const game = setup([mon('Talonflame', ['bravebird', 'swordsdance', 'roost'], { ability: 'Gale Wings' }),
+			mon('Serperior', ['leafstorm'], { ability: 'Contrary' })],
+		[mon('Heatran', ['stealthrock', 'roar', 'magmastorm'], { ability: 'Flash Fire', item: 'Leftovers' })],
+		{ format: 'gen6customgame' });
+		game.reveal();
+		game.ai.getTracker().parseMessage('|-sidestart|p1: Player|Stealth Rock');
+		game.ai.getTracker().parseMessage('|-boost|p1a: Talonflame|atk|2');
+		assert.notEqual(game.decide(), 'move 1');
+	});
+
 	it('keeps a guaranteed first-strike KO despite a lethal opposing move', () => {
 		const game = setup([mon('Blastoise', ['surf'])], [
 			mon('Pikachu', ['thunderbolt'], { ability: 'Static' }), mon('Gastrodon', ['earthpower'], { ability: 'Storm Drain' }),
@@ -57,6 +68,24 @@ describe('Hard CFRU tactical decisions', () => {
 		assert.equal(game.decide(), 'move 1');
 	});
 
+	it('uses a surviving priority pivot before switching, but does not attempt one that is too slow', () => {
+		const game = setup([mon('Kyogre', ['surf'])], [
+			mon('Grimmsnarl', ['partingshot', 'tackle'], { ability: 'Prankster' }),
+			mon('Gastrodon', ['earthpower'], { ability: 'Storm Drain' }),
+		]);
+		battle.p2.active[0].hp = 1;
+		battle.makeRequest('move');
+		game.reveal(['surf']);
+		assert.equal(game.decide(), 'move 1');
+		const request = structuredClone(battle.p2.activeRequest);
+		request.side.pokemon[0].ability = 'frisk';
+		game.ai.getTracker().parseMessage('|-ability|p2a: Grimmsnarl|Frisk');
+		let choice;
+		game.ai.choose = value => { choice = value; };
+		game.ai.receiveRequest(request);
+		assert.equal(choice, 'switch 2');
+	});
+
 	it('does not sacrifice a replacement to entry hazards', () => {
 		const game = setup([mon('Kyogre', ['surf'])], [
 			mon('Torkoal', ['flamethrower']), mon('Gastrodon', ['earthpower'], { ability: 'Storm Drain' }),
@@ -77,8 +106,9 @@ describe('Hard CFRU tactical decisions', () => {
 	});
 
 	it('prefers Taunt against a predicted setup, but never repeats it on a taunted target', () => {
-		const game = setup([mon('Shuckle', ['shellsmash'])], [mon('Crobat', ['taunt', 'absorb'])]);
+		const game = setup([mon('Shuckle', ['shellsmash'], { item: 'Leftovers' })], [mon('Crobat', ['taunt', 'absorb'])]);
 		game.reveal();
+		game.ai.getTracker().parseMessage('|-item|p1a: Shuckle|Leftovers');
 		assert.equal(game.decide(), 'move 1');
 		game.ai.getTracker().parseMessage('|-start|p1a: Shuckle|move: Taunt');
 		assert.equal(game.decide(), 'move 2');
@@ -302,13 +332,48 @@ describe('Hard gen7 OU inference and tactics', () => {
 		assert.deepEqual(tracker.getActiveOpponent().knownMoves, ['Earthquake']);
 	});
 
+	it('expands Sleep Talk into public callable moves while preserving its priority and Taunt vulnerability', () => {
+		const game = setup([mon('Snorlax', ['rest', 'sleeptalk', 'bodyslam', 'whirlwind'])],
+			[mon('Mew', ['taunt', 'roar'])]);
+		game.reveal();
+		const state = snapshot(game, 'gen9customgame'), foe = state.opponent.active[0], actor = state.self.active[0];
+		foe.status = 'slp'; foe.sleepTurns = 2;
+		const e = new HardEvaluation(state, 'gen9customgame');
+		const predictions = e.predictions(actor), actions = predictions.get(foe);
+		assert.deepEqual(new Set(actions.map(a => a.move.id)), new Set(['rest', 'bodyslam', 'whirlwind']));
+		assert(actions.every(a => a.selectedMove.id === 'sleeptalk'));
+		assert(Math.abs(actions.reduce((n, a) => n + a.weight, 0) - 1) < 1e-9);
+		assert(e.incoming(actor, predictions) > 0, 'Sleep Talk can deal real damage');
+		const phazing = actions.find(a => a.move.id === 'whirlwind');
+		assert.equal(e.responseFirst(actor, foe, hardMove('roar', 1, 'gen9customgame'), phazing), 0,
+			'Called Whirlwind uses Sleep Talk priority, ahead of ordinary Roar');
+		const taunt = e.scoreMoves(actor, [hardMove('taunt', 1, 'gen9customgame')], foe, predictions)[0];
+		assert.equal(taunt.breakdown.details.find(d => d.reason.includes('interrupt predicted status')).amount, 25);
+		foe.volatiles.add('mustrecharge');
+		assert(new HardEvaluation(state, 'gen9customgame').predictions(actor).get(foe).every(a => !a.move));
+	});
+
+	it('does not predict a Multi opponent switching into another player\'s reserves', () => {
+		const game = setup([mon('Garchomp', ['earthquake'])], [mon('Blissey', ['icebeam'])]);
+		const state = snapshot(game), foe = state.opponent.active[0];
+		state.isDoubles = true;
+		state.opponent.active.push({ ...foe, ownerSide: 'p3', slot: 2, ident: 'p3a: Garchomp' });
+		state.opponent.reserve = [{ ...foe, ownerSide: 'p3', active: false, ident: 'p3: Garchomp' }];
+		state.opponent.remaining = 3; state.opponent.remainingByOwner = { p1: 1, p3: 2 };
+		const predict = () => predictOpponent(state, foe, state.self.active[0], 'gen9customgame',
+			(s, user, moves) => moves.map(move => ({ move, score: 60, flags: {} })));
+		assert(!predict().some(a => a.switching));
+		state.opponent.remainingByOwner.p1 = 2;
+		assert(predict().some(a => a.switching));
+	});
+
 	it('retains attack risk even when CFRU predicts a switch', () => {
 		const game = setup([mon('Garchomp', ['earthquake'])], [mon('Blissey', ['icebeam'])], { format: 'gen7customgame' });
 		const state = snapshot(game);
 		const foe = state.opponent.active[0];
 		state.opponent.reserve = [{ ...foe, active: false }];
 		const actions = predictOpponent(state, foe, state.self.active[0], 'gen7ou', (s, a, moves) =>
-			moves.map(move => ({ move, score: 90 })));
+			moves.map(move => ({ move, score: 90, flags: {} })));
 		assert(actions.some(a => a.switching));
 		assert(actions.some(a => a.move?.category !== 'Status' && a.weight > 0));
 		assert(Math.abs(actions.reduce((n, a) => n + a.weight, 0) - 1) < 1e-9);
@@ -370,6 +435,21 @@ describe('Hard gen7 OU inference and tactics', () => {
 		game.ai.getTracker().parseMessage('|turn|1\n|move|p2a: Jirachi|Wish|p2a: Jirachi\n|turn|2');
 		assert.equal(game.decide(), 'switch 2');
 	});
+
+	for (const AI of [NormalAI, HardAI]) {
+		it(`${AI.name}: stays to Protect a pending Wish instead of fleeing a blockable KO`, () => {
+			const game = setup([mon('Kyogre', ['surf'])], [
+				mon('Glaceon', ['wish', 'protect', 'icebeam']), mon('Gastrodon', ['earthpower'], { ability: 'Storm Drain' }),
+			], { AI });
+			battle.p2.active[0].hp = Math.floor(battle.p2.active[0].maxhp / 3);
+			battle.makeRequest('move');
+			game.reveal(['surf']);
+			game.ai.getTracker().parseMessage('|turn|1\n|move|p2a: Glaceon|Wish|p2a: Glaceon\n|turn|2');
+			assert.equal(game.decide(), 'move 2');
+			game.ai.getTracker().parseMessage('|move|p2a: Glaceon|Protect|p2a: Glaceon');
+			assert.equal(game.decide(), 'switch 2', 'Repeated Protect must not force staying');
+		});
+	}
 
 	it('uses public team size without inventing identities for unrevealed reserves', () => {
 		const tracker = createBattleTracker('p2');
@@ -507,7 +587,7 @@ describe('Hard generic opponent presets', () => {
 			assert(user.moves.length <= 4);
 			assert(canHaveOpponentMoves(user.moveKnowledge, user.moves));
 			seen.push(...moves.map(m => m.id));
-			return moves.map(move => ({ move, score: 100 }));
+			return moves.map(move => ({ move, score: 100, flags: {} }));
 		});
 		assert.deepEqual(new Set(seen), new Set(['taunt', 'closecombat', 'swordsdance', 'acrobatics', 'highjumpkick']));
 		assert(Math.abs(actions.reduce((n, a) => n + a.weight, 0) - 1) < 1e-9);

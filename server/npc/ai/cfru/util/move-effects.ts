@@ -4,6 +4,28 @@ import type { AIPokemon, AIMove, BattleState, FieldConditions } from '../types';
 import { effectiveAbility, defensiveAbility, effectiveItem, grounded, normalizeWeather, rulesDex } from './mechanics';
 import { getMoveInteraction } from './type-calc';
 import { actsBeforeTarget } from './speed';
+import { getSandstormDamage, getHailDamage } from './damage-calc';
+
+export const protectionMoves = new Set([
+	'protect', 'detect', 'kingsshield', 'spikyshield', 'banefulbunker', 'obstruct', 'silktrap', 'burningbulwark',
+]);
+
+/** A pending Wish can justify staying only when protection can bridge the delay. */
+export function protectsPendingWish(state: BattleState, actor: AIPokemon, move: AIMove): boolean {
+	if (!protectionMoves.has(move.id) || state.self.conditions.wishes?.[actor.slot] !== 1 ||
+		actor.hp >= actor.maxHp || actor.volatiles.has('perish0') || actor.volatiles.has('perish1')) return false;
+	// Weather resolves before Wish; poison and burn resolve afterwards.
+	if (getSandstormDamage(actor, state.field.weather, state.field) +
+		getHailDamage(actor, state.field.weather, state.field) >= actor.hp) return false;
+	const dex = rulesDex(state.field);
+	return !state.opponent.active.some(foe => !foe.fainted && (
+		foe.moveKnowledge ? [...foe.moveKnowledge.revealedMoves, ...foe.moveKnowledge.presetCandidates] : foe.moves
+	).some(id => {
+		const attack = dex.moves.get(id);
+		if (attack.category === 'Status') return false;
+		return !attack.flags.protect || effectiveAbility(foe, state.field) === 'unseenfist' && !!attack.flags.contact;
+	}));
+}
 
 type RecoveryKind = 'direct' | 'ally' | 'drain' | 'split' | 'delayed' | 'residual' | 'replacement';
 
@@ -296,4 +318,24 @@ export function secondaryEffectFailure(
 		!(dex.gen >= 6 && (move.flags.sound || effectiveAbility(attacker, state.field) === 'infiltrator'))) {
 		return 'Substitute blocks secondary effect';
 	}
+}
+
+/** Only public, certain inability to execute a move; ordinary sleep with unknown wake time is not enough. */
+export function mustSkipMove(pokemon: AIPokemon, moves: readonly string[], field: FieldConditions): boolean {
+	return pokemon.volatiles.has('mustrecharge') || pokemon.status === 'slp' && (pokemon.sleepTurns || 0) > 1 &&
+		!moves.some(id => rulesDex(field).moves.get(id).sleepUsable);
+}
+
+/** Accuracy estimate shared by move ranking and prediction; accuracy/evasion stages are not simulated. */
+export function estimatedMoveAccuracy(
+	actor: AIPokemon, target: AIPokemon, move: AIMove, field: FieldConditions
+): number {
+	if (move.accuracy === true || effectiveAbility(actor, field) === 'noguard' ||
+		effectiveAbility(target, field) === 'noguard') return 100;
+	if (['thunder', 'hurricane'].includes(move.id)) {
+		if (field.weather === 'rain') return 100;
+		if (field.weather === 'sun') return 50;
+	}
+	if (move.id === 'blizzard' && ['hail', 'snow'].includes(field.weather)) return 100;
+	return move.accuracy;
 }

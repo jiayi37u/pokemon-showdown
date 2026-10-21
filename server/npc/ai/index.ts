@@ -127,7 +127,7 @@ export abstract class NPCBattleAI extends BattlePlayer {
 
 			if (canSwitch.length === 0) return 'pass';
 
-			const target = this.chooseSwitch(undefined, canSwitch);
+			const target = this.chooseSwitch(pokemon[i], canSwitch);
 			chosen.push(target);
 			return `switch ${target}`;
 		});
@@ -158,16 +158,9 @@ export abstract class NPCBattleAI extends BattlePlayer {
 			if (pokemon[i].condition.endsWith(' fnt') || pokemon[i].commanding) {
 				return 'pass';
 			}
-
-			// Update transformation flags
-			canMegaEvo = canMegaEvo && active.canMegaEvo;
-			canUltraBurst = canUltraBurst && active.canUltraBurst;
-			canZMove = canZMove && !!active.canZMove;
-			canDynamax = canDynamax && !!active.canDynamax;
-			canTerastallize = canTerastallize && !!active.canTerastallize;
-
 			// Get available moves
-			const useMaxMoves = (!active.canDynamax && active.maxMoves) || (canDynamax && this.shouldDynamax(active));
+			const useMaxMoves = (!active.canDynamax && active.maxMoves) ||
+				(canDynamax && active.canDynamax && this.shouldDynamax(active));
 			const possibleMoves = useMaxMoves ? active.maxMoves.maxMoves : active.moves;
 
 			const moves = this.getAvailableMoves(possibleMoves, active, request.active.length > 1, i, pokemon);
@@ -196,11 +189,11 @@ export abstract class NPCBattleAI extends BattlePlayer {
 
 			// Make decision
 			const decision = this.makeDecision(active, moves, canSwitch, {
-				canMegaEvo,
-				canUltraBurst,
-				canZMove,
-				canDynamax,
-				canTerastallize,
+				canMegaEvo: canMegaEvo && !!active.canMegaEvo,
+				canUltraBurst: canUltraBurst && !!active.canUltraBurst,
+				canZMove: canZMove && !!active.canZMove,
+				canDynamax: canDynamax && !!active.canDynamax,
+				canTerastallize: canTerastallize && !!active.canTerastallize,
 			}, i);
 
 			// Handle switch decision

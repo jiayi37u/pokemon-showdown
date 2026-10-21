@@ -152,8 +152,8 @@ export function compareSpeedOrder(
 	actor: AIPokemon, target: AIPokemon, field: FieldConditions,
 	actorSide?: SideConditions, targetSide?: SideConditions
 ): ActionOrder {
-	const a = getEffectiveSpeed(actor, field, actorSide);
-	const b = getEffectiveSpeed(target, field, targetSide);
+	const a = actor.queuedSpeed ?? getEffectiveSpeed(actor, field, actorSide);
+	const b = target.queuedSpeed ?? getEffectiveSpeed(target, field, targetSide);
 	if (a === b) return 0;
 	return (a > b) !== !!field.trickroom ? 1 : -1;
 }

@@ -13,8 +13,10 @@
  * @license MIT
  */
 
-import { moveTargets } from './cfru/util/move-effects';
+import { moveTargets, protectsPendingWish, recoveryCuresStatus, mustSkipMove, estimatedMoveAccuracy } from './cfru/util/move-effects';
 import { effectiveAbility, effectiveItem, replaceActivePokemon } from './cfru/util/mechanics';
+import { needsResidualReset, entryHazardDamage } from './cfru/util/turn-outcome';
+import { megaEvolutionState } from './cfru/util/forms';
 
 import type { ObjectReadWriteStream } from '../../../lib/streams';
 import type { ChoiceRequest } from '../../../sim/side';
@@ -36,7 +38,7 @@ import { createScoringEngine, ScoringEngine } from './cfru/scoring';
 import {
 	buildBattleStateWithTracker, buildAIMove, buildPokemonFromRequest,
 } from './cfru/state-builder';
-import { calculateDamage } from './cfru/util/damage-calc';
+import { calculateDamage, getEffectiveHpAfterSecondary } from './cfru/util/damage-calc';
 import { resolveMove } from './cfru/util/type-calc';
 import { attacksFirst } from './cfru/util/speed';
 import { getOpponentThreatMoves } from './cfru/util/opponent-presets';
@@ -229,7 +231,21 @@ export class NormalAI extends NPCBattleAI {
 	 * Make decision for current turn using CFRU scoring
 	 * @param activeIndex - Index of the active Pokemon (0 or 1 in doubles)
 	 */
-	protected override makeDecision(
+	protected override makeDecision(...args: Parameters<NormalAI['decide']>): ReturnType<NormalAI['decide']> {
+		const state = this.battleState;
+		const actor = state?.self.active.find(p => p.slot === (args[4] || 0) + this.activeSlotOffset + 1);
+		const mega = state && actor && args[3].canMegaEvo ? megaEvolutionState(state, actor) : null;
+		if (mega) this.battleState = mega;
+		try {
+			const decision = this.decide(...args);
+			if (mega && decision.type === 'move') decision.transform = 'mega';
+			return decision;
+		} finally {
+			this.battleState = state;
+		}
+	}
+
+	private decide(
 		active: AnyObject,
 		moves: MoveChoice[],
 		switches: SwitchChoice[],
@@ -521,15 +537,7 @@ export class NormalAI extends NPCBattleAI {
 		const first = kos.filter(s => this.canKOFirst(attacker, target, s.move));
 		const candidates = first.length ? first : kos;
 		if (candidates.length < 2) return;
-		const accuracy = (move: AIMove) => {
-			const weather = this.battleState!.field.weather;
-			const field = this.battleState!.field;
-			if (move.accuracy === true || effectiveAbility(attacker, field) === 'noguard' ||
-				effectiveAbility(target, field) === 'noguard') return 100;
-			if ((['thunder', 'hurricane'].includes(move.id) && weather === 'rain') ||
-				(move.id === 'blizzard' && ['hail', 'snow'].includes(weather))) return 100;
-			return ['thunder', 'hurricane'].includes(move.id) && weather === 'sun' ? 50 : move.accuracy;
-		};
+		const accuracy = (move: AIMove) => estimatedMoveAccuracy(attacker, target, move, this.battleState!.field);
 		const reliable = candidates.reduce((best, candidate) =>
 			accuracy(candidate.move) > accuracy(best.move) ||
 			(accuracy(candidate.move) === accuracy(best.move) && candidate.score > best.score) ? candidate : best);
@@ -546,13 +554,14 @@ export class NormalAI extends NPCBattleAI {
 		}
 	}
 
-	/** Maximum average damage from revealed/preset attacks, relative to the defender's current HP. */
+	/** Sum of each opponent's strongest estimated attack, relative to the defender's current HP. */
 	private getIncomingThreat(defender: AIPokemon, opponents: AIPokemon[], replacing = defender): number {
 		if (defender.hp <= 0) return Infinity;
 		const state = replacing === defender ? this.battleState! :
 			replaceActivePokemon(this.battleState!, replacing, defender);
 		let threat = 0;
 		for (const opponent of opponents) {
+			let strongest = 0;
 			const knowledge = opponent.moveKnowledge;
 			const moves = knowledge ? [...knowledge.revealedMoves, ...knowledge.presetCandidates] :
 				getOpponentThreatMoves(opponent.species, opponent.moves, this.cfruConfig.formatId);
@@ -560,6 +569,7 @@ export class NormalAI extends NPCBattleAI {
 				moves: moves.map(id => ({ id })),
 			}];
 			for (const model of models) {
+				if (mustSkipMove(model.pokemon, model.moves.map(m => m.id), state.field)) continue;
 				const projected = replaceActivePokemon(state, opponent, model.pokemon);
 				for (const { id: moveId } of model.moves) {
 					const move = buildAIMove({ id: moveId }, 1, this.cfruConfig.formatId);
@@ -573,9 +583,10 @@ export class NormalAI extends NPCBattleAI {
 						activePokemon: [...projected.self.active, ...projected.opponent.active],
 						attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
 					});
-					threat = Math.max(threat, damage.average / defender.hp);
+					strongest = Math.max(strongest, damage.average / defender.hp);
 				}
 			}
+			threat += strongest;
 		}
 		return threat;
 	}
@@ -616,6 +627,7 @@ export class NormalAI extends NPCBattleAI {
 		// Staying is useful if at least one living opponent offers a good move/target combination.
 		let maxAttackScore = -Infinity;
 		let maxStatusScore = -Infinity;
+		let canClearAttrition = false;
 		for (const target of opponents) {
 			const scores = this.scoringEngine.scoreMoves(this.battleState, attacker, aiMoves, target);
 			for (let i = 0; i < scores.length; i++) {
@@ -624,6 +636,11 @@ export class NormalAI extends NPCBattleAI {
 					return { ...noSwitch, reason: 'Can KO first with average damage (ignoring accuracy)' };
 				}
 				const score = scores[i].score;
+				if (score >= 115 && !scores[i].flags.hasNoEffect &&
+					protectsPendingWish(this.battleState, attacker, aiMoves[i])) {
+					return { ...noSwitch, reason: 'Protect to receive pending Wish' };
+				}
+				if (score > 60 && (aiMoves[i].id === 'rest' || recoveryCuresStatus(aiMoves[i]))) canClearAttrition = true;
 				if (aiMoves[i].category === 'Status') {
 					maxStatusScore = Math.max(maxStatusScore, score);
 				} else {
@@ -633,10 +650,18 @@ export class NormalAI extends NPCBattleAI {
 		}
 
 		const threat = this.getIncomingThreat(attacker, opponents);
+		const field = this.battleState.field;
+		const foeAbility = opponents.some(p => effectiveAbility(p, field) === 'baddreams') ? 'baddreams' : '';
+		const resetResidual = !canClearAttrition && needsResidualReset(attacker, field, foeAbility);
+		const residualLoss = Math.max(0, attacker.hp - getEffectiveHpAfterSecondary(attacker, field.weather, foeAbility, field));
+		// A reset can justify a costlier entry if it improves on staying under escalating attrition.
+		const switchLimit = resetResidual ? Math.max(NormalAI.SWITCH_THREAT_LIMIT,
+			Math.min(1, threat + residualLoss / attacker.hp)) : NormalAI.SWITCH_THREAT_LIMIT;
 		const shouldConsiderSwitch = (
 			maxAttackScore <= NormalAI.SWITCH_THRESHOLD_ATTACK &&
 			maxStatusScore <= NormalAI.SWITCH_THRESHOLD_STATUS
-		) || threat >= NormalAI.SWITCH_THREAT_TRIGGER;
+		) || threat >= NormalAI.SWITCH_THREAT_TRIGGER ||
+		resetResidual;
 
 		if (shouldConsiderSwitch) {
 			// Score all switch options with improved logic
@@ -652,16 +677,22 @@ export class NormalAI extends NPCBattleAI {
 				// Build from this player's request: Multi teammates can have identical party slots.
 				const defender = buildPokemonFromRequest(switchOption.pokemon, switchOption.slot, false, this.cfruConfig.formatId);
 				const switchThreat = this.getIncomingThreat(defender, opponents, attacker);
-				if (switchThreat > NormalAI.SWITCH_THREAT_LIMIT) {
+				const hp = defender.hp - entryHazardDamage(defender, this.battleState.self.conditions, field) -
+					defender.hp * switchThreat;
+				const endHp = getEffectiveHpAfterSecondary({ ...defender, hp, hpPercent: 100 * hp / defender.maxHp },
+					field.weather, foeAbility, field);
+				if (switchThreat >= 1 || switchThreat > switchLimit || endHp <= 0) {
 					switchScores.push({
 						pokemon: pokemonName,
 						score: 0,
-						reasons: [`Ineligible: incoming threat ${(switchThreat * 100).toFixed(1)}% exceeds 40%`],
+						reasons: [endHp <= 0 ? 'Ineligible: cannot survive entry, the attack, and residual damage' :
+							`Ineligible: incoming threat ${(switchThreat * 100).toFixed(1)}% exceeds ${(switchLimit * 100).toFixed(1)}%`],
 					});
 					continue;
 				}
 				const { score, reasons } = this.scoreSwitchMatchups(switchOption.pokemon, opponents);
 				reasons.push(`Incoming threat ${(switchThreat * 100).toFixed(1)}%`);
+				if (resetResidual) reasons.push('Reset escalating residual damage with a surviving replacement');
 
 				switchScores.push({
 					pokemon: pokemonName,

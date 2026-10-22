@@ -16,6 +16,42 @@ function fixture(own, foe) {
 
 describe('Hard singles matchup value', () => {
 	afterEach(() => { battles.splice(0).forEach(b => b.destroy()); });
+	it('retains a Toxic stall route after poison lands, but does not invent one through Rest or Poison Heal', () => {
+		const f = fixture([mon('Chansey', ['toxic', 'softboiled'], { item: 'Eviolite', nature: 'Bold', evs: { hp: 252, def: 252 } })],
+			[mon('Cresselia', ['psychic', 'moonlight'], { evs: { hp: 252 } })]);
+		const before = f.evaluator.assess(f.state).matrix[0][0].self;
+		Object.assign(f.state.opponent.team[0], { status: 'tox', toxicCounter: 1 });
+		const after = f.evaluator.assess(f.state).matrix[0][0].self;
+		assert(before.check > 0.6); assert(after.check >= before.check);
+		f.state.opponent.team[0].hp = 20; f.state.opponent.team[0].hpPercent = 5;
+		assert(f.evaluator.assess(f.state).matrix[0][0].self.check >= before.check);
+		f.state.opponent.team[0].moves.push('rest');
+		assert.equal(f.evaluator.assess(f.state).matrix[0][0].self.check, 0);
+		f.state.opponent.team[0].moves.pop(); f.state.opponent.team[0].ability = 'poisonheal';
+		assert.equal(f.evaluator.assess(f.state).matrix[0][0].self.check, 0);
+	});
+	it('uses opposing missed actions and consumes the entry turn of that window', () => {
+		const f = fixture([mon('Garchomp', ['earthquake'], { nature: 'Jolly', evs: { atk: 252, spe: 252 } })],
+			[mon('Weavile', ['iciclecrash'], { nature: 'Jolly', evs: { atk: 252, spe: 252 } })]);
+		const target = f.state.opponent.team[0];
+		const awake = f.evaluator.assess(f.state).matrix[0][0].self;
+		Object.assign(target, { status: 'slp', sleepTurns: 3 });
+		const asleep = f.evaluator.assess(f.state).matrix[0][0].self;
+		assert(asleep.check > awake.check + 0.5);
+		assert(asleep.check > asleep.counter);
+		target.ability = 'earlybird';
+		assert(f.evaluator.assess(f.state).matrix[0][0].self.check < asleep.check);
+		target.status = ''; target.volatiles.add('mustrecharge');
+		assert(f.evaluator.assess(f.state).matrix[0][0].self.check > awake.check);
+	});
+	it('does not delay a sleeping attacker with a sleep-usable move', () => {
+		const f = fixture([mon('Magikarp', ['tackle'])], [mon('Snorlax', ['snore'])]);
+		const target = f.state.opponent.team[0];
+		Object.assign(target, { status: 'slp', sleepTurns: 3 });
+		const usable = f.evaluator.assess(f.state).matrix[0][0].self;
+		target.sleepTurns = 1;
+		assert.equal(f.evaluator.assess(f.state).matrix[0][0].self.pressure, usable.pressure);
+	});
 	it('distinguishes a free-entry check from a manual switch-in', () => {
 		const f = fixture([mon('Mamoswine', ['earthquake', 'iceshard'], { ability: 'Thick Fat', item: 'Life Orb',
 			nature: 'Jolly', evs: { atk: 252, spe: 252 } })],
@@ -24,6 +60,20 @@ describe('Hard singles matchup value', () => {
 		const matchup = f.evaluator.assess(f.state).matrix[0][0].self;
 		assert(matchup.check > 0.9);
 		assert.equal(matchup.counter, 0);
+	});
+	it('values an active answer above the same check stranded on the bench', () => {
+		const f = fixture([mon('Magikarp', ['splash']), mon('Mamoswine', ['earthquake', 'iceshard'],
+			{ ability: 'Thick Fat', item: 'Life Orb', nature: 'Jolly', evs: { atk: 252, spe: 252 } })],
+		[mon('Bisharp', ['suckerpunch', 'ironhead', 'swordsdance'], { item: 'Dread Plate', nature: 'Adamant',
+			evs: { hp: 124, atk: 252, spe: 132 } })]);
+		const waiting = f.evaluator.assess(f.state);
+		assert(waiting.matrix[1][0].self.check > 0.9);
+		assert.equal(waiting.matrix[1][0].self.counter, 0);
+		const [idle, answer] = f.state.self.team;
+		idle.active = false; answer.active = true;
+		f.state.self.active = [answer]; f.state.self.reserve = [idle];
+		const ready = f.evaluator.assess(f.state);
+		assert(ready.self > waiting.self + 25, `${ready.self} <= ${waiting.self}`);
 	});
 	it('changes the same team members roles against physical and special opposition', () => {
 		const team = [mon('Skarmory', ['bravebird', 'roost']), mon('Chansey', ['seismictoss', 'softboiled'], { item: 'Eviolite' })];

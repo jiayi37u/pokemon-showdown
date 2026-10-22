@@ -237,16 +237,29 @@ export class HardAI extends NPCBattleAI {
 				`Receive planned ${plan.move} recovery`, this.state);
 			return recipient.slot;
 		}
-		const evaluator = new HardEvaluation(this.state, this.configCFRU.formatId);
+		// Shared state omits fainted actives. Keep an inert request placeholder only for
+		// projecting this free entry; the simulator then applies entry effects normally.
+		let state = this.state;
+		if (!state.isDoubles && !state.self.active.length && active) {
+			const fainted = buildPokemonFromRequest(active, 1, true, this.configCFRU.formatId);
+			if (fainted.fainted) state = { ...state, self: { ...state.self,
+				active: [fainted], team: [fainted, ...state.self.team] } };
+		}
+		const evaluator = new HardEvaluation(state, this.configCFRU.formatId);
 		const candidates = switches.map(sw => {
-			const mon = buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId);
+			const mon = state.self.reserve.find(p => p.slot === sw.slot) ||
+				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId);
 			return evaluator.scoreSwitch(mon, evaluator.predictions(mon), true);
 		});
+		const search = this.useSearch ? searchPosition(state, evaluator,
+			candidates.map(c => ({ id: `switch ${c.pokemon.slot}`, switchTo: c.pokemon, prior: c.score })),
+			new Map(), this.matchups, true) : undefined;
 		const bestScore = Math.max(...candidates.map(c => c.score));
-		const best = this.prng.sample(candidates.filter(c => c.score === bestScore));
+		const best = candidates.find(c => search?.choice === `switch ${c.pokemon.slot}`) ||
+			this.prng.sample(candidates.filter(c => c.score === bestScore));
 		this.logger.logSwitchDecision(this.state.turn, null, best.pokemon,
 			candidates.map(c => ({ pokemon: c.pokemon.species, score: c.score, reasons: c.reasons })),
-			'CFRU replacement: choose after entry hazards and matchup evaluation', this.state);
+			search?.choice ? search.reason : `CFRU replacement fallback: ${search?.reason || 'search disabled'}`, this.state);
 		return best.pokemon.slot;
 	}
 

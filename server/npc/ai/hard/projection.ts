@@ -42,26 +42,39 @@ function spread(p: AIPokemon, dex: ReturnType<typeof Dex.forFormat>) {
 	return null;
 }
 
-/** One coherent moveset: slash alternatives never become a five/eight-move opponent. */
-export function completeMoves(model: OpponentModel, variant: number): string[] {
+const completions = new Map<string, string[][]>();
+/** Sample distinct coherent combinations, not permutations of the same four moves. */
+export function completeMoves(model: OpponentModel, variant: number, preferred?: string): string[] {
 	const knowledge = model.pokemon.moveKnowledge;
-	const revealed = knowledge?.revealedMoves || model.pokemon.moves;
-	// Rotate unknown choices only: revealed moves must not consume all the sampled offsets.
-	const known = new Set(revealed.map(toID));
-	const ordered = model.moves.filter(m => !known.has(toID(m.id))).sort((a, b) => b.availability - a.availability);
-	const rotated = [...ordered.slice(variant % Math.max(1, ordered.length)),
-		...ordered.slice(0, variant % Math.max(1, ordered.length))];
-	// Protocol reveals "Hidden Power", while a preset supplies its possible type. They occupy one slot.
-	const hiddenPower = rotated.find(m => m.id.startsWith('hiddenpower') && m.id !== 'hiddenpower')?.id;
-	const moves = [...new Set(revealed.map(id => toID(id) === 'hiddenpower' && hiddenPower ? hiddenPower : toID(id)))];
-	for (const candidate of rotated) {
-		if (moves.length >= 4) break;
-		if (candidate.id.startsWith('hiddenpower') && moves.some(id => id.startsWith('hiddenpower'))) continue;
-		if (!moves.includes(candidate.id) && (!knowledge || canHaveOpponentMoves(knowledge, [...moves, candidate.id]))) {
-			moves.push(candidate.id);
-		}
+	const revealed: string[] = (knowledge?.revealedMoves || model.pokemon.moves).map(toID);
+	const key = JSON.stringify([knowledge, revealed, model.moves]);
+	let choices = completions.get(key);
+	if (!choices) {
+		const candidates = [...new Set(model.moves.slice().sort((a, b) => b.availability - a.availability)
+			.map(m => toID(m.id)))];
+		const typed = candidates.filter(id => id.startsWith('hiddenpower') && id !== 'hiddenpower');
+		const seeds = revealed.includes('hiddenpower') && typed.length ? typed.map(id =>
+			revealed.map(move => move === 'hiddenpower' ? id : move)) : [revealed];
+		choices = [];
+		let longest = 0;
+		const visit = (moves: string[], start: number) => {
+			if (choices!.length >= 64) return;
+			if (moves.length > longest) { longest = moves.length; choices!.length = 0; }
+			if (moves.length === longest) choices!.push(moves);
+			if (moves.length >= 4) return;
+			for (let i = start; i < candidates.length; i++) {
+				const id = candidates[i];
+				if (moves.includes(id) || id.startsWith('hiddenpower') && moves.some(m => m.startsWith('hiddenpower'))) continue;
+				if (!knowledge || canHaveOpponentMoves(knowledge, [...moves, id])) visit([...moves, id], i + 1);
+			}
+		};
+		for (const seed of seeds) visit([...new Set(seed)], 0);
+		if (completions.size >= 2048) completions.clear();
+		completions.set(key, choices);
 	}
-	return moves;
+	const covering = preferred ? choices.filter(moves => moves.includes(preferred)) : [];
+	const pool = covering.length ? covering : choices;
+	return [...pool[variant % pool.length]];
 }
 
 export interface Projection {
@@ -126,7 +139,8 @@ export function projectionUnsupported(state: BattleState): string | undefined {
 	if ((state.opponent.remaining || 0) > state.opponent.team.filter(p => !p.fainted).length +
 		(state.opponent.preview?.length || 0)) return 'unseen party without preview';
 	for (const side of [state.self, state.opponent]) {
-		if (Object.keys(side.conditions.wishes).length || Object.keys(side.conditions.futureMoves).length) {
+		if (Object.values(side.conditions.wishes).some(turns => turns > 0) ||
+			Object.values(side.conditions.futureMoves).some(turns => turns > 0)) {
 			return 'delayed effect source unavailable';
 		}
 		for (const p of side.team) {
@@ -145,13 +159,15 @@ export function projectionUnsupported(state: BattleState): string | undefined {
 }
 
 export function projectBattle(
-	state: BattleState, opponent: AIPokemon[], sample: number, ownPP = new Map<string, number>()
+	state: BattleState, opponent: AIPokemon[], sample: number, ownPP = new Map<string, number>(), replacing = false
 ): Projection | null {
 	const formatId = state.field.formatId || 'gen6ou';
 	const dex = Dex.forFormat(formatId);
-	const own = [...state.self.active, ...state.self.reserve].filter(p => !p.fainted);
+	const own = [...state.self.active, ...state.self.reserve.filter(p => !p.fainted)];
 	const parties = [own, opponent];
 	const sets = parties.map(party => party.map(p => {
+		// A fainted active is a switch placeholder; its unavailable stats never enter evaluation.
+		if (p.fainted) return { species: p.species, name: p.ident || p.species, moves: ['splash'] };
 		const encoding = spread(p, dex);
 		if (!encoding) return null;
 		// Side requests encode public power in names such as return102. Those are not Dex
@@ -183,7 +199,7 @@ export function projectBattle(
 			parties[s].some(p => dex.species.get(p.species).isMega)) {
 			for (const pokemon of side.pokemon) pokemon.canMegaEvo = null;
 		}
-		side.pokemonLeft = parties[s].length;
+		side.pokemonLeft = parties[s].filter(p => !p.fainted).length;
 		const conditions = s ? state.opponent.conditions : state.self.conditions;
 		// Preserve format rule conditions on the field, but discard lead-induced side effects.
 		side.sideConditions = {};
@@ -214,12 +230,16 @@ export function projectBattle(
 	}
 	battle.turn = state.turn;
 	battle.log.length = 0;
-	battle.makeRequest('move');
+	if (replacing) {
+		for (const side of battle.sides) side.active[0].switchFlag = side.active[0].fainted;
+	}
+	battle.makeRequest(replacing ? 'switch' : 'move');
 	return { battle, self: own, opponent };
 }
 
 function restore(battle: Battle, target: Pokemon, p: AIPokemon, sample: number) {
 	target.hp = p.hp;
+	target.fainted = p.fainted;
 	target.maxhp = target.baseMaxhp = p.maxHp;
 	target.boosts = { ...p.boosts };
 	target.status = toID(p.status);

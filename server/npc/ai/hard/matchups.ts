@@ -48,6 +48,7 @@ function moves(p: AIPokemon, field: FieldConditions): AIMove[] {
 		}
 		return move;
 	}).filter(move =>
+		!(move.id === 'fakeout' && p.activeMoveActions) &&
 		!(p.volatiles.has('taunt') && move.category === 'Status') &&
 		!(p.volatiles.has('choicelock') && dex.items.get(effectiveItem(p, field)).isChoice &&
 			p.lastMove && dex.moves.get(p.lastMove).id !== dex.moves.get(move.id).id));
@@ -92,6 +93,31 @@ function recovery(p: AIPokemon, state: BattleState): number {
 	}));
 }
 
+/** Remaining missed actions; sleep-usable and thawing attacks retain their own timing. */
+function actionDelay(p: AIPokemon, field: FieldConditions, move?: AIMove): number {
+	if (p.volatiles.has('mustrecharge')) return 1;
+	const data = move && rulesDex(field).moves.get(move.id);
+	if (p.status === 'slp' && !data?.sleepUsable) {
+		const decrement = effectiveAbility(p, field) === 'earlybird' ? 2 : 1;
+		return p.sleepTurns ? Math.max(0, Math.ceil(p.sleepTurns / decrement) - 1) : 1;
+	}
+	return p.status === 'frz' && !data?.flags.defrost ? 2 : 0;
+}
+
+/** The same residual route exists before and after inflicting status. Recovery can stall
+ * ordinary poison/burn, but escalating Toxic eventually exceeds repeatable recovery.
+ */
+function attrition(target: AIPokemon, state: BattleState): boolean {
+	if (!['tox', 'psn', 'brn'].includes(target.status)) return false;
+	if (moves(target, state.field).some(m => ['rest', 'refresh', 'healbell', 'aromatherapy'].includes(m.id))) return false;
+	if (['shedskin', 'naturalcure'].includes(effectiveAbility(target, state.field)) ||
+		effectiveAbility(target, state.field) === 'hydration' && state.field.weather === 'rain' ||
+		effectiveItem(target, state.field) === 'lumberry') return false;
+	const later = { ...hp(target, target.maxHp), toxicCounter: target.status === 'tox' ? 14 : target.toxicCounter };
+	const loss = later.hp - getEffectiveHpAfterSecondary(later, state.field.weather, '', state.field);
+	return loss > recovery(target, state);
+}
+
 /** Attack race plus sustainable recovery. The two-turn search handles exact move effects;
  * this estimates the remaining assignment beyond its horizon using shared mechanics.
  */
@@ -107,12 +133,10 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 	const targetResidual = target.hp - getEffectiveHpAfterSecondary(target, state.field.weather,
 		effectiveAbility(actor, state.field), state.field);
 	const healing = recovery(actor, state), targetHealing = recovery(target, theirs);
-	const delay = actor.volatiles.has('mustrecharge') ? 1 : actor.status === 'slp' ?
-		Math.max(1, actor.sleepTurns - 1) : actor.status === 'frz' ? 2 : 0;
+	const delay = actionDelay(actor, state.field);
 	const stable = healing > worst + residual && actor.hp > worst * 2 && !delay;
 	let check = 0, pressure = 0;
 	for (const move of attacks) {
-		if (move.id === 'fakeout' && actor.activeMoveActions) continue;
 		if (move.id === 'focuspunch' && !actor.volatiles.has('substitute') && target.status !== 'slp') continue;
 		const dealt = damage(actor, target, move, state);
 		if (!dealt) continue;
@@ -122,9 +146,12 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		for (const response of incoming) {
 			const first = (compareActionOrder(actor, target, move, [response.move], state.field,
 				state.self.conditions, state.opponent.conditions) + 1) / 2;
-			const before = (turns - first + delay) * response.amount + Math.max(0, turns - 1 + delay) * residual;
+			const ownDelay = actionDelay(actor, state.field, move);
+			const foeDelay = actionDelay(target, state.field, response.move);
+			const before = Math.max(0, turns - first + ownDelay - foeDelay) * response.amount +
+				Math.max(0, turns - 1 + ownDelay) * residual;
 			race = Math.min(race, clamp(0.5 + (actor.hp - before) / Math.max(1, response.amount * 2)));
-			opportunity = Math.min(opportunity, clamp((actor.hp - (1 - first + delay) * response.amount) /
+			opportunity = Math.min(opportunity, clamp((actor.hp - Math.max(0, 1 - first + ownDelay - foeDelay) * response.amount) /
 				Math.max(1, actor.hp)));
 		}
 		// Repeated low damage cannot break a faster/reliably surviving recovery user.
@@ -139,10 +166,10 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 	}
 	// Recovery plus poison/burn can be a real defensive answer without large direct damage.
 	if (stable) {
+		if (attrition(target, theirs)) { check = Math.max(check, 0.75); pressure = Math.max(pressure, 0.35); }
 		for (const move of moves(actor, state.field)) {
 			if (!['tox', 'psn', 'brn'].includes(move.status || '') || statusFailure(state, actor, target, move)) continue;
-			if (effectiveAbility(target, state.field) === 'magicguard' ||
-				['psn', 'tox'].includes(move.status!) && effectiveAbility(target, state.field) === 'poisonheal') continue;
+			if (!attrition({ ...target, status: move.status!, toxicCounter: 0 }, theirs)) continue;
 			check = Math.max(check, 0.75 * estimatedMoveAccuracy(actor, target, move, state.field) / 100);
 			pressure = Math.max(pressure, 0.35);
 		}
@@ -156,14 +183,20 @@ function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Mat
 	const result = outlook(actor, target, state);
 	if (!actor.hp || !target.hp) return result;
 	let counter = result.check;
-	const options = moves(target, state.field);
+	const options = moves(target, state.field).filter(m => !actionDelay(target, state.field, m));
+	// The conceded entry action also advances sleep/recharge and residuals on the opponent.
+	const volatiles = new Set(target.volatiles); volatiles.delete('mustrecharge');
+	const afterEntry = { ...target, volatiles, sleepTurns: target.sleepTurns ? Math.max(1, target.sleepTurns -
+		(effectiveAbility(target, state.field) === 'earlybird' ? 2 : 1)) : 0 };
+	const restedTarget = hp(afterEntry, getEffectiveHpAfterSecondary(afterEntry, state.field.weather,
+		effectiveAbility(actor, state.field), state.field));
 	const entryDamage = Math.max(0, ...options.filter(m => m.category !== 'Status').map(m =>
 		damage(target, actor, m, reverse(state))));
 	const damaged = hp(actor, actor.hp - entryDamage);
 	counter = Math.min(counter, outlook(hp(damaged, getEffectiveHpAfterSecondary(damaged, state.field.weather,
-		effectiveAbility(target, state.field), state.field)), target, state).check);
+		effectiveAbility(target, state.field), state.field)), restedTarget, state).check);
 	for (const move of options.filter(m => m.category === 'Status')) {
-		let defender = actor, attacker = target;
+		let defender = actor, attacker = restedTarget;
 		if (move.boosts && move.target === 'self') {
 			const boosts = { ...target.boosts };
 			const multiplier = effectiveAbility(target, state.field) === 'contrary' ? -1 :
@@ -172,7 +205,7 @@ function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Mat
 				const key = stat as keyof typeof boosts;
 				boosts[key] = Math.max(-6, Math.min(6, boosts[key] + amount * multiplier));
 			}
-			attacker = { ...target, boosts };
+			attacker = { ...restedTarget, boosts };
 		} else if (move.status && !statusFailure(reverse(state), target, actor, move)) {
 			defender = { ...actor, status: move.status, sleepTurns: move.status === 'slp' ? 2 : 0, toxicCounter: 0 };
 		} else if (directRecoveryAmount(target, move, state.field)) {
@@ -213,6 +246,10 @@ function teamValue(party: AIPokemon[], foes: AIPokemon[], rows: Matchup[][], sta
 		value -= 45 * (1 - coverage(matchups.map(m => m.check))) +
 			30 * (1 - coverage(matchups.map(m => m.counter))) +
 			10 * (1 - coverage(matchups.map(m => m.counter * m.sustain)));
+		// A reserve check needs a free entry. Against the current threat, only the active
+		// member can act immediately; a reserve must survive the conceded entry action.
+		// This values an executable answer, rather than a rotation toward another paper check.
+		if (foe.active) value -= 35 * (1 - coverage(matchups.map((m, i) => party[i].active ? m.check : m.counter)));
 	}
 	return value;
 }

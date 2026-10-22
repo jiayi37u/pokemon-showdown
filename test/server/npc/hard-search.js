@@ -4,7 +4,8 @@ const { Battle } = require('../../../dist/sim');
 const { buildPokemonFromRequest, buildBattleStateWithTracker } = require('../../../dist/server/npc/ai/cfru/state-builder');
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 const { completeMoves, projectBattle, projectionUnsupported } = require('../../../dist/server/npc/ai/hard/projection');
-const { searchPosition, searchDamage, searchChoices } = require('../../../dist/server/npc/ai/hard/search');
+const { searchPosition, searchDamage, searchChoices, searchResponses, replacementChoices } = require('../../../dist/server/npc/ai/hard/search');
+const { MatchupEvaluator } = require('../../../dist/server/npc/ai/hard/matchups');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
 
 const empty = () => ({ stealthrock: false, spikes: 0, toxicspikes: 0, stickyweb: false,
@@ -35,6 +36,64 @@ function fixture(team, foe) {
 
 describe('Hard public-state simulator search', () => {
 	afterEach(() => { battles.forEach(b => b.destroy()); battles = []; });
+	it('ignores expired delayed effects on either side but keeps pending effects explicit', () => {
+		const f = fixture([{ species: 'Mew', moves: ['psychic'] }], [{ species: 'Mew', moves: ['psychic'] }]);
+		for (const side of [f.state.self, f.state.opponent]) for (const effect of ['wishes', 'futureMoves']) {
+			side.conditions[effect] = { 1: 0 };
+			assert.equal(projectionUnsupported(f.state), undefined);
+			side.conditions[effect][1] = 1;
+			assert.equal(projectionUnsupported(f.state), 'delayed effect source unavailable');
+			side.conditions[effect][1] = 0;
+		}
+	});
+	it('samples distinct optional slots even when three mandatory moves have higher availability', () => {
+		const mandatory = ['rapidspin', 'earthquake', 'ironhead'];
+		const optional = ['swordsdance', 'rockslide', 'substitute', 'stealthrock'];
+		const knowledge = { revealedMoves: [], presetCandidates: [...optional, ...mandatory], remainingSlots: 4,
+			slots: [optional, ...mandatory.map(m => [m])] };
+		const model = { pokemon: { moves: [], moveKnowledge: knowledge },
+			moves: [...optional.map(id => ({ id, availability: 0.25 })), ...mandatory.map(id => ({ id, availability: 1 }))] };
+		const samples = [0, 1, 2].map(i => completeMoves(model, i));
+		assert.equal(new Set(samples.map(m => m.slice().sort().join())).size, 3);
+		assert(samples.some(m => m.includes('rockslide')));
+		assert(completeMoves(model, 2, 'stealthrock').includes('stealthrock'));
+		assert.equal(completeMoves(model, 2, 'stealthrock').length, 4);
+		for (const moves of samples) { assert.equal(moves.length, 4); assert(mandatory.every(m => moves.includes(m))); }
+	});
+	it('projects free replacements with real entry hazards and abilities, without an extra opposing attack', () => {
+		const f = fixture([{ species: 'Mew', moves: ['splash'] },
+			{ species: 'Landorus-Therian', ability: 'Intimidate', moves: ['earthquake'] }],
+		[{ species: 'Garchomp', moves: ['dragonclaw'] }]);
+		Object.assign(f.state.self.active[0], { hp: 0, maxHp: 100, fainted: true });
+		f.state.self.conditions.stealthrock = true;
+		const p = projectBattle(f.state, f.state.opponent.team, 0, new Map(), true);
+		assert(p); battles.push(p.battle);
+		assert.equal(p.battle.requestState, 'switch');
+		assert.equal(p.battle.p1.pokemonLeft, 1);
+		assert.deepEqual(replacementChoices(p.battle, p.battle.p1, {
+			assess() { throw new Error('A sole legal replacement needs no position search'); },
+		}), ['switch 2']);
+		const entrant = p.battle.p1.pokemon[1], full = entrant.hp;
+		p.battle.makeChoices('switch 2', 'pass');
+		assert.equal(p.battle.requestState, 'move');
+		assert.equal(entrant.hp, full - Math.floor(entrant.maxhp / 8));
+		assert.equal(p.battle.p2.active[0].boosts.atk, -1);
+	});
+	it('selects a free entry using its next action rather than sacrificing a faster KO to damage-only ranking', () => {
+		const f = fixture([{ species: 'Mew', moves: ['splash'] },
+			{ species: 'Alakazam', moves: ['psychic'], nature: 'Timid', evs: { spa: 252, spe: 252 } },
+			{ species: 'Snorlax', moves: ['tackle'] }],
+		[{ species: 'Gengar', moves: ['shadowball'], nature: 'Timid', evs: { spa: 252, spe: 252 } }]);
+		Object.assign(f.state.self.active[0], { hp: 0, fainted: true });
+		const actions = f.state.self.reserve.map(p => ({ id: `switch ${p.slot}`, switchTo: p, prior: 100 }));
+		const before = JSON.stringify(f.state);
+		const result = searchPosition(f.state, f.evaluator, actions, new Map(), new MatchupEvaluator(), true);
+		assert.equal(result.choice, 'switch 2', result.reason);
+		assert(result.reason.startsWith('Replacement search'));
+		const p = projectBattle(f.state, f.state.opponent.team, 0, new Map(), true); battles.push(p.battle);
+		assert.equal(replacementChoices(p.battle, p.battle.p1, new MatchupEvaluator())[0], 'switch 2');
+		assert.equal(JSON.stringify(f.state), before);
+	});
 	it('prepares Beat Up participants and sums their hits without changing the searched position', () => {
 		const f = fixture([{ species: 'Weavile', moves: ['beatup'] }, { species: 'Garchomp', moves: ['earthquake'] }],
 			[{ species: 'Mew', moves: ['splash'] }]);
@@ -89,6 +148,29 @@ describe('Hard public-state simulator search', () => {
 		assert(choices.includes('switch 2'));
 		f.b.p1.active[0].trapped = true;
 		assert(searchChoices(f.b, f.b.p1, 2).every(c => c.startsWith('move')));
+	});
+	it('retains setup against passive actions even when attack-only predictions give it zero weight', () => {
+		const f = fixture([{ species: 'Diancie', moves: ['protect', 'moonblast'] }],
+			[{ species: 'Gallade', moves: ['closecombat', 'psychocut', 'swordsdance'] },
+				{ species: 'Mew', moves: ['psychic'] }]);
+		const before = JSON.stringify(f.b.toJSON());
+		const predictions = ['closecombat', 'psychocut'].map(id => ({ move: { id }, switching: false, weight: 0.5 }));
+		const replies = searchResponses(f.b, predictions);
+		assert(replies.length <= 3);
+		assert(replies.find(r => r.choice === 'move 3').weight > 0.1);
+		assert(replies.some(r => r.choice === 'move 1' && r.weight > 0));
+		const continuation = searchChoices(f.b, f.b.p2, 2);
+		assert(continuation.includes('move 1')); assert(continuation.includes('move 3'));
+		assert(continuation.includes('switch 2'));
+		assert.equal(JSON.stringify(f.b.toJSON()), before);
+		f.b.p2.active[0].boosts.atk = 6;
+		assert(!searchResponses(f.b, predictions).some(r => r.choice === 'move 3' && r.weight > 0));
+		assert(!searchChoices(f.b, f.b.p2, 2).includes('move 3'));
+		f.b.p2.active[0].boosts.atk = 0; f.b.p2.active[0].ability = 'contrary';
+		assert(!searchResponses(f.b, predictions).some(r => r.choice === 'move 3' && r.weight > 0));
+		f.b.p2.active[0].ability = 'steadfast'; f.b.p2.active[0].addVolatile('taunt');
+		f.b.makeRequest('move');
+		assert(!searchResponses(f.b, predictions).some(r => r.choice === 'move 3' && r.weight > 0));
 	});
 	it('restores stats, HP, status, boosts and weather without replaying lead abilities', () => {
 		const f = fixture([{ species: 'Garchomp', ability: 'Rough Skin', nature: 'Jolly',
@@ -250,6 +332,22 @@ describe('Hard public-state simulator search', () => {
 			{ id: 'switch', switchTo: f.state.self.reserve[0], prior: 100 },
 		], new Map());
 		assert.equal(result.choice, 'switch', result.reason);
+	});
+	it('stops a setup attacker in place instead of cycling between apparent resistances', () => {
+		const f = fixture([{ species: 'Rotom-Wash', ability: 'Levitate', item: 'Leftovers', nature: 'Bold',
+			evs: { hp: 252, def: 252 }, moves: ['hydropump', 'willowisp', 'voltswitch', 'painsplit'] },
+		{ species: 'Ferrothorn', ability: 'Iron Barbs', moves: ['powerwhip', 'leechseed'] },
+		{ species: 'Clefable', ability: 'Magic Guard', moves: ['moonblast', 'softboiled'] },
+		{ species: 'Heatran', ability: 'Flash Fire', moves: ['lavaplume', 'roar'] }],
+		[{ species: 'Garchomp', ability: 'Rough Skin', item: 'Rocky Helmet', nature: 'Jolly',
+			evs: { hp: 240, def: 68, spe: 200 }, moves: ['earthquake', 'stoneedge', 'swordsdance', 'stealthrock'] }]);
+		f.state.opponent.active[0].boosts.atk = 2;
+		f.state.self.conditions.stealthrock = true;
+		const result = searchPosition(f.state, f.evaluator, [
+			{ id: 'burn', move: 'willowisp', prior: 0 }, { id: 'attack', move: 'hydropump', prior: 45 },
+			...f.state.self.reserve.map(p => ({ id: `switch ${p.slot}`, switchTo: p, prior: 100 })),
+		], new Map());
+		assert.equal(result.choice, 'burn', result.reason);
 	});
 	it('explicitly declines incomplete effect payloads and unseen parties', () => {
 		const f = fixture([{ species: 'Mew', moves: ['psychic'] }], [{ species: 'Mew', moves: ['psychic'] }]);

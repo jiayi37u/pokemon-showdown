@@ -34,6 +34,21 @@ function setup(foes, team, { doubles = false, AI = HardAI, format = '' } = {}) {
 }
 
 describe('Hard CFRU tactical decisions', () => {
+	it('uses replacement search when the public state omits the fainted active', () => {
+		const game = setup([mon('Gengar', ['shadowball'], { nature: 'Timid', evs: { spa: 252, spe: 252 } })],
+			[mon('Magikarp', ['splash']), mon('Alakazam', ['psychic'], { nature: 'Timid', evs: { spa: 252, spe: 252 } }),
+				mon('Snorlax', ['tackle'])], { format: 'gen6customgame' });
+		game.reveal();
+		const original = battle.log.length;
+		battle.makeChoices('move 1', 'move 1');
+		game.ai.getTracker().parseMessage(battle.log.slice(original).join('\n'));
+		assert.equal(battle.requestState, 'switch');
+		let reason;
+		game.ai.getLogger().logSwitchDecision = (...args) => { reason = args[4]; };
+		assert.equal(game.decide(), 'switch 2');
+		assert(reason.startsWith('Replacement search'), reason);
+	});
+
 	it('keeps redundant hazard checks when simulator search is enabled', () => {
 		const game = setup([mon('Talonflame', ['bravebird', 'swordsdance', 'roost'], { ability: 'Gale Wings' }),
 			mon('Serperior', ['leafstorm'], { ability: 'Contrary' })],

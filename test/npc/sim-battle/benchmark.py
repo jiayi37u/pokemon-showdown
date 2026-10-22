@@ -12,6 +12,7 @@ import tempfile
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pool', default='npc1')
+    parser.add_argument('--replay-manifest', type=Path, help='Replay the exact cases, teams, sides and seeds in a saved manifest')
     parser.add_argument('--pairs', type=int, default=5)
     parser.add_argument('--offset', type=int, default=0, help='Skip pairs reserved for previous tuning')
     parser.add_argument('--seed', type=int, default=21021026)
@@ -23,23 +24,31 @@ def main():
     if args.pairs < 1 or args.offset < 0 or not 1 <= args.workers <= 8 or args.timeout < 1:
         parser.error('pairs and timeout must be positive, offset nonnegative, workers between 1 and 8')
     root = Path(__file__).resolve().parents[3]
-    pool = json.loads((root / 'data/npc/templates.json').read_text())[args.pool]['teams']
-    pairs = [(a, b) for i, a in enumerate(pool) for b in pool[i + 1:]]
-    random.Random(args.seed).shuffle(pairs)
-    if args.offset + args.pairs > len(pairs):
-        parser.error(f'Pool only contains {len(pairs)} distinct team pairs')
+    if args.replay_manifest:
+        metadata = json.loads(args.replay_manifest.read_text())
+        cases = metadata['cases']
+        args.format = metadata['format']
+        if not cases or len({case['id'] for case in cases}) != len(cases):
+            parser.error('Replay manifest must contain unique, nonempty cases')
+        metadata = dict(metadata, replaySource=str(args.replay_manifest.resolve()), timeout=args.timeout)
+    else:
+        pool = json.loads((root / 'data/npc/templates.json').read_text())[args.pool]['teams']
+        pairs = [(a, b) for i, a in enumerate(pool) for b in pool[i + 1:]]
+        random.Random(args.seed).shuffle(pairs)
+        if args.offset + args.pairs > len(pairs):
+            parser.error(f'Pool only contains {len(pairs)} distinct team pairs')
+        cases = []
+        for i in range(args.offset, args.offset + args.pairs):
+            a, b = pairs[i]
+            for reverse in (False, True):
+                cases.append(dict(id=f'{i + 1:03d}{"b" if reverse else "a"}',
+                                  teams=[b, a] if reverse else [a, b],
+                                  p1='normal' if i % 2 == 0 else 'hard', seed=f'{i + 101},21,10,26'))
+        metadata = dict(pool=args.pool, format=args.format, shuffleSeed=args.seed,
+                        offset=args.offset, pairs=args.pairs, timeout=args.timeout, cases=cases)
     output = args.output or Path(tempfile.mkdtemp(prefix='npc-benchmark-'))
     if args.output:
         output.mkdir(parents=True, exist_ok=False)
-    cases = []
-    for i in range(args.offset, args.offset + args.pairs):
-        a, b = pairs[i]
-        for reverse in (False, True):
-            cases.append(dict(id=f'{i + 1:03d}{"b" if reverse else "a"}',
-                              teams=[b, a] if reverse else [a, b],
-                              p1='normal' if i % 2 == 0 else 'hard', seed=f'{i + 101},21,10,26'))
-    metadata = dict(pool=args.pool, format=args.format, shuffleSeed=args.seed,
-                    offset=args.offset, pairs=args.pairs, timeout=args.timeout, cases=cases)
     (output / 'manifest.json').write_text(json.dumps(metadata, indent=2) + '\n')
 
     def run(case):

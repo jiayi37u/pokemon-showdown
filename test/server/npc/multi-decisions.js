@@ -235,11 +235,23 @@ describe('Production NPCMultiManager decisions', () => {
 
 	it('should handle team preview before both NPCs start choosing moves', () => {
 		game = createMulti([[lanturn], [partner, venusaur], [vibrava], [partner, scizor]], true);
-		assert.deepEqual(game.decide(), [{ side: 'p2', choice: 'default' }, { side: 'p4', choice: 'default' }]);
+		const choices = game.decide();
+		assert.deepEqual(choices.map(c => c.side), ['p2', 'p4']);
+		assert(choices.every(c => /^team [12]$/.test(c.choice)));
 		game.play(['default', '', 'default', '']);
 		game.decide();
 		assert.equal(game.choices.length, 4);
 		assert(game.choices.slice(2).every(c => c.choice.startsWith('move ')));
+	});
+
+	it('Hard selects each Multi lead only from that controller\'s own team', () => {
+		const pivot = { species: 'Scizor', ability: 'Technician', moves: ['uturn'] };
+		const hazards = { species: 'Ferrothorn', ability: 'Iron Barbs', moves: ['spikes'] };
+		game = createMulti([[lanturn], [partner, pivot], [vibrava], [hazards, partner]], true, 'hard');
+		assert.deepEqual(game.decide(), [{ side: 'p2', choice: 'team 2' }, { side: 'p4', choice: 'team 1' }]);
+		game.play(['default', '', 'default', '']);
+		assert.equal(game.battle.p2.active[0].species.id, 'scizor');
+		assert.equal(game.battle.p4.active[0].species.id, 'ferrothorn');
 	});
 
 	it('should use the simulator-provided Struggle when PP is exhausted', () => {

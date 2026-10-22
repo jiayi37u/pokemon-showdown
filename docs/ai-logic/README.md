@@ -8,12 +8,14 @@
 |------|------|------|------|
 | Basic | BasicAI | ✅ 可用 | 优先最大伤害 |
 | Normal | NormalAI | ✅ 策略固定 | CFRU 基础评分；保留正确性修复 |
-| Hard | HardAI | ✅ 可用，迁移进行中 | 随机／分级配置推断与通用 preset 回退、战术换人和招式评估，见 [Hard 逻辑](./HardAI/logic.md) |
+| Hard | HardAI | ✅ 可用，持续调优 | 公开证据约束配置、单打对位价值与两回合搜索；其他局面使用战术评分和换人，见 [Hard 逻辑](./HardAI/logic.md) |
 | Expert | ExpertAI | ⏳ 计划中 | 完整策略 + 双打协作 |
 
 ## 文档结构
 
 Basic / Normal 的文档按以下结构组织；Hard 的实现和迁移边界集中在 `HardAI/logic.md`：
+
+Hard 的主要计算说明：[对位与单只精灵价值](./HardAI/logic.md#对位关系和单只精灵的价值)、[对手回应预测](./HardAI/logic.md#对手回应预测)、[局面价值与两回合搜索](./HardAI/logic.md#局面价值和两回合搜索)。
 
 ```
 BasicAI/
@@ -66,4 +68,4 @@ AI 逻辑移植自 CFRU (Complete-Fire-Red-Upgrade) 项目。
 
 ---
 
-*最后更新: 2026-10-15*
+*最后更新: 2026-10-22*

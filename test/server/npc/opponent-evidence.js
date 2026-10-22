@@ -7,15 +7,16 @@ const { DEFAULT_AI_CONFIG } = require('../../../dist/server/npc/ai/cfru/types');
 const { computeStatsFromPreset } = require('../../../dist/server/npc/ai/cfru/util/opponent-presets');
 const { refineOpponentModels } = require('../../../dist/server/npc/ai/hard/evidence');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
-const { inferOpponent, alternativeOpponentModels, predictOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
+const { inferOpponent, predictOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
 
 const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
 let battles = [];
-function game(own, foe, mode = 'singles', format = 'gen7customgame', partner = passive) {
+function game(own, foe, mode = 'singles', format = 'gen7customgame', partner = passive, reserves = { own: [], foe: [] }) {
 	const multi = mode === 'multi', doubles = mode === 'doubles';
-	const battle = new Battle({ format: { ...Dex.formats.get('gen7customgame'), gameType: mode, playerCount: multi ? 4 : 2 },
-		seed: [8, 19, 27, 42], p1: { name: 'Foe', team: doubles ? [foe, passive] : [foe] },
-		p2: { name: 'Own', team: doubles ? [own, passive] : [own] },
+	const generation = format.match(/^gen\d+/)?.[0] || 'gen7';
+	const battle = new Battle({ format: { ...Dex.formats.get(`${generation}customgame`), gameType: mode, playerCount: multi ? 4 : 2 },
+		seed: [8, 19, 27, 42], p1: { name: 'Foe', team: [...(doubles ? [foe, passive] : [foe]), ...reserves.foe] },
+		p2: { name: 'Own', team: [...(doubles ? [own, passive] : [own]), ...reserves.own] },
 		...(multi ? { p3: { name: 'Foe2', team: [passive] }, p4: { name: 'Own2', team: [partner] } } : {}) });
 	battles.push(battle);
 	battle.makeChoices();
@@ -41,7 +42,7 @@ function game(own, foe, mode = 'singles', format = 'gen7customgame', partner = p
 function candidates(pokemon, presets) {
 	return presets.map((preset, i) => {
 		const stats = computeStatsFromPreset(Dex.species.get(pokemon.species).baseStats, pokemon.level, preset);
-		return { name: preset.name || String(i), matched: true, weight: 1 / presets.length,
+		return { name: preset.name || String(i), matched: true, weight: 1 / presets.length, spread: preset,
 			pokemon: { ...pokemon, presetModels: undefined, baseStats: stats, maxHp: stats.hp,
 				hp: Math.floor(stats.hp * pokemon.hpPercent / 100), item: preset.item || '', ability: preset.ability || pokemon.ability },
 			moves: pokemon.moves.map(id => ({ id, availability: 1 })) };
@@ -54,6 +55,43 @@ function refine(state, presets) {
 
 describe('Hard inference from observed battle outcomes', () => {
 	afterEach(() => { battles.forEach(b => b.destroy()); battles = []; });
+	it('excludes active Choice items after distinct selected moves during one stay', () => {
+		const g = game({ species: 'Skarmory', moves: ['splash'], evs: { hp: 252, def: 252 } },
+			{ species: 'Scizor', ability: 'Technician', moves: ['bulletpunch', 'bugbite'] });
+		g.play(); g.battle.makeChoices('move 2', 'move 1');
+		const state = g.state();
+		assert(state.opponentEvidence.some(e => e.kind === 'selection' && e.excludedItems.includes('choiceband')));
+		const result = refine(state, [{ item: 'Choice Band' }, { item: 'Leftovers' }]);
+		assert(result.models.every(m => m.pokemon.item === 'Leftovers'));
+	});
+	it('excludes Assault Vest after a selected status move across singles, doubles and multi', () => {
+		for (const mode of ['singles', 'doubles', 'multi']) {
+			const g = game(passive, { species: 'Tornadus-Therian', ability: 'Regenerator', moves: ['taunt'] }, mode, 'gen6ou');
+			const state = g.play(), foe = state.opponent.active[0];
+			const result = refineOpponentModels(foe, inferOpponent(foe, 'gen6ou'), state.opponentEvidence);
+			assert(state.opponentEvidence.some(e => e.excludedItems?.includes('assaultvest')), mode);
+			assert(result.models.every(m => m.pokemon.item !== 'assaultvest'), mode);
+		}
+	});
+	it('does not turn called moves or suppressed-item selections into Choice exclusions', () => {
+		const g = game({ species: 'Skarmory', moves: ['splash'], evs: { hp: 252, def: 252 } },
+			{ species: 'Scizor', ability: 'Technician', moves: ['bulletpunch', 'bugbite'] });
+		g.tracker.parseMessage('|move|p1a: Scizor|Bullet Punch|p2a: Mew\n' +
+			'|move|p1a: Scizor|Bug Bite|p2a: Mew|[from] move: Sleep Talk');
+		assert(!g.tracker.evidence.getHistory().some(e => e.excludedItems?.includes('choiceband')));
+		const h = game({ species: 'Skarmory', moves: ['splash'], evs: { hp: 252, def: 252 } },
+			{ species: 'Scizor', ability: 'Technician', moves: ['bulletpunch', 'bugbite'] });
+		h.battle.field.addPseudoWeather('magicroom', h.battle.p1.active[0]); h.state();
+		h.play(); h.battle.makeChoices('move 2', 'move 1');
+		assert(!h.state().opponentEvidence.some(e => e.excludedItems?.includes('choiceband')));
+	});
+	it('retains public delayed-effect sources when rebuilding a decision snapshot', () => {
+		const g = game(passive, { species: 'Slowbro', ability: 'Regenerator', moves: ['futuresight'] }, 'singles', 'gen6ou');
+		const state = g.play();
+		assert.equal(state.self.conditions.futureMoves[1], 2);
+		assert.equal(state.self.conditions.futureAttacks[1].move, 'futuresight');
+		assert.equal(state.self.conditions.futureAttacks[1].source.replaceAll(' ', ''), state.opponent.active[0].ident.replaceAll(' ', ''));
+	});
 	it('tests the known type of our Hidden Power instead of inventing Normal-type damage', () => {
 		const special = { nature: 'Careful', evs: { hp: 252, spd: 252 }, ability: 'Poison Heal' };
 		const g = game({ species: 'Mew', nature: 'Modest', evs: { spa: 252 }, moves: ['hiddenpowerice'] },
@@ -62,7 +100,9 @@ describe('Hard inference from observed battle outcomes', () => {
 		assert(state.opponentEvidence.some(e => e.move === 'hiddenpower'));
 		const result = refine(state, [{ ...special, name: 'special' },
 			{ name: 'physical', nature: 'Impish', evs: { hp: 252, def: 252 }, ability: 'Poison Heal' }]);
-		assert.deepEqual(result.models.map(m => m.name), ['special']);
+		assert(result.models.some(m => m.name === 'special'));
+		assert(result.models.every(m => m.pokemon.baseStats.spd > computeStatsFromPreset(
+			Dex.species.get('Gliscor').baseStats, 100, { nature: 'Impish', evs: { hp: 252, def: 252 } }).spd));
 	});
 	it('can explain a missing offensive item using typed Hidden Power damage without exposing it as fact', () => {
 		const set = { nature: 'Modest', evs: { hp: 248, spa: 252 }, ability: 'Water Absorb' };
@@ -73,7 +113,7 @@ describe('Hard inference from observed battle outcomes', () => {
 		models[0].moves = [{ id: 'hiddenpowergrass', availability: 1 }];
 		const result = refineOpponentModels(foe, models, state.opponentEvidence);
 		assert(result.models.some(m => m.pokemon.item === 'choicespecs'), JSON.stringify(result.notes));
-		assert(result.notes.some(n => n.includes('inferred configurations')));
+		assert(result.notes.some(n => n.includes('exceptional evidence')));
 		assert(!foe.itemKnown); assert.equal(g.tracker.getActiveOpponent().item, '');
 		assert.equal(models[0].pokemon.item, 'Leftovers');
 	});
@@ -121,69 +161,180 @@ describe('Hard inference from observed battle outcomes', () => {
 		const result = refineOpponentModels(foe, candidates(foe, [{ name: 'observed', item: 'Leftovers' }]), evidence);
 		assert(result.models.every(m => m.pokemon.item === 'Leftovers'));
 	});
-	it('infers an absent defensive spread while preserving a publicly revealed item', () => {
+	it('adjusts defensive investment within the preset before changing the item', () => {
 		const g = game({ species: 'Mew', nature: 'Modest', evs: { spa: 252 }, moves: ['surf'] },
 			{ species: 'Gliscor', ability: 'Poison Heal', item: 'Leftovers', nature: 'Careful',
 				evs: { hp: 252, spd: 252, def: 4 }, moves: ['earthquake'] });
 		const state = g.play(), foe = state.opponent.active[0];
-		assert(foe.itemKnown);
 		const original = candidates(foe, [{ nature: 'Impish', evs: { hp: 252, def: 252 }, item: 'Leftovers' }]);
 		const result = refineOpponentModels(foe, original, state.opponentEvidence);
-		const expected = computeStatsFromPreset(Dex.species.get('Gliscor').baseStats, foe.level,
-			{ nature: 'Careful', evs: { hp: 252, spd: 252, def: 4 } });
-		assert(result.notes.some(n => n.includes('inferred configurations')), JSON.stringify(result.notes));
-		assert(result.models.every(m => Dex.toID(m.pokemon.item) === 'leftovers'));
-		assert(result.models.some(m => m.pokemon.baseStats.spd === expected.spd));
-		assert(!result.models.some(m => m.pokemon.baseStats.spd === original[0].pokemon.baseStats.spd));
+		assert.equal(result.models.length, 1);
+		assert.equal(result.models[0].pokemon.item, 'Leftovers');
+		assert(result.models[0].pokemon.baseStats.spd > original[0].pokemon.baseStats.spd);
+		assert(Object.values(result.models[0].spread.evs).reduce((a, b) => a + b, 0) <= 508);
 	});
 
-	it('can change both the speed spread and item instead of keeping a refuted default', () => {
+	it('fits the original spread after exceptional speed evidence supports an unlisted Scarf', () => {
 		const g = game({ species: 'Garchomp', nature: 'Jolly', evs: { hp: 252, spe: 252 }, moves: ['tackle'] },
 			{ species: 'Hydreigon', ability: 'Levitate', item: 'Choice Scarf', nature: 'Timid',
 				evs: { spa: 252, spe: 252, spd: 4 }, moves: ['dragonpulse'] });
 		const state = g.play(), foe = state.opponent.active[0];
 		const original = candidates(foe, [{ nature: 'Quiet', evs: { hp: 252, spa: 252 }, item: 'Leftovers' }]);
-		original[0].matched = false;
 		const result = refineOpponentModels(foe, original, state.opponentEvidence);
-		assert(result.models.every(m => m.pokemon.item === 'choicescarf'));
-		assert(result.models.every(m => m.pokemon.baseStats.spe > original[0].pokemon.baseStats.spe));
-		assert(result.models.length > 1, 'One observed order does not identify an exact EV spread');
+		assert.equal(result.models.length, 1);
+		assert.equal(result.models[0].pokemon.item, 'choicescarf');
+		assert(result.models[0].pokemon.baseStats.spe > original[0].pokemon.baseStats.spe);
 	});
 
-	it('keeps revealed move slots, legal stat budgets and the public forme in generated configurations', () => {
-		const { completeMoves, projectBattle } = require('../../../dist/server/npc/ai/hard/projection');
-		const g = game(passive, { species: 'Scizor', moves: ['bulletpunch', 'brickbreak', 'roost', 'defog'] });
-		const state = g.play(), foe = state.opponent.active[0];
-		foe.moves = ['bulletpunch', 'brickbreak', 'roost', 'defog'];
-		const models = inferOpponent(foe, 'gen7customgame');
-		assert(models.every(m => !m.matched));
-		const snapshot = structuredClone(foe);
-		const generated = [...alternativeOpponentModels(foe, models, 'gen7customgame')];
-		assert(generated.length);
-		for (const model of generated) {
-			assert.equal(model.pokemon.species, 'Scizor');
-			assert.notEqual(model.pokemon.item, 'assaultvest');
-			assert.notEqual(model.pokemon.item, 'choicespecs');
-			const moves = completeMoves(model, 0);
-			assert.deepEqual([...moves].sort(), [...foe.moves].sort());
-			const projection = projectBattle(state, [{ ...model.pokemon, moves }], 0);
-			assert(projection, model.name);
-			const set = projection.battle.p2.pokemon[0].set;
-			assert(Object.values(set.evs).reduce((a, b) => a + b, 0) <= 510);
-			projection.battle.destroy();
+	it('requires damage above max non-Choice Attack before introducing an unlisted Band', () => {
+		const set = { nature: 'Adamant', evs: { hp: 248, atk: 252 }, ability: 'Technician' };
+		for (const item of ['', 'Choice Band']) {
+			const g = game({ species: 'Vaporeon', ability: 'Water Absorb', moves: ['splash'] },
+				{ species: 'Scizor', ...set, item, moves: ['bulletpunch'] });
+			const state = g.play(), foe = state.opponent.active[0];
+			const original = candidates(foe, [{ ...set, evs: item ? set.evs : { hp: 248 }, name: 'ordinary' }]);
+			const result = refineOpponentModels(foe, original, state.opponentEvidence);
+			assert.equal(result.models.length, 1);
+			assert.equal(result.models[0].pokemon.item, item ? 'choiceband' : '');
+			assert(result.models[0].pokemon.baseStats.atk >= original[0].pokemon.baseStats.atk);
+			assert.deepEqual(result.models[0].moves, original[0].moves);
+			assert(!foe.itemKnown);
 		}
-		assert.deepEqual(foe, snapshot);
 	});
-	it('accepts an observed item even when it is a poor fit for the revealed moves', () => {
-		const g = game(passive, { species: 'Scizor', moves: ['bulletpunch'] });
+
+	it('uses damage to retain Assault Vest even after Tornadus reveals an unlisted attack', () => {
+		const g = game({ species: 'Mew', nature: 'Modest', evs: { spa: 252 }, moves: ['surf'] },
+			{ species: 'Tornadus-Therian', ability: 'Regenerator', item: 'Assault Vest', nature: 'Timid',
+				evs: { hp: 248, def: 8, spe: 252 }, moves: ['gust'] }, 'singles', 'gen6ou');
 		const state = g.play(), foe = state.opponent.active[0];
-		foe.moves = ['bulletpunch', 'brickbreak', 'roost', 'defog'];
-		foe.itemKnown = true; foe.item = 'Choice Specs'; foe.originalItem = 'Choice Specs';
-		const models = [...alternativeOpponentModels(foe, inferOpponent(foe, 'gen7customgame'), 'gen7customgame')];
-		assert(models.length);
-		assert(models.every(m => m.pokemon.item === 'choicespecs'));
+		assert(foe.moves.map(Dex.toID).includes('gust'), g.battle.log.join('\n'));
+		assert(!foe.itemKnown);
+		const original = inferOpponent(foe, 'gen6ou');
+		const result = refineOpponentModels(foe, original, state.opponentEvidence);
+		assert(result.models.length);
+		assert(result.models.some(m => m.pokemon.item === 'assaultvest'));
+		assert(result.models.every(m => m.moves.some(move => move.id === 'gust')));
 	});
+
+	it('retains Tornadus presets and their move pools when damage evidence contradicts every spread', () => {
+		const g = game({ species: 'Mew', moves: ['surf'] },
+			{ species: 'Tornadus-Therian', ability: 'Regenerator', moves: ['gust'] }, 'singles', 'gen6ou');
+		const state = g.play(), foe = state.opponent.active[0];
+		const original = inferOpponent(foe, 'gen6ou');
+		assert.equal(original.length, 3);
+		const evidence = structuredClone(state.opponentEvidence.filter(e => e.kind === 'damage' && e.second === foe.ident));
+		assert(evidence.length);
+		for (const e of evidence) { e.before = 100; e.after = 1; }
+		const result = refineOpponentModels(foe, original, evidence);
+		assert.deepEqual(result.models, original);
+		assert.deepEqual([...new Set(result.models.map(m => m.pokemon.item))].sort(), ['assaultvest', 'rockyhelmet']);
+	});
+
+	it('replays the 296 HP Hidden Power case without discarding Assault Vest or expanding configurations', () => {
+		const g = game({ species: 'Landorus-Therian', ability: 'Intimidate', item: 'Rocky Helmet', nature: 'Impish',
+			evs: { hp: 248, def: 252, spd: 8 }, moves: ['uturn'] },
+		{ species: 'Tornadus-Therian', ability: 'Regenerator', moves: ['hiddenpowerice'] }, 'singles', 'gen6ou');
+		g.tracker.parseMessage('|move|p1a: Tornadus-Therian|Hidden Power|p2a: Landorus-Therian\n' +
+			'|-supereffective|p2a: Landorus-Therian\n|-damage|p2a: Landorus-Therian|85/381\n' +
+			'|move|p2a: Landorus-Therian|U-turn|p1a: Tornadus-Therian\n' +
+			'|-resisted|p1a: Tornadus-Therian\n|-damage|p1a: Tornadus-Therian|87/100\n|upkeep\n|turn|2');
+		const state = g.state(), foe = state.opponent.active[0];
+		const original = inferOpponent(foe, 'gen6ou');
+		const frozen = structuredClone(original);
+		const start = performance.now();
+		const result = refineOpponentModels(foe, original, state.opponentEvidence);
+		assert(performance.now() - start < 5000, 'Fitting must not become another search tree');
+		assert.equal(result.models.length, 2);
+		assert(result.models.every(m => m.pokemon.item === 'assaultvest'));
+		for (const model of result.models) {
+			assert(model.pokemon.baseStats.spa > 256);
+			const { calculateDamage } = require('../../../dist/server/npc/ai/hard/damage');
+			const { hardMove } = require('../../../dist/server/npc/ai/hard/opponent-model');
+			const damage = calculateDamage(model.pokemon, state.self.active[0], hardMove('hiddenpowerice', 1, 'gen6ou'), state.field);
+			assert(damage.max >= 291 && damage.min <= 298, 'Decision damage must explain the observed HP interval');
+			assert(model.moves.some(m => m.id === 'hiddenpowerice'));
+			assert(Object.values(model.spread.evs).reduce((a, b) => a + b, 0) <= 508);
+			assert(Object.values(model.spread.evs).every(ev => ev >= 0 && ev <= 252));
+			assert(model.statRanges.spa[0] <= model.pokemon.baseStats.spa);
+			assert(model.statRanges.spa[1] >= model.pokemon.baseStats.spa);
+		}
+		assert.deepEqual(original, frozen);
+		assert(!foe.itemKnown);
+		assert.equal(g.tracker.getActiveOpponent().item, '');
+	});
+
+	it('does not favor a preset whose Hidden Power type cannot be evaluated', () => {
+		const g = game(passive, { species: 'Tornadus-Therian', ability: 'Regenerator', moves: ['hiddenpowerice'] });
+		const state = g.play(), foe = state.opponent.active[0];
+		const models = candidates(foe, [
+			{ name: 'vest', item: 'assaultvest', nature: 'Timid', evs: { hp: 248, spe: 252 } },
+			{ name: 'helmet', item: 'rockyhelmet', nature: 'Timid', evs: { hp: 248, spe: 252 } },
+		]);
+		models.forEach(m => { m.moves = [{ id: 'hiddenpower', availability: 1 }]; });
+		const result = refineOpponentModels(foe, models, state.opponentEvidence);
+		assert.deepEqual(result.models.map(m => m.name), ['vest', 'helmet']);
+		assert(result.notes.some(n => n.includes('unresolved')));
+	});
+
 	for (const mode of ['singles', 'doubles', 'multi']) {
+		it(`${mode}: records missing Helmet contact damage without excluding suppressed or prevented effects`, () => {
+			for (const variant of ['missing', 'present', 'magicguard', 'pads', 'noncontact', 'magicroom']) {
+				const g = game({ species: 'Mew', ability: variant === 'magicguard' ? 'Magic Guard' : 'Synchronize',
+					item: variant === 'pads' ? 'Protective Pads' : '', moves: [variant === 'noncontact' ? 'surf' : 'uturn'] },
+				{ species: 'Tornadus-Therian', ability: 'Regenerator', item: variant === 'present' ? 'Rocky Helmet' : 'Assault Vest',
+					moves: ['gust'] }, mode);
+				if (variant === 'magicroom') {
+					g.battle.field.addPseudoWeather('magicroom', g.battle.p2.active[0]);
+					g.state();
+				}
+				const state = g.play();
+				const excluded = state.opponentEvidence.some(e => e.excludedItems?.includes('rockyhelmet'));
+				assert.equal(excluded, variant === 'missing', variant + '\n' + g.battle.log.join('\n'));
+			}
+		});
+
+		it(`${mode}: infers Scarf from simultaneous Drizzle before max-Speed Ninetales's Drought`, () => {
+			const set = { nature: 'Timid', evs: { spe: 252 }, ability: 'Drizzle' };
+			const g = game({ species: 'Ninetales', nature: 'Timid', evs: { spe: 252 }, ability: 'Drought', moves: ['splash'] },
+				{ species: 'Pelipper', ...set, item: 'Choice Scarf', moves: ['splash'] }, mode);
+			const state = g.state();
+			const entry = state.opponentEvidence.filter(e => e.speedSource === 'entry');
+			assert.equal(entry.length, 1, g.battle.log.join('\n'));
+			assert.equal(entry[0].first, state.opponent.active[0].ident);
+			assert.deepEqual(refine(state, [{ ...set, name: 'ordinary' }, { ...set, name: 'scarf', item: 'Choice Scarf' }])
+				.models.map(m => m.name), ['scarf']);
+			assert(!state.opponent.active[0].itemKnown);
+		});
+
+		it(`${mode}: infers Scarf from the order of simultaneous Intimidate activations`, () => {
+			const set = { nature: 'Jolly', evs: { spe: 252 }, ability: 'Intimidate' };
+			const g = game({ species: 'Salamence', ...set, moves: ['splash'] },
+				{ species: 'Landorus-Therian', ...set, item: 'Choice Scarf', moves: ['splash'] }, mode, 'gen6ou');
+			const state = g.state();
+			assert.equal(state.opponentEvidence.filter(e => e.speedSource === 'entry').length, 1, g.battle.log.join('\n'));
+			assert.deepEqual(refine(state, [{ ...set, name: 'ordinary' }, { ...set, name: 'scarf', item: 'Choice Scarf' }])
+				.models.map(m => m.name), ['scarf']);
+		});
+
+		it(`${mode}: uses Earthquake before Will-O-Wisp to exclude slow gen6 OU Excadrill sets`, () => {
+			const presets = require('../../../data/npc/strategies/gen6ou.json').species.excadrill
+				.filter(p => ['Fast Utility', 'Specially Defensive'].includes(p.name))
+				.map(p => ({ name: p.name, nature: Dex.natures.get(p.natures[0]).name,
+					evs: p.evs[0], item: p.items[0], ability: p.abilities[0] }));
+			const g = game({ species: 'Rotom-Wash', ability: 'Levitate', nature: 'Bold',
+				evs: { hp: 248, def: 132, spe: 128 }, moves: ['willowisp'] },
+			{ species: 'Excadrill', ...presets.find(p => p.name === 'Fast Utility'), moves: ['earthquake'] }, mode, 'gen6ou');
+			const state = g.play();
+			const speed = state.opponentEvidence.filter(e => e.kind === 'speed' && e.move === 'earthquake' && e.response === 'willowisp');
+			assert.equal(speed.length, 1, g.battle.log.join('\n'));
+			assert.equal(state.self.active[0].baseStats.spe, 240);
+			const result = refine({ ...state, opponentEvidence: speed }, presets);
+			assert(result.models.some(m => m.name === 'Fast Utility'));
+			assert(result.models.every(m => m.pokemon.baseStats.spe >= 240));
+			const evaluator = new HardEvaluation(state, 'gen6ou');
+			assert(evaluator.opponentModels(state.opponent.active[0]).every(m => m.pokemon.baseStats.spe >= 240));
+		});
+
 		it(`${mode}: removes non-Scarf Hydreigon after it outruns max-Speed Jolly Garchomp`, () => {
 			const set = { nature: 'Timid', evs: { spe: 252 }, ability: 'Levitate' };
 			const g = game({ species: 'Garchomp', ability: 'Rough Skin', nature: 'Jolly', evs: { hp: 252, spe: 252 }, moves: ['tackle'] },
@@ -193,7 +344,7 @@ describe('Hard inference from observed battle outcomes', () => {
 			const result = refine(state, [{ ...set, name: 'ordinary' }, { ...set, item: 'Choice Scarf', name: 'scarf' }]);
 			assert.deepEqual(result.models.map(m => m.name), ['scarf']);
 			assert.equal(state.opponent.active[0].itemKnown, false, 'Inference must not reveal an item as fact');
-			assert(result.notes.some(note => note.startsWith('speed evidence')));
+			assert(result.notes.some(note => note.startsWith('speed/damage evidence')));
 		});
 
 		it(`${mode}: distinguishes Choice Band from ordinary Scizor using incoming damage`, () => {
@@ -213,9 +364,100 @@ describe('Hard inference from observed battle outcomes', () => {
 				{ species: 'Gliscor', ...spdef, moves: ['earthquake'] }, mode);
 			const state = g.play();
 			const result = refine(state, [{ ...spdef, name: 'special' }, { ...physdef, name: 'physical' }]);
-			assert.deepEqual(result.models.map(m => m.name), ['special']);
+			assert(result.models.some(m => m.name === 'special'));
+			assert(result.models.every(m => m.pokemon.baseStats.spd > computeStatsFromPreset(
+				Dex.species.get('Gliscor').baseStats, 100, { nature: 'Impish', evs: { hp: 252, def: 252 } }).spd));
 		});
 	}
+
+	it('does not treat higher entry-ability priority as higher Speed', () => {
+		const g = game({ species: 'Salamence', ability: 'Intimidate', nature: 'Jolly', evs: { spe: 252 }, moves: ['splash'] },
+			{ species: 'Tyranitar', ability: 'Unnerve', moves: ['splash'] });
+		assert(!g.state().opponentEvidence.some(e => e.speedSource === 'entry'), g.battle.log.join('\n'));
+	});
+
+	it('records simultaneous replacement abilities after a double knockout', () => {
+		const set = { nature: 'Timid', evs: { spe: 252 }, ability: 'Drizzle' };
+		const g = game({ species: 'Geodude', nature: 'Adamant', evs: { atk: 252 }, moves: ['explosion'] },
+			{ species: 'Sunkern', moves: ['splash'] }, 'singles', 'gen7customgame', passive, {
+				own: [{ species: 'Ninetales', nature: 'Timid', evs: { spe: 252 }, ability: 'Drought', moves: ['splash'] }],
+				foe: [{ species: 'Pelipper', ...set, item: 'Choice Scarf', moves: ['splash'] }],
+			});
+		g.play();
+		assert(g.battle.p1.activeRequest.forceSwitch[0]);
+		assert(g.battle.p2.activeRequest.forceSwitch[0]);
+		g.battle.makeChoices('switch 2', 'switch 2');
+		const state = g.state();
+		assert.equal(state.opponentEvidence.filter(e => e.speedSource === 'entry').length, 1, g.battle.log.join('\n'));
+		assert.deepEqual(refine(state, [{ ...set, name: 'ordinary' }, { ...set, name: 'scarf', item: 'Choice Scarf' }])
+			.models.map(m => m.name), ['scarf']);
+	});
+
+	it('does not compare abilities from separate voluntary switch-ins', () => {
+		const g = game({ species: 'Ninetales', ability: 'Drought', moves: ['splash'] },
+			{ species: 'Pelipper', ability: 'Drizzle', moves: ['splash'] });
+		g.tracker.evidence.restore([]);
+		g.tracker.parseMessage('|switch|p1a: Pelipper|Pelipper|100/100\n' +
+			'|-weather|RainDance|[from] ability: Drizzle|[of] p1a: Pelipper\n' +
+			'|switch|p2a: Ninetales|Ninetales|100/100\n' +
+			'|-weather|SunnyDay|[from] ability: Drought|[of] p2a: Ninetales');
+		assert(!g.state().opponentEvidence.some(e => e.speedSource === 'entry'));
+	});
+
+	it('accepts possible entry speed ties without claiming an exact item', () => {
+		const g = game({ species: 'Ninetales', ability: 'Drought', moves: ['splash'] },
+			{ species: 'Pelipper', ability: 'Drizzle', moves: ['splash'] });
+		const state = g.state(), foe = state.opponent.active[0];
+		const entry = state.opponentEvidence.filter(e => e.speedSource === 'entry');
+		assert.equal(entry.length, 1);
+		const models = candidates(foe, [{ name: 'tie', ability: 'Drizzle' }]);
+		models[0].pokemon.baseStats.spe = state.self.active[0].baseStats.spe;
+		const result = refineOpponentModels(foe, models, entry);
+		assert.deepEqual(result.models.map(m => m.name), ['tie']);
+		assert.deepEqual(result.notes, []);
+	});
+
+	for (const move of ['swordsdance', 'stealthrock', 'roost', 'recover']) {
+		it(`records ${move} before an attack without reusing its invalidated damage snapshot`, () => {
+			const set = { nature: 'Timid', evs: { spe: 252 }, ability: 'Levitate' };
+			const g = game({ species: 'Garchomp', nature: 'Jolly', evs: { hp: 252, spe: 252 }, moves: ['tackle'] },
+				{ species: 'Hydreigon', ...set, item: 'Choice Scarf', moves: [move] });
+			g.battle.p1.active[0].hp = Math.floor(g.battle.p1.active[0].maxhp / 2);
+			g.state();
+			const state = g.play();
+			const speed = state.opponentEvidence.filter(e => e.kind === 'speed');
+			assert.equal(speed.length, 1, g.battle.log.join('\n'));
+			assert.equal(speed[0].move, move);
+			const result = refine({ ...state, opponentEvidence: speed },
+				[{ ...set, name: 'ordinary' }, { ...set, item: 'Choice Scarf', name: 'scarf' }]);
+			assert.deepEqual(result.models.map(m => m.name), ['scarf']);
+			if (move !== 'recover') assert(!state.opponentEvidence.some(e => e.kind === 'damage'));
+		});
+	}
+
+	for (const move of ['protect', 'splash']) {
+		it(`does not mistake ${move === 'protect' ? 'Protect' : 'Prankster'} priority for higher Speed`, () => {
+			const set = { ability: move === 'protect' ? 'Synchronize' : 'Prankster' };
+			const g = game({ species: 'Garchomp', nature: 'Jolly', evs: { hp: 252, spe: 252 }, moves: ['tackle'] },
+				{ species: move === 'protect' ? 'Mew' : 'Whimsicott', ...set, moves: [move] });
+			const state = g.play();
+			const speed = state.opponentEvidence.filter(e => e.kind === 'speed');
+			assert.equal(speed.length, 1, g.battle.log.join('\n'));
+			const result = refine({ ...state, opponentEvidence: speed },
+				[{ ...set, name: 'ordinary' }, { ...set, item: 'Choice Scarf', name: 'scarf' }]);
+			assert.deepEqual(result.models.map(m => m.name), ['ordinary', 'scarf']);
+		});
+	}
+
+	it('stops order recording after speed changes, queue manipulation and called moves', () => {
+		for (const effect of ['|-boost|p1a: Mew|spe|2', '|-sidestart|p1: Foe|move: Tailwind',
+			'|-activate|p1a: Mew|move: After You', '|-activate|p1a: Mew|item: Quick Claw',
+			'|move|p1a: Mew|Tackle|p2a: Mew|[from] move: Metronome']) {
+			const g = game(passive, passive);
+			g.tracker.parseMessage(`|move|p1a: Mew|Splash|p1a: Mew\n${effect}\n|move|p2a: Mew|Tackle|p1a: Mew\n|upkeep`);
+			assert(!g.tracker.evidence.getHistory().some(e => e.kind === 'speed'), effect);
+		}
+	});
 
 	it('retains both speed ties and overlapping damage ranges', () => {
 		const g = game({ species: 'Garchomp', nature: 'Jolly', evs: { hp: 252, spe: 252 }, moves: ['tackle'] },
@@ -240,8 +482,8 @@ describe('Hard inference from observed battle outcomes', () => {
 		const foe = state.opponent.active[0];
 		const result = refineOpponentModels(foe, candidates(foe, [set,
 			{ nature: 'Impish', evs: { hp: 252, def: 252 }, ability: 'Poison Heal' }]), evidence);
-		assert.equal(result.models.length, 1);
-		assert.equal(result.models[0].name, '0');
+		assert(result.models.some(m => m.name === '0'));
+		assert(result.models.every(m => m.pokemon.baseStats.spd > 200));
 	});
 
 	it('accounts for known boosts and screens instead of misattributing their damage to a held item', () => {
@@ -287,7 +529,7 @@ describe('Hard inference from observed battle outcomes', () => {
 		assert(actions.every(a => a.user.item === 'Choice Scarf'));
 		assert(!foe.itemKnown);
 		assert.equal(g.tracker.getActiveOpponent().item, '');
-		assert(evaluator.inferenceNotes.get(foe).some(n => n.startsWith('speed evidence')));
+		assert(evaluator.inferenceNotes.get(foe).some(n => n.startsWith('speed/damage evidence')));
 	});
 
 	it('does not infer Scarf from a priority attack, Tailwind or Trick Room', () => {
@@ -346,6 +588,6 @@ describe('Hard inference from observed battle outcomes', () => {
 		const evaluator = new HardEvaluation(state, 'gen7customgame');
 		const actions = evaluator.predictions(state.self.active[0]).get(foe);
 		assert(actions.every(a => a.user.item === 'Choice Scarf'));
-		assert(evaluator.inferenceNotes.get(foe).some(n => n.includes('speed evidence')));
+		assert(evaluator.inferenceNotes.get(foe).some(n => n.includes('speed/damage evidence')));
 	});
 });

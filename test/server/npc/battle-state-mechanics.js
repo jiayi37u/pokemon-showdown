@@ -7,6 +7,7 @@ const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/b
 const { buildAIMove, buildBattleStateWithTracker, buildBattleStateFromRequests } = require('../../../dist/server/npc/ai/cfru/state-builder');
 const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
 const { inferOpponent, predictOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
+const { calculateDamage: hardDamage } = require('../../../dist/server/npc/ai/hard/damage');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
 const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
 const { calculateDamage, getSandstormDamage, getHailDamage, getBurnDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
@@ -953,10 +954,10 @@ describe('Shared public state pipeline across game types', () => {
 					attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
 					defenderAllies: state.self.active };
 				assert(state.self.conditions.lightscreen);
-				const expected = calculateDamage(user, recipient, move, state.field, undefined, options);
+				const expected = hardDamage(user, recipient, move, state.field, undefined, options);
 				assert.equal(rebuilt.incoming(recipient, predictions), expected.average);
 				assert.equal(rebuilt.damage(user, recipient, move).average, expected.average);
-				assert(expected.average < calculateDamage(user, recipient, move, state.field).average);
+				assert(expected.average < hardDamage(user, recipient, move, state.field).average);
 			} finally { game.battle.destroy(); }
 		});
 
@@ -2039,7 +2040,7 @@ describe('Shared public state pipeline across game types', () => {
 				const screened = calculateDamage(actor, target, move, state.field, cache, context);
 				assert(screened.average < plain.average);
 				const hard = new HardEvaluation(state, state.field.formatId);
-				assert.equal(hard.damage(actor, target, move).average, screened.average);
+				assert.equal(hard.damage(actor, target, move).average, hardDamage(actor, target, move, state.field, undefined, context).average);
 				const wounded = { ...target, hp: Math.ceil((plain.average + screened.average) / 2) };
 				const ai = new NormalAI({ write() {} });
 				ai.battleState = state;

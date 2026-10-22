@@ -219,9 +219,10 @@ describe('Gen6 preset and tactical integration', () => {
 		actor.status = 'slp'; actor.sleepTurns = 3;
 		assert.equal(e.scoreMoves(actor, [move], foe, swap)[0].score, 0);
 	});
-	it('uses Lunar Dance for a wounded recipient and follows that plan at forced replacement', () => {
+	it('uses Lunar Dance when the wounded recipient cannot take a direct switch and follows its plan', () => {
 		const g = game([{ species: 'Cresselia', moves: ['lunardance', 'icebeam'] },
-			{ species: 'Dragonite', moves: ['earthquake'] }, { species: 'Volcanion', moves: ['flamethrower'] }]);
+			{ species: 'Dragonite', moves: ['earthquake'] }, { species: 'Volcanion', moves: ['flamethrower'] }],
+		[{ species: 'Ferrothorn', ability: 'Iron Barbs', moves: ['powerwhip'] }]);
 		g.b.p2.active[0].hp = 15; g.b.p2.pokemon[2].hp = 30; g.b.makeRequest('move');
 		const choice = g.decide(); assert.equal(choice, 'move 1');
 		g.b.makeChoices('move 1', choice);

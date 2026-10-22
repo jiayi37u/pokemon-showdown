@@ -217,3 +217,16 @@ node test/npc/replay-audit.js /tmp/npc-expert-hard --difficulty hard gen9randomb
 ## 随机队伍对照模拟
 
 normal 与 hard 的一组模拟包含两局：固定随机抽取的队伍 A、B，第一局 normal 使用 A、hard 使用 B，第二局交换队伍。两局使用相同的战斗 seed，保留双方评分和公开战斗日志。默认“5 次模拟”指 5 组、共 10 局；统计同时注明组数、局数和是否自然结束。
+
+## 决策耗时
+
+使用 Node preload 记录 Normal／Hard 每次决策的耗时、搜索节点和回退理由。计时从 `receiveRequestWithState` 开始，不包括此前的协议解析和状态构建；`kind: process` 记录 Node 进程运行总时间。日志默认为系统临时目录，也可通过 `NPC_TIMING_DIR` 指定，不写入仓库。
+
+```bash
+NPC_TIMING_DIR=/tmp/npc-timing \
+NODE_OPTIONS='--require ./test/npc/sim-battle/decision-timing.js' \
+python3 test/npc/sim-battle/benchmark.py \
+  --pool npc1 --pairs 1 --workers 1 --timeout 1800 --output /tmp/npc-timed-matches
+```
+
+每个 Node 进程输出一份 `<pid>.jsonl`。比较性能时同时报告普通行动／补位耗时、完整搜索／回退次数、整局回合数、并发数和是否自然结束；回退较多不等于搜索更快。`manifest.json` 保存队伍和种子，可通过 `--replay-manifest` 复现。

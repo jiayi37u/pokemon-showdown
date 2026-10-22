@@ -17,6 +17,7 @@ import { Utils } from '../../lib';
 import { Teams } from '../../sim/teams';
 import { TeamValidator } from '../../sim/team-validator';
 import type { PokemonSet } from '../../sim/teams';
+import { startNPCLiveLog, type NPCLiveLog } from './live-log';
 
 /** NPC Battle creation options */
 export interface NPCBattleCreateOptions {
@@ -232,6 +233,10 @@ function createBattleRoom(
 		// Manually start the battle since we used delayedStart
 		const battle = room.battle;
 		if (battle) {
+			const liveLog = startNPCLiveLog(battle.stream, {
+				roomid: room.roomid, format, difficulty: difficulty || npc.difficulty || 'basic',
+				players: [{ side: 'p1', name: user.name, team: userTeam }, { side: 'p2', name: npc.name, team: npcTeam }],
+			});
 			// Mark battle as started
 			battle.started = true;
 			// Remove the "needs more players" message
@@ -241,7 +246,7 @@ function createBattleRoom(
 			room.update();
 
 			// Start AI for NPC (use custom difficulty if provided)
-			startNPCAI(room, npc, difficulty);
+			startNPCAI(room, npc, difficulty, liveLog);
 		}
 	}
 
@@ -255,7 +260,7 @@ function createBattleRoom(
  * @param npc - The NPC template
  * @param overrideDifficulty - Optional difficulty override (from user selection)
  */
-function startNPCAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: string): void {
+function startNPCAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: string, liveLog?: NPCLiveLog): void {
 	const battle = room.battle;
 	if (!battle) return;
 
@@ -316,6 +321,8 @@ function startNPCAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: strin
 	const originalChoose = ai.choose.bind(ai);
 	ai.choose = (choice: string) => {
 		console.log(`[NPC] AI choice: ${choice}`);
+		liveLog?.decision('p2', battle.turn, choice,
+			ai instanceof NormalAI || ai instanceof HardAI ? ai.getLogger().getEntries().slice(-1)[0] : undefined);
 		void battle.stream.write(`>p2 ${choice}`);
 	};
 
@@ -676,13 +683,20 @@ function createMultiBattleRoom(
 		// Start the battle and AI
 		const battle = room.battle;
 		if (battle) {
+			const liveLog = startNPCLiveLog(battle.stream, {
+				roomid: room.roomid, format, difficulty: difficulty || npc.difficulty || 'smart',
+				players: [
+					{ side: 'p1', name: p1User.name, team: p1Team }, { side: 'p2', name: npcP2User.name, team: npcP2Team },
+					{ side: 'p3', name: p3User.name, team: p3Team }, { side: 'p4', name: npcP4User.name, team: npcP4Team },
+				],
+			});
 			battle.started = true;
 			room.add(`|uhtmlchange|invites|`);
 			battle.checkActive();
 			room.update();
 
 			// Start NPC AI
-			startNPCMultiAI(room, npc, difficulty);
+			startNPCMultiAI(room, npc, difficulty, liveLog);
 		}
 
 		console.log(`[NPC] Created multi battle room ${roomid} for ${npc.name}`);
@@ -695,7 +709,7 @@ function createMultiBattleRoom(
  * Start NPCMultiManager for multi battle
  * Coordinates AI decisions for both p2 and p4
  */
-function startNPCMultiAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: string): void {
+function startNPCMultiAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: string, liveLog?: NPCLiveLog): void {
 	const battle = room.battle;
 	if (!battle) return;
 
@@ -719,6 +733,7 @@ function startNPCMultiAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: 
 	const options: NPCMultiManagerOptions = {
 		battleId: room.roomid,
 		difficulty,
+		onDecision: (side, turn, choice, decision) => liveLog?.decision(side, turn, choice, decision),
 		logging: {
 			console: LogLevel.VERBOSE,
 		},

@@ -6,7 +6,7 @@ import { ObjectReadWriteStream } from '../../../lib/streams';
 import type { ChoiceRequest } from '../../../sim/side';
 import type { PRNGSeed } from '../../../sim/prng';
 import { DEFAULT_AI_CONFIG, type AIPokemon, type BattleState } from './cfru/types';
-import type { LogLevel } from './cfru/logger';
+import type { DecisionLogEntry, LogLevel } from './cfru/logger';
 import { type BattleTracker, createBattleTracker } from './cfru/util/battle-tracker';
 import { buildPokemonFromRequest, buildBattleStateFromRequests } from './cfru/state-builder';
 import { NormalAI } from './normal';
@@ -17,6 +17,7 @@ export interface NPCMultiManagerOptions {
 	difficulty?: string;
 	partnerDifficulty?: string;
 	seed?: PRNGSeed;
+	onDecision?: (side: NPCSide, turn: number, choice: string, decision?: DecisionLogEntry) => void;
 	logging?: {
 		console?: LogLevel,
 		file?: LogLevel,
@@ -42,9 +43,11 @@ export class NPCMultiManager {
 	private choices = new Map<NPCSide, string>();
 	private pollHandle: ReturnType<typeof setTimeout> | null = null;
 	private running = false;
+	private onDecision?: NPCMultiManagerOptions['onDecision'];
 
 	constructor(roomBattle: AnyObject, options: NPCMultiManagerOptions = {}) {
 		this.roomBattle = roomBattle;
+		this.onDecision = options.onDecision;
 		this.tracker = createBattleTracker('p2', true);
 		this.tracker.setFormat(roomBattle.format || '');
 		if (roomBattle.stream) this.tracker.attachToStream(roomBattle.stream);
@@ -144,6 +147,7 @@ export class NPCMultiManager {
 			if (envelope.rqid !== cached.rqid) continue;
 			envelope.isWait = true;
 			envelope.choice = choice;
+			this.onDecision?.(side, this.currentTurn, choice, this.controllers[side].getLogger().getEntries().slice(-1)[0]);
 			void this.roomBattle.stream.write(`>${side} ${choice}`);
 		}
 	}

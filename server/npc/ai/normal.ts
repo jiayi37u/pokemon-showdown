@@ -76,6 +76,10 @@ export interface NormalAIOptions {
 export class NormalAI extends NPCBattleAI {
 	readonly difficulty = 'normal';
 
+	protected override chooseTeamPreview(team: AnyObject[]): string {
+		return `team ${this.prng.sample(team.map((_, index) => index + 1))}`;
+	}
+
 	/** CFRU AI configuration */
 	private cfruConfig: CFRUAIConfig;
 

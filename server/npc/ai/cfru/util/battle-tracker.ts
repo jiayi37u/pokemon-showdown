@@ -165,7 +165,9 @@ export class BattleTracker {
 	/** Raw PS logs can contain split private/public pairs; tracker consumes only their public branch. */
 	private skipPrivateLine = false;
 	private acted = new Set<string>();
-	private slotEffects = new Map<string, { wish?: number, futuremove?: number }>();
+	private actedThisTurn = new Set<string>();
+	private slotEffects = new Map<string, { wish?: number, futuremove?: number, wishSource?: string,
+		futureAttack?: { source: string, move: string }, }>();
 	private pendingFutureMove?: { source: string, target: string };
 	private pendingWishPosition = '';
 	private teamSizes = new Map<string, number>();
@@ -387,12 +389,16 @@ export class BattleTracker {
 			this.teamSizes.set(parts[1], Number(parts[2]));
 			break;
 		case 'turn':
+			this.actedThisTurn.clear();
 			this.currentAttack = undefined;
 			this.clearTransientEffects('turn');
 			this.lastMoveSource = '';
 			this.turn = Number(parts[1]) || this.turn;
 			break;
 		case 'switch':
+			if (this.turn && !parts.some(p => p.startsWith('[from]'))) this.actedThisTurn.add(parts[1].split(':')[0].trim());
+			this.handleSwitch(parts);
+			break;
 		case 'drag':
 			this.handleSwitch(parts);
 			break;
@@ -460,6 +466,7 @@ export class BattleTracker {
 			this.handleCureStatus(parts);
 			break;
 		case 'cant':
+			this.actedThisTurn.add(parts[1].split(':')[0].trim());
 			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
 			if (parts[2] === 'recharge') this.handleVolatileStatus(['-end', parts[1], 'mustrecharge']);
@@ -475,6 +482,7 @@ export class BattleTracker {
 			}
 			break;
 		case 'move':
+			if (!parts.some(p => p.startsWith('[from]'))) this.actedThisTurn.add(parts[1].split(':')[0].trim());
 			this.currentAttack = { source: parts[1].split(':')[0].trim(),
 				damaging: (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(parts[2]).category !== 'Status',
 				stellarType: this.stellarAttackType(parts[1].split(':')[0].trim(), parts[2]), hits: new Map() };
@@ -488,6 +496,7 @@ export class BattleTracker {
 				const position = parts[1].split(':')[0].trim();
 				if (!this.getWish(position)) {
 					this.setSlotEffect(position, 'wish', this.turn + 2);
+					this.slotEffects.get(position)!.wishSource = this.publicIdentity(parts[1]);
 					this.pendingWishPosition = position;
 				}
 			}
@@ -1402,6 +1411,8 @@ export class BattleTracker {
 				const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
 				const expiry = dex.gen >= 8 && this.turn >= 255 ? Infinity : this.turn + 3;
 				this.setSlotEffect(this.pendingFutureMove.target, 'futuremove', expiry);
+				this.slotEffects.get(this.pendingFutureMove.target)!.futureAttack = {
+					source: this.publicIdentity(positionPart), move: effect };
 			}
 			return;
 		}
@@ -2023,6 +2034,8 @@ export class BattleTracker {
 		return this.acted.has(position.startsWith('p') ? position : `${this.ourSide}${position}`);
 	}
 
+	getTurnActions(): string[] { return [...this.actedThisTurn]; }
+
 	private setSlotEffect(position: string, effect: 'wish' | 'futuremove', expiry: number): void {
 		const effects = this.slotEffects.get(position) || {};
 		effects[effect] = expiry;
@@ -2051,6 +2064,18 @@ export class BattleTracker {
 
 	getFutureMoves(ours = true): Record<number, number> {
 		return this.getSlotEffects('futuremove', ours);
+	}
+
+	getDelayedSources(ours = true) {
+		const wishSources: Record<number, string> = {};
+		const futureAttacks: Record<number, { source: string, move: string }> = {};
+		for (const [position, effects] of this.slotEffects) {
+			if (ours ? !this.isOurTeamSide(position.slice(0, 2)) : !this.isOpponentSide(position.slice(0, 2))) continue;
+			const slot = this.getFieldSlot(position);
+			if ((effects.wish || 0) > this.turn && effects.wishSource) wishSources[slot] = effects.wishSource;
+			if ((effects.futuremove || 0) > this.turn && effects.futureAttack) futureAttacks[slot] = { ...effects.futureAttack };
+		}
+		return { wishSources, futureAttacks };
 	}
 
 	getTurn(): number {
@@ -2240,6 +2265,7 @@ export class BattleTracker {
 		this.evidence.reset();
 		this.turn = 0;
 		this.acted.clear();
+		this.actedThisTurn.clear();
 		this.slotEffects.clear();
 		this.pendingFutureMove = undefined;
 		this.pendingWishPosition = '';

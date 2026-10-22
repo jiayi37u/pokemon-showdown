@@ -10,10 +10,13 @@ import { buildBattleStateWithTracker, buildPokemonFromRequest } from './cfru/sta
 import { createBattleTracker } from './cfru/util/battle-tracker';
 import { createBattleLogger, type LogLevel } from './cfru/logger';
 import { megaEvolutionState } from './cfru/util/forms';
+import { getEffectiveSpeed } from './cfru/util/speed';
 import { HardEvaluation } from './hard/evaluation';
-import { fightingStyle, hardMove } from './hard/opponent-model';
+import { fightingStyle, hardMove, hardMoveId } from './hard/opponent-model';
 import { searchPosition } from './hard/search';
 import { MatchupEvaluator } from './hard/matchups';
+
+const leadMoves = new Set(['voltswitch', 'uturn', 'flipturn', 'stealthrock', 'spikes']);
 
 export interface HardAIOptions {
 	side?: 'p2' | 'p4';
@@ -54,6 +57,19 @@ export class HardAI extends NPCBattleAI {
 
 	getTracker() { return this.tracker; }
 	getLogger() { return this.logger; }
+
+	protected override chooseTeamPreview(team: AnyObject[]): string {
+		const party = team.map((p, index) => buildPokemonFromRequest(p, index + 1, false, this.configCFRU.formatId));
+		let candidates = party.filter(p => p.moves.some(move => leadMoves.has(move)));
+		if (!candidates.length) {
+			// Use known stats and held items, without assuming a future Mega or teammate's weather.
+			const speeds = party.map(p => getEffectiveSpeed(p, this.state!.field));
+			const fastest = Math.max(...speeds);
+			candidates = party.filter((_, index) => speeds[index] === fastest);
+		}
+		// PS fills the remaining team order; only the lead is selected here.
+		return `team ${this.prng.sample(candidates).slot}`;
+	}
 
 	override receiveRequest(request: ChoiceRequest): void {
 		if (request.wait) return;
@@ -164,7 +180,7 @@ export class HardAI extends NPCBattleAI {
 		// Attacks remain available for a possible opposing switch into a different matchup.
 		const searchActions = candidates.filter(c => !c.choice.zMove && (c.result.move.category !== 'Status' ||
 			!c.result.flags.hasNoEffect && !c.result.flags.isImmune)).map(c => ({
-			id: `move ${c.choice.slot}${c.variant.transform ? ' mega' : ''}`, move: c.result.move.id,
+			id: `move ${c.choice.slot}${c.variant.transform ? ' mega' : ''}`, move: hardMoveId(c.result.move),
 			mega: !!c.variant.transform, prior: c.result.score,
 		}));
 		const search = this.useSearch && !flags.canZMove ? searchPosition(state, evaluator, [...searchActions,
@@ -195,7 +211,8 @@ export class HardAI extends NPCBattleAI {
 			if (reason) {
 				this.lastSwitchTurn.set(slot, state.turn);
 				this.logger.logSwitchDecision(state.turn, actor, replacement.pokemon,
-					replacements.map(p => ({ pokemon: p.pokemon.species, score: p.score, reasons: p.reasons })), reason, state);
+					replacements.map(p => ({ pokemon: p.pokemon.species, score: p.score, reasons: p.reasons })),
+					search ? `${reason}; Search fallback: ${search.reason}` : reason, state);
 				return { type: 'switch', target: replacement.pokemon.slot };
 			}
 		}

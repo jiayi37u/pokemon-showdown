@@ -5,7 +5,7 @@ const { Battle, Dex } = require('../../../dist/sim');
 const { HardAI } = require('../../../dist/server/npc/ai/hard');
 const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
-const { fightingStyle, hardMove, inferOpponent, predictOpponent, compatibleSlots } = require('../../../dist/server/npc/ai/hard/opponent-model');
+const { fightingStyle, hardMove, inferOpponent, predictOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
 const { buildBattleStateWithTracker, buildPokemonFromRequest } = require('../../../dist/server/npc/ai/cfru/state-builder');
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 
@@ -34,6 +34,40 @@ function setup(foes, team, { doubles = false, AI = HardAI, format = '' } = {}) {
 }
 
 describe('Hard CFRU tactical decisions', () => {
+	it('preserves Hidden Power Ice through the controller and chooses its finishing attack', () => {
+		const game = setup([mon('Landorus-Therian', ['splash', 'tackle', 'growl', 'leer'])],
+			[mon('Tornadus-Therian', ['hiddenpowerice', 'hurricane'], { nature: 'Timid', evs: { spa: 252, spe: 252 } })],
+			{ format: 'gen6customgame' });
+		game.reveal();
+		battle.p1.active[0].hp = 250; battle.makeRequest('move');
+		game.ai.getTracker().parseMessage('|-damage|p1a: Landorus-Therian|78/100');
+		let reasoning;
+		game.ai.getLogger().logMoveDecision = (...args) => { reasoning = args[5]; };
+		assert.equal(game.decide(), 'move 1');
+		assert(reasoning.some(r => r.startsWith('Two-turn search')), JSON.stringify(reasoning));
+	});
+	it('predicts a hypothesized Mega priority attack without changing public form or Gen 6 action speed', () => {
+		const game = setup([mon('Metagross', ['bulletpunch'], { item: 'Metagrossite' })],
+			[mon('Medicham-Mega', ['highjumpkick', 'zenheadbutt', 'fakeout', 'bulletpunch'],
+				{ ability: 'Pure Power', nature: 'Adamant', evs: { atk: 252, spe: 252 } })], { format: 'gen6ou' });
+		battle.p2.active[0].hp = 116;
+		battle.makeRequest('move');
+		game.ai.getTracker().parseMessage('|-damage|p1a: Metagross|95/100');
+		const state = buildBattleStateWithTracker(battle.p2.activeRequest, null, game.ai.getTracker(), { formatId: 'gen6ou' });
+		const foe = state.opponent.active[0], actor = state.self.active[0];
+		actor.lastMove = 'bulletpunch'; actor.activeMoveActions = 3;
+		const before = JSON.stringify(foe);
+		const e = new HardEvaluation(state, 'gen6ou'), actions = e.predictions(actor).get(foe);
+		const punch = actions.filter(a => a.move?.id === 'bulletpunch');
+		assert(punch.reduce((n, a) => n + a.weight, 0) > 0.3);
+		assert(punch.every(a => a.user.species === 'Metagross-Mega' && a.modelUser.species === 'Metagross'));
+		assert(punch.every(a => a.user.queuedSpeed === a.modelUser.baseStats.spe));
+		assert.equal(JSON.stringify(foe), before);
+		state.opponent.megaUsedByOwner = { p1: true };
+		assert(new HardEvaluation(state, 'gen6ou').predictions(actor).get(foe)
+			.every(a => a.user.species === 'Metagross'));
+	});
+
 	it('uses replacement search when the public state omits the fainted active', () => {
 		const game = setup([mon('Gengar', ['shadowball'], { nature: 'Timid', evs: { spa: 252, spe: 252 } })],
 			[mon('Magikarp', ['splash']), mon('Alakazam', ['psychic'], { nature: 'Timid', evs: { spa: 252, spe: 252 } }),
@@ -278,41 +312,42 @@ describe('Hard gen7 OU inference and tactics', () => {
 		}
 	});
 
-	it('narrows Landorus sets from revealed moves and a consumed item without mutating observations', () => {
+	it('retains Landorus spreads after a revealed move and respects a consumed item', () => {
 		const game = setup([mon('Landorus-Therian', ['earthquake'])], [mon('Blissey', ['icebeam'])], { format: 'gen7customgame' });
 		const infer = () => inferOpponent(snapshot(game).opponent.active[0], 'gen7ou');
-		assert(new Set(infer().map(h => h.name)).size > 1);
+		const names = [...new Set(infer().map(h => h.name))];
+		assert(names.length > 1);
 		game.reveal(['swordsdance']);
-		assert.deepEqual([...new Set(infer().map(h => h.name))], ['Swords Dance']);
+		assert.deepEqual([...new Set(infer().map(h => h.name))], names);
 		game.ai.getTracker().parseMessage('|-enditem|p1a: Landorus-Therian|Flyinium Z');
 		assert(infer().every(h => h.pokemon.item === ''));
 		assert.deepEqual(game.ai.getTracker().getActiveOpponent().knownMoves, ['Swords Dance']);
 	});
 
-	it('does not combine mutually exclusive options from the same move slot', () => {
-		const slots = [['surf', 'hydropump'], ['icebeam'], ['toxic'], ['protect']];
-		assert(!compatibleSlots(slots, ['surf', 'hydropump']));
-		assert(compatibleSlots([['surf', 'hydropump'], ['surf'], ['toxic'], ['protect']], ['surf', 'hydropump']));
+	it('uses only the four public moves once all slots are occupied', () => {
 		const game = setup([mon('Landorus-Therian', ['earthquake'])], [mon('Blissey', ['icebeam'])], { format: 'gen7customgame' });
 		game.reveal(['swordsdance', 'stealthrock', 'earthquake', 'fly']);
 		const models = inferOpponent(snapshot(game).opponent.active[0], 'gen7ou');
 		assert(models.every(h => h.moves.length === 4 && !h.moves.some(m => m.id === 'stoneedge')));
 	});
 
-	it('recognizes an out-of-book set instead of resurrecting contradicted preset moves', () => {
+	it('keeps tier spreads when four public moves differ from their preset candidates', () => {
 		const game = setup([mon('Garchomp', ['earthquake'])], [mon('Blissey', ['icebeam'])], { format: 'gen7customgame' });
 		game.reveal(['surf', 'flamethrower', 'dragonclaw', 'rest']);
 		const models = inferOpponent(snapshot(game).opponent.active[0], 'gen7ou');
-		assert.equal(models.length, 1);
-		assert.equal(models[0].matched, false);
-		assert.deepEqual(models[0].moves.map(m => m.id), ['surf', 'flamethrower', 'dragonclaw', 'rest']);
+		assert(models.length > 1);
+		assert(models.every(model => model.matched));
+		for (const model of models) {
+			assert.deepEqual(model.moves.map(m => m.id), ['surf', 'flamethrower', 'dragonclaw', 'rest']);
+		}
 	});
 
 	it('retains Choice Band and Scarf uncertainty until an item is publicly revealed', () => {
 		const game = setup([mon('Kartana', ['leafblade'])], [mon('Blissey', ['icebeam'])], { format: 'gen7customgame' });
 		game.reveal(['leafblade', 'smartstrike', 'knockoff', 'sacredsword']);
 		let models = inferOpponent(snapshot(game).opponent.active[0], 'gen7ou');
-		assert.deepEqual([...new Set(models.map(h => h.pokemon.item))].sort(), ['choiceband', 'choicescarf']);
+		assert(models.some(h => h.pokemon.item === 'choiceband'));
+		assert(models.some(h => h.pokemon.item === 'choicescarf'));
 		assert(Math.abs(models.reduce((n, h) => n + h.weight, 0) - 1) < 1e-9);
 		game.ai.getTracker().parseMessage('|-item|p1a: Kartana|Choice Scarf');
 		models = inferOpponent(snapshot(game).opponent.active[0], 'gen7ou');
@@ -579,17 +614,63 @@ describe('Hard generic opponent presets', () => {
 		});
 	}
 
-	it('falls back to generic stats and moves when a tier set is contradicted', () => {
+	it('keeps tier spreads and candidates when an unlisted move occupies a slot', () => {
 		const game = setup([mon('Garchomp', ['surf'])], [mon('Blissey', ['icebeam'])], { format: 'gen7ou' });
+		const before = inferOpponent(snapshot(game, 'gen7ou').opponent.active[0], 'gen7ou');
 		game.reveal(['surf']);
 		const state = snapshot(game, 'gen7ou');
-		const model = inferOpponent(state.opponent.active[0], 'gen7ou')[0];
-		assert.equal(model.matched, false);
-		assert.deepEqual(model.pokemon.baseStats,
-			computeStatsFromPreset(Dex.species.get('Garchomp').baseStats, 100, getOpponentPreset('Garchomp')));
-		assert.deepEqual(model.pokemon.moveKnowledge, { revealedMoves: ['surf'],
-			presetCandidates: ['earthquake', 'dragonclaw'], remainingSlots: 3 });
-		assert.equal(model.pokemon.item, '');
+		const after = inferOpponent(state.opponent.active[0], 'gen7ou');
+		assert.equal(after.length, before.length);
+		after.forEach((model, i) => {
+			assert.equal(model.matched, true);
+			assert.deepEqual(model.pokemon.baseStats, before[i].pokemon.baseStats);
+			assert.equal(model.pokemon.item, before[i].pokemon.item);
+			assert.deepEqual(model.pokemon.moveKnowledge.revealedMoves, ['surf']);
+			assert.equal(model.pokemon.moveKnowledge.remainingSlots, 3);
+			assert(model.moves.some(m => m.id === 'surf'));
+			assert(model.moves.every(m => m.id === 'surf' || before[i].moves.some(old => old.id === m.id)));
+		});
+	});
+
+	it('replaces an unlisted public item across Tornadus presets without inventing spreads or moves', () => {
+		const game = setup([mon('Tornadus-Therian', ['airslash'])], [mon('Blissey', ['icebeam'])], { format: 'gen6ou' });
+		const before = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou');
+		assert.equal(before.length, 3);
+		game.reveal(['airslash']);
+		game.ai.getTracker().parseMessage('|-item|p1a: Tornadus-Therian|Leftovers');
+		const after = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou');
+		assert.equal(after.length, before.length);
+		after.forEach((model, i) => {
+			assert.equal(model.name, before[i].name);
+			assert.deepEqual(model.pokemon.baseStats, before[i].pokemon.baseStats);
+			assert.equal(model.pokemon.item, 'Leftovers');
+			assert(model.moves.some(m => m.id === 'airslash'));
+		});
+	});
+
+	it('keeps an Assault Vest preset after an unlisted attack is revealed', () => {
+		const game = setup([mon('Tornadus-Therian', ['airslash'])], [mon('Blissey', ['icebeam'])], { format: 'gen6ou' });
+		game.reveal(['airslash']);
+		game.ai.getTracker().parseMessage('|-item|p1a: Tornadus-Therian|Assault Vest');
+		const models = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou');
+		assert.equal(models.length, 2);
+		assert(models.every(m => m.name === 'Assault Vest Pivot' && m.moves.some(move => move.id === 'airslash')));
+	});
+
+	it('does not look up learnsets or invent attacks when no preset supplies them', () => {
+		const game = setup([mon('Caterpie', ['stringshot'])], [mon('Blissey', ['icebeam'])], { format: 'gen6ou' });
+		const dex = Dex.forFormat('gen6ou');
+		const lookup = dex.species.getLearnsetData;
+		dex.species.getLearnsetData = () => { throw new Error('AI must not read learnsets'); };
+		try {
+			const unseen = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou');
+			assert(unseen.every(model => !model.moves.length));
+			game.reveal(['stringshot']);
+			const seen = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou');
+			assert(seen.every(model => model.moves.length === 1 && model.moves[0].id === 'stringshot'));
+		} finally {
+			dex.species.getLearnsetData = lookup;
+		}
 	});
 
 	it('scores a 2+3 pool without inventing a five-move user or mutating public observations', () => {

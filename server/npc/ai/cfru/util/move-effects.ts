@@ -10,6 +10,19 @@ export const protectionMoves = new Set([
 	'protect', 'detect', 'kingsshield', 'spikyshield', 'banefulbunker', 'obstruct', 'silktrap', 'burningbulwark',
 ]);
 
+/** Selection restrictions shared by prediction, matchup valuation and projected actions.
+ * Called moves bypass these restrictions; the selected calling move is checked instead.
+ */
+export function moveSelectionFailure(pokemon: AIPokemon, id: string, field: FieldConditions): string | undefined {
+	const dex = rulesDex(field), move = dex.moves.get(id), item = effectiveItem(pokemon, field);
+	if (item === 'assaultvest' && move.category === 'Status') return 'Assault Vest';
+	if (pokemon.volatiles.has('taunt') && move.category === 'Status') return 'Taunt';
+	if (pokemon.volatiles.has('encore') && pokemon.lastMove &&
+		dex.moves.get(pokemon.lastMove).id !== move.id) return 'Encore';
+	if (dex.items.get(item).isChoice && pokemon.lastMove &&
+		dex.moves.get(pokemon.lastMove).id !== move.id) return 'Choice lock';
+}
+
 /** A pending Wish can justify staying only when protection can bridge the delay. */
 export function protectsPendingWish(state: BattleState, actor: AIPokemon, move: AIMove): boolean {
 	if (!protectionMoves.has(move.id) || state.self.conditions.wishes?.[actor.slot] !== 1 ||

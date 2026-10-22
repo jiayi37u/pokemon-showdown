@@ -2,7 +2,7 @@
 const assert = require('assert').strict;
 const { Battle } = require('../../../dist/sim');
 const { MatchupEvaluator } = require('../../../dist/server/npc/ai/hard/matchups');
-const { projectedState } = require('../../../dist/server/npc/ai/hard/projection');
+const { projectedState } = require('./helpers/hard-state');
 const { positionValue } = require('../../../dist/server/npc/ai/hard/search');
 
 const mon = (species, moves, rest = {}) => ({ species, moves, ...rest });
@@ -16,6 +16,20 @@ function fixture(own, foe) {
 
 describe('Hard singles matchup value', () => {
 	afterEach(() => { battles.splice(0).forEach(b => b.destroy()); });
+	it('values an unresisted wallbreaking move even against faster revenge killers', () => {
+		const f = fixture([mon('Medicham-Mega', ['highjumpkick', 'zenheadbutt'],
+			{ ability: 'Pure Power', nature: 'Adamant', evs: { atk: 252, spe: 252 } })],
+		[mon('Metagross-Mega', ['bulletpunch'], { ability: 'Tough Claws', nature: 'Adamant', evs: { atk: 252, spe: 252 } }),
+			mon('Serperior', ['leafstorm'], { ability: 'Contrary', nature: 'Timid', evs: { spa: 252, spe: 252 } }),
+			mon('Tornadus-Therian', ['hurricane'], { nature: 'Timid', evs: { hp: 168, def: 132, spe: 208 } })]);
+		const actor = f.state.self.active[0]; actor.hp = 116; actor.hpPercent = 44;
+		const row = f.evaluator.assess(f.state).matrix[0].map(p => p.self);
+		assert.equal(row[0].pressure, 0, 'Bullet Punch stops Medicham in a direct attack race');
+		assert(row[0].switchPressure.highjumpkick > 0.8, 'A free High Jump Kick still threatens a huge hit');
+		const resisted = Math.min(...row.map(p => p.switchPressure.highjumpkick));
+		const unresisted = Math.min(...row.slice(0, 2).map(p => p.switchPressure.highjumpkick));
+		assert(unresisted > resisted + 0.2, 'Removing the Fighting resist opens the same move across the defense');
+	});
 	it('retains a Toxic stall route after poison lands, but does not invent one through Rest or Poison Heal', () => {
 		const f = fixture([mon('Chansey', ['toxic', 'softboiled'], { item: 'Eviolite', nature: 'Bold', evs: { hp: 252, def: 252 } })],
 			[mon('Cresselia', ['psychic', 'moonlight'], { evs: { hp: 252 } })]);
@@ -42,7 +56,7 @@ describe('Hard singles matchup value', () => {
 		target.ability = 'earlybird';
 		assert(f.evaluator.assess(f.state).matrix[0][0].self.check < asleep.check);
 		target.status = ''; target.volatiles.add('mustrecharge');
-		assert(f.evaluator.assess(f.state).matrix[0][0].self.check > awake.check);
+		assert(f.evaluator.assess(f.state).matrix[0][0].self.pressure > awake.pressure);
 	});
 	it('does not delay a sleeping attacker with a sleep-usable move', () => {
 		const f = fixture([mon('Magikarp', ['tackle'])], [mon('Snorlax', ['snore'])]);
@@ -119,7 +133,7 @@ describe('Hard singles matchup value', () => {
 	});
 	it('accounts for setup on the entry turn, not just the current strongest attack', () => {
 		const f = fixture([mon('Mew', ['icebeam', 'softboiled'], { nature: 'Bold', evs: { hp: 252, def: 252 } })],
-			[mon('Garchomp', ['dragonclaw'])]);
+			[mon('Garchomp', ['dragonclaw'], { nature: 'Adamant', evs: { atk: 252 } })]);
 		const before = f.evaluator.assess(f.state).matrix[0][0].self.counter;
 		f.state.opponent.team[0].moves.push('swordsdance');
 		const after = f.evaluator.assess(f.state).matrix[0][0].self.counter;
@@ -147,11 +161,11 @@ describe('Hard singles matchup value', () => {
 	it('does not let a speculative branch pollute the real table and never mutates the source battle', () => {
 		const f = fixture([mon('Mew', ['psychic'])], [mon('Garchomp', ['dragonclaw'])]);
 		const serialized = JSON.stringify(f.battle.toJSON());
-		const original = positionValue(f.battle, f.evaluator);
+		const original = positionValue(projectedState(f.battle), f.evaluator);
 		const branch = Battle.fromJSON(serialized); battles.push(branch);
 		branch.p1.active[0].hp = 1;
-		assert(positionValue(branch, f.evaluator) < original);
-		assert.equal(positionValue(f.battle, f.evaluator), original);
+		assert(positionValue(projectedState(branch), f.evaluator) < original);
+		assert.equal(positionValue(projectedState(f.battle), f.evaluator), original);
 		assert.equal(JSON.stringify(f.battle.toJSON()), serialized);
 	});
 	it('invalidates other pairs when an ally sleep source changes clause eligibility', () => {
@@ -170,8 +184,8 @@ describe('Hard singles matchup value', () => {
 		const a = f.evaluator.assess(f.state).value;
 		const b = f.evaluator.assess({ ...f.state, self: f.state.opponent, opponent: f.state.self }).value;
 		assert.equal(a, -b);
-		f.battle.win(f.battle.p1);
-		assert(positionValue(f.battle, f.evaluator) > Math.abs(a));
+		f.battle.p2.pokemon.forEach(p => { p.hp = 0; p.fainted = true; });
+		assert(positionValue(projectedState(f.battle), f.evaluator) > Math.abs(a));
 	});
 	it('does not value losing the last member as an improvement when opposing offensive routes disappear', () => {
 		const f = fixture([mon('Magikarp', ['splash'])],

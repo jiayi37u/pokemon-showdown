@@ -207,7 +207,8 @@ export function buildBattleStateFromRequests(
 		self: { active: selfActive, reserve: selfReserve, team: [...selfActive, ...selfReserve],
 			megaUsedByOwner: Object.fromEntries([...selfActive, ...selfReserve].filter(p =>
 				(formatId ? Dex.forFormat(formatId) : Dex).species.get(p.species).isMega).map(p => [p.ownerSide!, true])),
-			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(), futureMoves: tracker.getFutureMoves() } },
+			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(),
+				futureMoves: tracker.getFutureMoves(), ...tracker.getDelayedSources() } },
 		opponent: { remaining: tracker.getRemainingOpponents(),
 			megaUsedByOwner: Object.fromEntries(tracker.getOpponentTeam().filter(p =>
 				(formatId ? Dex.forFormat(formatId) : Dex).species.get(p.species).isMega)
@@ -221,6 +222,7 @@ export function buildBattleStateFromRequests(
 	};
 	tracker.evidence.begin(state);
 	state.opponentEvidence = tracker.evidence.getHistory();
+	state.actedThisTurn = tracker.getTurnActions();
 	return state;
 }
 
@@ -427,6 +429,6 @@ function buildOpponentConditionsFromTracker(tracker: BattleTracker): SideConditi
 		safeguard: conditions.safeguard,
 		mist: conditions.mist,
 		wishes: tracker.getWishes(false),
-		futureMoves: tracker.getFutureMoves(false),
+		futureMoves: tracker.getFutureMoves(false), ...tracker.getDelayedSources(false),
 	};
 }

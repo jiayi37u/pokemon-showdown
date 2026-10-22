@@ -16,7 +16,8 @@ import {
 } from '../cfru/scoring/positives';
 import { checkRecoverySurvival } from '../cfru/scoring/negatives';
 import { createCache } from '../cfru/util/cache';
-import { calculateDamage, getSecondaryEffectDamage, getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
+import { getSecondaryEffectDamage, getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
+import { calculateDamage } from './damage';
 import { resolveMove } from '../cfru/util/type-calc';
 import {
 	protectionMoves, protectsPendingWish, recoveryCuresStatus, estimatedMoveAccuracy,

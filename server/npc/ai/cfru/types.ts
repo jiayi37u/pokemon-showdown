@@ -53,6 +53,10 @@ export interface OpponentMoveKnowledge {
 }
 
 export interface OpponentModel {
+	/** Open-format prior, retained so observations can adjust EVs without inventing new sets. */
+	spread?: { nature?: string, evs?: Partial<AIPokemon['baseStats']>, ivs?: Partial<AIPokemon['baseStats']> };
+	/** Marginal stat bounds at the estimated HP; these are not independent simultaneous maxima. */
+	statRanges?: Partial<Record<keyof AIPokemon['baseStats'], [number, number]>>;
 	name: string;
 	pokemon: AIPokemon;
 	weight: number;
@@ -233,10 +237,17 @@ export interface SideConditions {
 
 	/** Future Sight / Doom Desire remaining turns by target field slot. */
 	futureMoves: Record<number, number>;
+	/** Public identities of delayed-effect sources, retained across switches. */
+	wishSources?: Record<number, string>;
+	futureAttacks?: Record<number, { source: string, move: string }>;
+	/** Projected sacrifice healing follows the field position. */
+	healingWish?: 'healingwish' | 'lunardance';
 }
 
 /** Field conditions */
 export interface FieldConditions {
+	/** Projected Fairy Lock duration, including its setup turn. */
+	fairylockTurns?: number;
 	/** Rules used to interpret this public field snapshot, including format-specific overrides. */
 	formatId?: string;
 	/** Current weather: 'sun' | 'rain' | 'sand' | 'hail' | 'snow' | '' */
@@ -273,6 +284,8 @@ export interface FieldConditions {
 
 /** Complete battle state for AI evaluation */
 export interface BattleState {
+	/** Public positions that have spent their action this turn, including voluntary switches. */
+	actedThisTurn?: readonly string[];
 	/** Historical public observations; only Hard uses them to refine hidden configurations. */
 	opponentEvidence?: readonly import('./util/battle-evidence').BattleEvidence[];
 	/** Current turn number */

@@ -54,6 +54,41 @@ describe('Gen6 preset and tactical integration', () => {
 		assert(models.length && models.every(m => m.matched && m.pokemon.item === 'charizarditex'));
 		assert(models.every(m => m.pokemon.species === 'Charizard-Mega-X'));
 	});
+	it('shares certain Mega Trace projections without guessing between different doubles targets', () => {
+		const team = [{ species: 'Alakazam', ability: 'Magic Guard', item: 'Alakazite', moves: ['psychic'] }, fish];
+		for (const mode of ['singles', 'doubles']) {
+			const foes = [{ species: 'Volcanion', ability: 'Water Absorb', moves: ['splash'] }, fish];
+			const g = game(team, mode === 'doubles' ? foes : foes.slice(0, 1), NormalAI, mode);
+			const state = g.state(), actor = state.self.active[0];
+			state.opponent.active.forEach(p => { p.ability = 'Water Absorb'; });
+			assert.equal(megaEvolutionState(state, actor).self.active[0].ability, 'waterabsorb');
+			state.opponent.active[0].ability = 'Stance Change';
+			assert.equal(megaEvolutionState(state, actor).self.active[0].ability.toLowerCase(),
+				mode === 'doubles' ? 'waterabsorb' : 'trace');
+			if (mode === 'doubles') {
+				state.opponent.active[0].ability = 'Levitate';
+				assert.equal(megaEvolutionState(state, actor).self.active[0].ability.toLowerCase(), 'trace');
+			}
+			assert.equal(actor.ability, 'magicguard');
+		}
+	});
+	it('retains the native ability from an own request after Trace has copied an opponent', () => {
+		const g = game([{ species: 'Alakazam', ability: 'Magic Guard', item: 'Alakazite', moves: ['splash'] }, fish],
+			[{ species: 'Volcanion', ability: 'Water Absorb', moves: ['splash'] }]);
+		g.b.makeChoices('move 1', 'move 1 mega'); g.sync();
+		const state = g.state(), actor = state.self.active[0];
+		assert.equal(Dex.abilities.get(actor.ability).id, 'waterabsorb');
+		assert.equal(actor.observedAbility, 'trace');
+		assert.equal(actor.abilityChanged, true);
+		const { switchIn, clonePosition, positionKey } = require('../../../dist/server/npc/ai/hard/projection');
+		const next = clonePosition(state), originalKey = positionKey(next);
+		next.self.active[0].observedAbility = 'waterabsorb';
+		assert.notEqual(positionKey(next), originalKey, 'Native ability changes future switch outcomes');
+		next.self.active[0].observedAbility = 'trace';
+		switchIn(next, 'self', next.self.reserve[0]);
+		assert.equal(next.self.reserve.find(p => p.species === 'Alakazam-Mega').ability, 'trace');
+		assert.equal(Dex.abilities.get(actor.ability).id, 'waterabsorb');
+	});
 	it('shares priors for cosmetic forms without merging Mega or battle-changing forms', () => {
 		const { getOpponentPreset, presetSpeciesId } = require('../../../dist/server/npc/ai/cfru/util/opponent-presets');
 		for (const [form, base] of [['Keldeo-Resolute', 'Keldeo'], ['Gastrodon-East', 'Gastrodon']]) {

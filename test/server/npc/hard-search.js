@@ -231,6 +231,8 @@ describe('Hard damage-based state search', () => {
 		// The transition only spends Mega for an actual evolving action, never a switch.
 		const checkpoint = beginTurn(f.state, own,
 			{ id: 'switch 2', switchTo: f.state.opponent.reserve[0], prior: 0 });
+		assert.equal(checkpoint.state.self.active[0].species, 'Diancie', 'Voluntary switches precede Mega');
+		continueTurn(checkpoint);
 		assert.equal(checkpoint.state.self.active[0].species, 'Diancie-Mega');
 		assert(checkpoint.state.self.megaUsedByOwner[f.state.self.active[0].ownerSide]);
 		assert(!checkpoint.state.opponent.megaUsedByOwner?.[f.state.opponent.active[0].ownerSide]);
@@ -244,6 +246,69 @@ describe('Hard damage-based state search', () => {
 			({ ...action(move), prior: i === 3 ? 1 : 120 - i }));
 		const result = searchPosition(f.state, f.evaluator, actions, new Map());
 		assert.equal(result.choice, 'move protect', result.reason);
+	});
+	it('retains useful Pain Split recovery in hard candidate scoring', () => {
+		const f = fixture([mon('Rotom-Wash', ['voltswitch', 'painsplit'], { ability: 'Levitate' })],
+			[mon('Volcanion', ['steameruption'], { ability: 'Water Absorb' })]);
+		const actor = f.state.self.active[0], target = f.state.opponent.active[0];
+		actor.maxHp = 304; hp(actor, 235);
+		target.maxHp = 363; hp(target, 363);
+		const search = new Search(new MatchupEvaluator());
+		const score = [...search.scoreActions(f.state, 'self', [action('painsplit')]).values()][0];
+		assert.equal(score.flags.discouraged, false);
+		assert.equal(score.score, 100);
+		assert(search.choices(f.state, 'self').some(a => a.move === 'painsplit'));
+	});
+	it('copies Water Absorb on Mega evolution before resolving attacks, matching the simulator', () => {
+		const f = fixture([mon('Alakazam', ['psychic'], { ability: 'Magic Guard', item: 'Alakazite' })],
+			[mon('Volcanion', ['steameruption'], { ability: 'Water Absorb' })]);
+		hp(f.state.self.active[0], 100); f.b.p1.active[0].hp = 100;
+		const turn = beginTurn(f.state, { ...action('psychic'), mega: true }, action('steameruption'));
+		const next = continueTurn(turn);
+		f.b.makeChoices('move 1 mega', 'move 1');
+		assert.equal(next.self.active[0].ability, f.b.p1.active[0].ability);
+		assert.equal(next.self.active[0].ability, 'waterabsorb');
+		assert.equal(next.self.active[0].hp, f.b.p1.active[0].hp);
+		assert(next.self.active[0].hp > 100);
+		assert.equal(f.state.self.active[0].ability, 'magicguard', 'Knowledge snapshots are immutable');
+	});
+	it('copies the incoming opponent after a voluntary switch and triggers the copied entry ability', () => {
+		const f = fixture([mon('Alakazam', ['splash'], { ability: 'Magic Guard', item: 'Alakazite' })],
+			[mon('Volcanion', ['splash'], { ability: 'Water Absorb' }),
+				mon('Landorus-Therian', ['splash'], { ability: 'Intimidate' })]);
+		const own = { ...action('splash'), mega: true }, foe = { id: 'switch 2', switchTo: f.state.opponent.reserve[0], prior: 0 };
+		const search = new Search(new MatchupEvaluator());
+		const next = search.transitions(f.state, own, foe, false)[0].state;
+		f.b.makeChoices('move 1 mega', 'switch 2');
+		assert.equal(next.self.active[0].species, 'Alakazam-Mega');
+		assert.equal(next.self.active[0].ability, f.b.p1.active[0].ability);
+		assert.equal(next.self.active[0].ability, 'intimidate');
+		assert.equal(next.self.active[0].boosts.atk, f.b.p1.active[0].boosts.atk);
+		assert.equal(next.opponent.active[0].boosts.atk, f.b.p2.active[0].boosts.atk);
+		assert.equal(next.opponent.active[0].boosts.atk, -1);
+	});
+	it('restores Trace on leaving and copies the new opponent on reentry', () => {
+		const f = fixture([mon('Alakazam', ['splash'], { ability: 'Magic Guard', item: 'Alakazite' }), mon('Mew', ['splash'])],
+			[mon('Volcanion', ['splash'], { ability: 'Water Absorb' }), mon('Rotom-Wash', ['splash'], { ability: 'Levitate' })]);
+		const turn = beginTurn(f.state, { ...action('splash'), mega: true }, action('splash'));
+		const next = continueTurn(turn), zam = next.self.active[0];
+		assert.equal(zam.ability, 'waterabsorb');
+		switchIn(next, 'self', next.self.reserve[0]);
+		assert.equal(zam.ability.toLowerCase(), 'trace');
+		switchIn(next, 'opponent', next.opponent.reserve[0]);
+		switchIn(next, 'self', zam);
+		assert.equal(zam.ability, 'levitate');
+	});
+	it('uses the same copied immunity for a reserve matchup and its projected entry', () => {
+		const f = fixture([mon('Mew', ['splash']), mon('Alakazam-Mega', ['psychic'], { ability: 'Trace' })],
+			[mon('Volcanion', ['steameruption'], { ability: 'Water Absorb' })]);
+		const zam = f.state.self.reserve[0]; hp(zam, 20);
+		const matchup = new MatchupEvaluator().assess(f.state).matrix[1][0];
+		assert.equal(matchup.self.counter, 1);
+		const next = clonePosition(f.state); switchIn(next, 'self', next.self.reserve[0]);
+		assert.equal(next.self.active[0].ability, 'waterabsorb');
+		assert.equal(damage(next, 'psychic').average > 0, true);
+		assert.equal(zam.ability, 'trace');
 	});
 	it('uses the baseline boundary rather than the top score or effect exemptions', () => {
 		const moves = ['thunderbolt', 'icebeam', 'watergun', 'quickattack', 'uturn', 'gigadrain', 'knockoff', 'rapidspin'];

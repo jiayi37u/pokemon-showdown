@@ -151,7 +151,11 @@ export class Search extends CandidateSelector {
 		const walk = (state: BattleState, turn: TurnCheckpoint | undefined, history: string[],
 			weight: number, entries: EntryDecision[]): ReturnType<Search['transitions']> => {
 			let pending: { side: Side, cause: 'pivot' | 'phaze' | 'faint' } | undefined;
-			if (turn && !continueTurn(turn, this.matchups.damagePolicy)) pending = turn.pending;
+			if (turn) {
+				const completed = continueTurn(turn, this.matchups.damagePolicy);
+				state = turn.state;
+				if (!completed) pending = turn.pending;
+			}
 			if (!pending && [state.self, state.opponent].every(party => party.team.some(p => !p.fainted && p.hp > 0))) {
 				const side = (['self', 'opponent'] as const).find(s => state[s].active[0]?.fainted);
 				if (side) pending = { side, cause: 'faint' };
@@ -172,7 +176,7 @@ export class Search extends CandidateSelector {
 					if (model) bindOpponent(next, pokemon, model);
 					switchIn(next, side, pokemon);
 					const decision = { key, side, choice: identity(pokemon), depth: history.length };
-					return walk(next, cause === 'faint' ? undefined : { state: next, remaining: [...turn!.remaining] },
+					return walk(next, cause === 'faint' ? undefined : { ...turn!, state: next, remaining: [...turn!.remaining] },
 						[...history, identity(pokemon)], weight * (model?.weight ?? 1) / (cause === 'phaze' ? options.length : 1),
 						cause === 'phaze' ? entries : [...entries, decision]);
 				});

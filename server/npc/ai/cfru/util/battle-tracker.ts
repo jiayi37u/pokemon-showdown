@@ -427,14 +427,14 @@ export class BattleTracker {
 			const species = (this.formatId ? Dex.forFormat(this.formatId) : Dex).species.get(parts[2].split(',')[0]);
 			this.activeFormes.set(position, species.name);
 			this.activeTypes.delete(position);
+			const ability = formeAbility(species);
+			if (ability) this.activeAbilities.set(position, ability);
 			const tracked = this.opponentPokemon.get(position);
 			if (tracked) {
 				tracked.species = species.name;
 				tracked.types = species.types;
-				const ability = formeAbility(species);
 				if (ability) {
 					tracked.ability = ability;
-					this.activeAbilities.set(position, tracked.ability);
 					tracked.baseAbility = tracked.ability;
 					tracked.abilityChanged = false;
 				}
@@ -907,6 +907,11 @@ export class BattleTracker {
 			this.updateIdentityMemory(identity, { naturalGift: undefined,
 				...(pending.item && !item ? { consumedItem: toID(pending.item) } : {}) });
 		}
+	}
+
+	/** Unsuppressed identity; older requests expose only the native ability. */
+	getCurrentAbility(position: string): string | undefined {
+		return this.activeAbilities.get(position);
 	}
 
 	rememberOurPokemon(position: string, ident: string, pokemon: RequestPokemonFacts): void {

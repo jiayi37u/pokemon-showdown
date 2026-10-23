@@ -6,7 +6,7 @@ import { hardMove } from './opponent-model';
 import { calculateDamage, selectDamage, type DamagePolicy } from './damage';
 import { canHaveOpponentMoves } from '../cfru/util/opponent-presets';
 import {
-	effectiveAbility, defensiveAbility, effectiveItem, fieldWithActivePokemon, grounded, rulesDex,
+	effectiveAbility, defensiveAbility, effectiveItem, fieldWithActivePokemon, grounded, rulesDex, tracedAbility,
 } from '../cfru/util/mechanics';
 import { compareActionOrder, compareSpeedOrder } from '../cfru/util/speed';
 import { megaEvolutionState } from '../cfru/util/forms';
@@ -78,7 +78,7 @@ export function positionKey(state: BattleState): string {
 	const pokemon = (p: ProjectedPokemon) => [identity(p), p.species, p.hp, p.maxHp, p.active, p.fainted,
 		p.status, p.sleepTurns, p.toxicCounter, p.boosts, p.baseStats, p.statSpread, p.trapSource,
 		p.types, p.item, p.itemKnown, p.itemLost,
-		p.itemChanged, p.itemExchange, p.ability, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
+		p.itemChanged, p.itemExchange, p.ability, p.observedAbility, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
 		[...p.volatiles].sort(), p.projection, p.queuedSpeed, p.queuedPriorityAbility,
 		p.moveKnowledge, p.presetModels?.map(m => {
 			let key = profileKeys.get(m);
@@ -153,6 +153,11 @@ function boosts(p: AIPokemon, changes: SparseBoostsTable, state: BattleState, ho
 function entryAbility(state: BattleState, side: Side): void {
 	const actor = state[side].active[0], foe = state[other(side)].active[0];
 	if (!actor || actor.fainted) return;
+	const copied = tracedAbility(actor, state[other(side)].active, state.field);
+	if (copied) {
+		actor.observedAbility ||= actor.ability;
+		actor.ability = copied; actor.abilityChanged = true;
+	}
 	const ability = effectiveAbility(actor, state.field);
 	if (ability === 'intimidate' && foe && !foe.fainted) boosts(foe, { atk: -1 }, state, true);
 	const weather: Record<string, string> = {
@@ -191,6 +196,9 @@ export function switchIn(state: BattleState, side: Side, selected: AIPokemon): v
 			Object.assign(projected, projected.projection.native);
 			projected.projection.pp = projected.projection.nativePP;
 		}
+		if (outgoing.abilityChanged && outgoing.observedAbility) {
+			outgoing.ability = outgoing.observedAbility; outgoing.abilityChanged = false;
+		}
 		projected.projection = { pp: projected.projection?.pp, wishHp: projected.projection?.wishHp };
 	}
 	incoming.active = true; incoming.lastMove = ''; incoming.activeMoveActions = 0;
@@ -220,6 +228,8 @@ export function switchIn(state: BattleState, side: Side, selected: AIPokemon): v
 	}
 
 	entryAbility(state, side);
+	const waiting = state[other(side)].active[0];
+	if (waiting && tracedAbility(waiting, state[side].active, state.field)) entryAbility(state, other(side));
 }
 
 function status(
@@ -674,20 +684,35 @@ export interface TurnCheckpoint {
 	state: BattleState;
 	pending?: PendingEntry;
 	remaining: { side: Side, actor: string, action: SearchAction, reply: SearchAction }[];
+	/** Voluntary switches precede Mega evolution and its entry abilities. */
+	megaPending?: { side: Side, actor: string, action: SearchAction }[];
 }
 
-export function beginTurn(state: BattleState, own: SearchAction, foe: SearchAction): TurnCheckpoint {
-	let next = clonePosition(state);
-	for (const [side, action] of [['self', own], ['opponent', foe]] as const) {
-		if (!action.mega || next[side].megaUsedByOwner?.[next[side].active[0].ownerSide || '']) continue;
+function evolveQueued(state: BattleState, queued: NonNullable<TurnCheckpoint['megaPending']>): BattleState {
+	let next = state;
+	const ordered = [...queued].sort((a, b) =>
+		-compareSpeedOrder(state[a.side].active[0], state[b.side].active[0], state.field));
+	for (const { side, actor, action } of ordered) {
+		const current = next[side].active[0];
+		if (!action.mega || !action.move || current.fainted || identity(current) !== actor ||
+			next[side].megaUsedByOwner?.[current.ownerSide || '']) continue;
 		const perspective = side === 'self' ? next : { ...next, self: next.opponent, opponent: next.self };
-		const mega = megaEvolutionState(perspective, perspective.self.active[0]);
+		const mega = megaEvolutionState(perspective, perspective.self.active[0], false);
 		if (mega) {
 			next = side === 'self' ? mega : { ...mega, self: mega.opponent, opponent: mega.self };
 			next[side].megaUsedByOwner = { ...next[side].megaUsedByOwner, [next[side].active[0].ownerSide || '']: true };
 			entryAbility(next, side);
 		}
 	}
+	return next;
+}
+
+export function beginTurn(state: BattleState, own: SearchAction, foe: SearchAction): TurnCheckpoint {
+	let next = clonePosition(state);
+	const queued = (['self', 'opponent'] as const).map(side => ({ side,
+		actor: identity(next[side].active[0]), action: side === 'self' ? own : foe }));
+	const deferMega = !!(own.switchTo || foe.switchTo);
+	if (!deferMega) next = evolveQueued(next, queued);
 	const a = next.self.active[0], b = next.opponent.active[0];
 	for (const p of [a, b] as ProjectedPokemon[]) { p.projection ||= {}; p.projection.startHp = p.hp; }
 	const first = own.move === 'pursuit' && foe.switchTo ? true :
@@ -698,15 +723,22 @@ export function beginTurn(state: BattleState, own: SearchAction, foe: SearchActi
 			next.self.conditions, next.opponent.conditions) > 0;
 	// Speed ties conservatively let the opponent act first; no random tie samples.
 	const order: Side[] = first ? ['self', 'opponent'] : ['opponent', 'self'];
-	return { state: next, remaining: order.map(side => ({ side,
-		actor: identity(side === 'self' ? a : b), action: side === 'self' ? own : foe,
-		reply: side === 'self' ? foe : own })) };
+	return { state: next, megaPending: deferMega ? queued.filter(q => q.action.mega && q.action.move) : undefined,
+		remaining: order.map(side => ({ side,
+			actor: identity(side === 'self' ? a : b), action: side === 'self' ? own : foe,
+			reply: side === 'self' ? foe : own })) };
 }
 
 /** Mutates this checkpoint only; callers clone its state when branching at an entry. */
 export function continueTurn(turn: TurnCheckpoint, policy: DamagePolicy = 'mean'): BattleState | undefined {
-	const next = turn.state;
+	let next = turn.state;
 	while (turn.remaining.length) {
+		if (turn.megaPending && !turn.remaining.some(q => q.action.switchTo)) {
+			const before = next;
+			next = turn.state = evolveQueued(next, turn.megaPending); turn.megaPending = undefined;
+			turn.remaining = turn.remaining.map(q => q.actor === identity(before[q.side].active[0]) ?
+				{ ...q, actor: identity(next[q.side].active[0]) } : q);
+		}
 		const { side, actor, action, reply } = turn.remaining.shift()!;
 		// Phazing/pivots must not give the replacement the outgoing Pokemon's queued attack.
 		if (!action.switchTo && identity(next[side].active[0]) !== actor) continue;

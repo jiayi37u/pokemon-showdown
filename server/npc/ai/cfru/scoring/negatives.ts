@@ -1879,7 +1879,7 @@ export const checkPainSplit: NegativeScoringFunction = ctx => {
 	const value = painSplitValue(ctx);
 	if (value.score > BASE_SCORE) return 0;
 	ctx.skipPositiveScoring = true;
-	ctx.flags.discouraged = true;
+	ctx.flags.discouraged = value.score === DISCOURAGED_SCORE;
 	const amount = Math.min(0, value.score - (ctx.score ?? BASE_SCORE));
 	ctx.adjustments.push({ reason: value.reason, amount, category: 'negative' });
 	return amount;

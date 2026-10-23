@@ -10,7 +10,9 @@ import { modelsFor, knownMoves, clonePosition, settleFutureAttacks, bindOpponent
 	moveAction, positionKey, supportsMove, usableMove, type Side } from './projection';
 import { compareActionOrder } from '../cfru/util/speed';
 import { directRecoveryAmount, entryHazardDamage } from '../cfru/util/turn-outcome';
-import { effectiveAbility, effectiveItem, fieldWithActivePokemon, grounded, rulesDex } from '../cfru/util/mechanics';
+import {
+	effectiveAbility, effectiveItem, fieldWithActivePokemon, grounded, rulesDex, tracedAbility,
+} from '../cfru/util/mechanics';
 import { mustSkipMove, statusFailure, moveSelectionFailure } from '../cfru/util/move-effects';
 
 export interface Matchup {
@@ -404,8 +406,12 @@ export class MatchupEvaluator {
 				if (result) this.stats.hits++;
 				else {
 					this.stats.misses++;
-					const field = fieldWithActivePokemon(state.field, [actor, foe]);
-					const a = entered(actor, state.self.conditions, field), b = entered(foe, state.opponent.conditions, field);
+					let field = fieldWithActivePokemon(state.field, [actor, foe]);
+					let a = entered(actor, state.self.conditions, field), b = entered(foe, state.opponent.conditions, field);
+					const ownCopy = tracedAbility(a, [b], field), foeCopy = tracedAbility(b, [a], field);
+					if (ownCopy) a = { ...a, ability: ownCopy };
+					if (foeCopy) b = { ...b, ability: foeCopy };
+					if (ownCopy || foeCopy) field = fieldWithActivePokemon(field, [a, b]);
 					const pairState: PairState = { ...state, field, evaluator: this, damageMemo: new Map(),
 						self: { ...state.self, active: [a] }, opponent: { ...state.opponent, active: [b] } };
 					result = { self: directional(a, b, pairState), opponent: directional(b, a, reverse(pairState)) };

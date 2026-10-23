@@ -36,6 +36,20 @@ export function effectiveAbility(pokemon: AbilityPokemon, field: AbilityField = 
 	return ability.id;
 }
 
+/** Resolve a certain Trace outcome from the visible/hypothesized opposing lineup.
+ * Different eligible abilities in doubles remain uncertain, rather than picking a target.
+ */
+export function tracedAbility(
+	pokemon: AIPokemon, foes: readonly AIPokemon[], field: FieldConditions
+): string | undefined {
+	if (effectiveAbility(pokemon, field) !== 'trace' || effectiveItem(pokemon, field) === 'abilityshield') return;
+	const active = foes.filter(p => !p.fainted && p.hp > 0);
+	const dex = rulesDex(field);
+	if (active.some(p => dex.abilities.get(p.ability).id === 'noability')) return;
+	const abilities = active.map(p => dex.abilities.get(p.ability)).filter(a => a.exists && !a.flags.notrace);
+	if (abilities.length && abilities.every(a => a.id === abilities[0].id)) return abilities[0].id;
+}
+
 /** Recompute field-wide effects from the active lineup, also for hypothetical replacements. */
 export function fieldWithActivePokemon(field: FieldConditions, active: readonly AIPokemon[]): FieldConditions {
 	const result = { ...field, neutralizingGas: hasNeutralizingGas(active) };

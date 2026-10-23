@@ -52,6 +52,17 @@ function oracle(g, id, tolerance = 0) {
 describe('NPC shared mechanism families', () => {
 	afterEach(() => { for (const b of games) b.destroy(); games = []; });
 	for (const mode of ['singles', 'doubles', 'multi']) {
+		it(`${mode}: preserves publicly copied abilities when Gen6 requests expose only the native ability`, () => {
+			const g = game({ format: 'gen6customgame', mode,
+				actor: { species: 'Alakazam', ability: 'Magic Guard', item: 'Alakazite', moves: ['splash'] },
+				foe: { species: 'Volcanion', ability: 'Water Absorb', moves: ['splash'] } });
+			g.play('move 1 mega');
+			assert.equal(g.b.p2.activeRequest.side.pokemon[0].ability, undefined);
+			const actor = g.state().self.active[0];
+			assert.equal(actor.ability.toLowerCase().replace(/ /g, ''), g.b.p2.active[0].ability);
+			assert.equal(actor.observedAbility, 'trace');
+			assert.equal(actor.abilityChanged, true);
+		});
 		it(`${mode}: does not treat current-HP damage or Endeavor as a repeatable 2HKO`, () => {
 			const g = game({ mode, actor: { ...passive, moves: ['superfang', 'endeavor', 'seismictoss'] } });
 			const s = g.state(), target = s.opponent.active[0];
@@ -143,6 +154,7 @@ describe('NPC shared mechanism families', () => {
 				Object.assign(target, { hp: targetHp, maxHp: targetMax, hpPercent: targetHp / targetMax * 100 });
 				const result = g.score('painsplit', s);
 				assert.equal(result.score, expected, JSON.stringify([max, hp, targetMax, targetHp]));
+				assert.equal(!!result.flags.discouraged, expected === 60, 'Useful HP gains retain their scoring tier');
 				assert.equal(result.score, 100 + result.breakdown.details.reduce((n, d) => n + d.amount, 0));
 				const ours = g.b.p2.active[0], foe = g.b.p1.active[0];
 				ours.maxhp = max; ours.hp = hp;

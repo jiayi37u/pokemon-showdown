@@ -52,7 +52,7 @@ export function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: 
 		spe: mon.stats.spe,
 	} : fallbackBaseStats; // Fallback to base stats if mon.stats is not available
 
-	return makeAIPokemonSkeleton({
+	const pokemon = makeAIPokemonSkeleton({
 		slot,
 		species,
 		hp: currentHp,
@@ -71,6 +71,9 @@ export function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: 
 		level,
 		gender,
 	});
+	pokemon.observedAbility = mon.baseAbility || undefined;
+	pokemon.abilityChanged = !!mon.baseAbility && !!mon.ability && toID(mon.ability) !== toID(mon.baseAbility);
+	return pokemon;
 }
 
 /**
@@ -155,7 +158,14 @@ export function buildBattleStateFromRequests(
 				pokemon.species = forme;
 				pokemon.types = speciesDefaults(forme, formatId).types;
 			}
-			// Register only request facts. Transform may have occurred before the first request.
+			// Gen6 requests contain only baseAbility. Preserve current public changes
+			// before registering this request, which also refreshes tracker ability facts.
+			if (active && mon.ability === undefined) {
+				pokemon.ability = tracker.getCurrentAbility(position) || pokemon.ability;
+				pokemon.abilityChanged = !!pokemon.observedAbility &&
+					toID(pokemon.ability) !== toID(pokemon.observedAbility);
+			}
+			// Register request facts plus the public current ability; Transform may precede the first request.
 			if (active && !pokemon.fainted) tracker.rememberOurPokemon(position, mon.ident, pokemon);
 			tracker.recordRequestItem(mon.ident, pokemon.item);
 			pokemon.timesAttacked = tracker.getTimesAttacked(active ? position : mon.ident);

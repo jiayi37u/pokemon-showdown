@@ -296,6 +296,78 @@ describe('Shared public state pipeline across game types', () => {
 	}
 
 	for (const gameType of ['singles', 'doubles', 'multi']) {
+		it(`${gameType}: our own successful Trick history is available to both difficulty scorers`, () => {
+			const game = fixture(gameType,
+				{ species: 'Gastrodon', ability: 'Storm Drain', item: 'Leftovers', moves: ['splash'] },
+				{ species: 'Rotom-Wash', ability: 'Levitate', item: 'Choice Scarf', moves: ['trick'] });
+			try {
+				game.build();
+				game.play('move 1', `move 1${gameType === 'singles' ? '' : ' 1'}`);
+				const state = game.build(), actor = state.self.active[0], target = state.opponent.active[0];
+				assert.deepEqual(actor.itemExchange, { given: 'choicescarf', received: 'leftovers' });
+				assert.equal(target.originalItem, 'Leftovers');
+				assert.equal(toID(target.item), 'choicescarf');
+				const move = buildAIMove({ id: 'trick' }, 1);
+				const normal = new ScoringEngine(DEFAULT_AI_CONFIG, createAICache()).scoreMove(state, actor, move, target);
+				const hard = new HardEvaluation(state, state.field.formatId).scoreMoves(actor, [move], target, new Map())[0];
+				assert.equal(normal.score, 60); assert.equal(hard.score, 60);
+				game.tracker.reset();
+				assert.equal(game.tracker.getItemExchange(actor.ident), undefined);
+			} finally { game.battle.destroy(); }
+		});
+		for (const exchangeMove of ['trick', 'switcheroo']) {
+			it(`${gameType}: successful ${exchangeMove} reveals the donor item and keeps repeat exchanges at 60`, () => {
+				const game = fixture(gameType,
+					{ species: 'Rotom-Wash', ability: 'Levitate', item: 'Choice Scarf', moves: [exchangeMove, 'splash'] },
+					{ species: 'Gastrodon', ability: 'Storm Drain', item: 'Leftovers', moves: ['splash', exchangeMove] },
+					undefined, undefined, { species: 'Mew', moves: ['splash'] }, 'gen6customgame');
+				try {
+					game.build();
+					game.play(`move 1${gameType === 'singles' ? '' : ' 1'}`, 'move 1');
+					const state = game.build(), foe = state.opponent.active[0], own = state.self.active[0];
+					assert.equal(foe.originalItem, 'Choice Scarf');
+					assert.equal(foe.item, 'Leftovers');
+					assert.deepEqual(foe.itemExchange, { given: 'choicescarf', received: 'leftovers' });
+					assert.equal(own.itemExchange, undefined, 'Receiving a swapped item is not initiating Trick');
+					assert(inferOpponent(foe, 'gen6ou').every(h => h.name === 'Choice Scarf'));
+					const reversed = { ...state, self: state.opponent, opponent: state.self };
+					const move = buildAIMove({ id: exchangeMove }, 1);
+					const engine = new ScoringEngine({ ...DEFAULT_AI_CONFIG, formatId: 'gen6customgame' }, createAICache());
+					assert.equal(engine.scoreMove(reversed, foe, move, own).score, 60);
+					assert.equal(new HardEvaluation(reversed, 'gen6ou').scoreMoves(foe, [move], own, new Map())[0].score, 60);
+					// Request rebuilding and leaving the active slot must preserve the identity-bound history.
+					game.play(`switch ${gameType === 'doubles' ? 3 : 2}`, 'move 1');
+					const reserve = game.build().opponent.reserve.find(p => p.species === 'Rotom-Wash');
+					assert.deepEqual(reserve.itemExchange, foe.itemExchange);
+					game.play(`switch ${gameType === 'doubles' ? 3 : 2}`, 'move 1');
+					assert.deepEqual(game.build().opponent.active[0].itemExchange, foe.itemExchange);
+					// Swapping back receives a Choice item and must remove the fixed-score condition.
+					game.play(`move 1${gameType === 'singles' ? '' : ' 1'}`, 'move 1');
+					const returned = game.build().opponent.active[0];
+					assert.equal(returned.originalItem, 'Choice Scarf');
+					assert.deepEqual(returned.itemExchange, { given: 'leftovers', received: 'choicescarf' });
+					assert.equal(engine.scoreMove(reversed, returned, move, own).flags.fixedScore, undefined);
+				} finally { game.battle.destroy(); }
+			});
+		}
+		for (const [ability, attack] of [['Storm Drain', 'scald'], ['Lightning Rod', 'thunderbolt']]) {
+			it(`${gameType}: ${ability} does not redirect its own attack when the actor is a state copy`, () => {
+				const game = fixture(gameType,
+					{ species: 'Mew', ability: 'Synchronize', moves: ['splash'] },
+					{ species: 'Mew', ability, moves: [attack] });
+				try {
+					const state = game.build(), actor = state.self.active[0], target = state.opponent.active[0];
+					const move = buildAIMove({ id: attack }, 1), context = {
+						activePokemon: [...state.self.active, ...state.opponent.active], isDoubles: state.isDoubles,
+					};
+					for (const calc of [calculateDamage, hardDamage]) {
+						const original = calc(actor, target, move, state.field, undefined, context).average;
+						assert(original > 0);
+						assert.equal(calc({ ...actor }, { ...target }, move, state.field, undefined, context).average, original);
+					}
+				} finally { game.battle.destroy(); }
+			});
+		}
 		it(`${gameType}: public temporary formes override stale request details and reset on switching`, () => {
 			const game = fixture(gameType,
 				{ species: 'Pelipper', ability: 'Keen Eye', moves: ['splash'] },

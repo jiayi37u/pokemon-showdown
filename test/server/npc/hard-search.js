@@ -2,10 +2,11 @@
 const assert = require('assert').strict;
 const { Battle } = require('../../../dist/sim');
 const { projectedState } = require('./helpers/hard-state');
-const { advancePosition, beginTurn, continueTurn, clonePosition, switchIn, modelsFor, knownMoves, hp, usableMove, actionOutcomes, supportsMove } = require('../../../dist/server/npc/ai/hard/projection');
-const { searchPosition, certainlyUseless, Search } = require('../../../dist/server/npc/ai/hard/search');
+const { advancePosition, beginTurn, continueTurn, bindOpponent, clonePosition, switchIn, modelsFor, knownMoves, hp, usableMove, actionOutcomes, supportsMove } = require('../../../dist/server/npc/ai/hard/projection');
+const { searchPosition, Search, optimisticValue } = require('../../../dist/server/npc/ai/hard/search');
 const { calculateDamage, selectDamage } = require('../../../dist/server/npc/ai/hard/damage');
 const { hardMove, hardMoveId } = require('../../../dist/server/npc/ai/hard/opponent-model');
+const { selectMoveCandidates } = require('../../../dist/server/npc/ai/cfru/scoring');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
 const { MatchupEvaluator } = require('../../../dist/server/npc/ai/hard/matchups');
 const mon = (species, moves, rest = {}) => ({ species, moves, ...rest });
@@ -24,9 +25,216 @@ function fixture(own, foe) {
 const step = (state, own, foe, policy) => advancePosition(state, action(own), action(foe),
 	(s, side) => s[side].reserve.find(p => !p.fainted), policy);
 const damage = (state, id) => calculateDamage(state.self.active[0], state.opponent.active[0], hardMove(id, 1, 'gen6customgame'), state.field);
+const scoresFor = (search, state, moves, side = 'self') => Object.fromEntries(
+	[...search.scoreActions(state, side, moves.map(action))].map(([a, score]) => [a.move, score.score]));
 
 describe('Hard damage-based state search', () => {
 	afterEach(() => battles.splice(0).forEach(b => b.destroy()));
+	function compareBounded(f, actions, replacing = false) {
+		const run = prune => searchPosition(f.state, f.evaluator, actions.map(a => ({ ...a })), new Map(),
+			new MatchupEvaluator(), replacing, { prune });
+		const full = run(false), bounded = run(true);
+		assert(full.choice, full.reason);
+		assert.equal(bounded.choice, full.choice, `${full.reason}\n${bounded.reason}`);
+		assert(Math.abs(bounded.values[0].value - full.values[0].value) < 1e-8, 'Winning value remains exact');
+		for (const value of bounded.values) {
+			const expected = full.values.find(v => v.id === value.id).value;
+			if (value.upperBound) assert(value.value >= expected - 1e-8, `Invalid upper bound for ${value.id}`);
+			else assert(Math.abs(value.value - expected) < 1e-8, `Changed exact value for ${value.id}`);
+		}
+		assert(bounded.nodes <= full.nodes, 'The optimized search expands a subset of the reference tree');
+		return { full, bounded };
+	}
+	it('matches full search with burns, hazards, random phazing and opposing pivots', () => {
+		const f = fixture([mon('Garchomp', ['dragontail', 'toxic', 'stealthrock'], { item: 'Rocky Helmet' }),
+			mon('Excadrill', ['earthquake', 'ironhead'], { ability: 'Mold Breaker' }), mon('Volcanion', ['steameruption'])],
+		[mon('Rotom-Wash', ['hydropump', 'willowisp', 'voltswitch'], { ability: 'Levitate', item: 'Leftovers' }),
+			mon('Tornadus-Therian', ['hurricane', 'uturn'], { ability: 'Regenerator' }), mon('Serperior', ['leafstorm'])]);
+		f.state.self.active[0].status = 'brn'; f.state.opponent.conditions.stealthrock = true;
+		const actions = ['dragontail', 'toxic', 'stealthrock'].map(action).concat(f.state.self.reserve.map(p =>
+			({ id: `switch ${p.slot}`, switchTo: p, prior: 100 })));
+		const { full, bounded } = compareBounded(f, actions);
+		assert(bounded.nodes < full.nodes, `${full.reason}\n${bounded.reason}`);
+	});
+	it('preserves shared pivot choices across hidden profiles when bounding continuations', () => {
+		const f = fixture([mon('Jolteon', ['voltswitch', 'thunderbolt']), mon('Skarmory', ['ironhead']),
+			mon('Garchomp', ['earthquake'])], [mon('Mew', ['earthquake', 'icebeam', 'nastyplot']), mon('Blissey', ['seismictoss'])]);
+		const foe = f.state.opponent.active[0];
+		foe.presetModels = [0.2, 0.8].map((weight, i) => ({ name: `hidden ${i}`, weight, matched: true,
+			pokemon: { ...foe, baseStats: { ...foe.baseStats, atk: i ? 100 : 300, spa: i ? 300 : 100 } },
+			moves: foe.moves.map(id => ({ id, availability: 1 })) }));
+		f.evaluator.models.set(foe, foe.presetModels);
+		compareBounded(f, ['voltswitch', 'thunderbolt'].map(action));
+	});
+	it('preserves replacement decisions and stable ties after work reordering', () => {
+		const f = fixture([mon('Magikarp', ['splash']), mon('Mew', ['tackle'], { name: 'First' }),
+			mon('Mew', ['tackle'], { name: 'Second' })],
+		[mon('Mew', ['tackle'])]);
+		hp(f.state.self.active[0], 0);
+		const actions = f.state.self.reserve.map(p => ({ id: `switch ${p.slot}`, switchTo: p, prior: 100 }));
+		const { bounded } = compareBounded(f, actions, true);
+		assert.equal(bounded.choice, actions[0].id);
+	});
+	it('matches full search when setup, recovery and damage compete for the second action', () => {
+		const f = fixture([mon('Mew', ['calmmind', 'psychic', 'recover', 'icebeam']),
+			mon('Scizor', ['bulletpunch', 'uturn'])],
+		[mon('Garchomp', ['earthquake', 'dragonclaw', 'swordsdance']), mon('Blissey', ['seismictoss', 'softboiled'])]);
+		hp(f.state.self.active[0], 170);
+		compareBounded(f, ['calmmind', 'psychic', 'recover', 'icebeam'].map(action));
+	});
+	it('retains the original winner of equal-valued attacking continuations', () => {
+		const f = fixture([mon('Mew', ['pound', 'scratch'])], [mon('Blissey', ['tackle', 'pound'])]);
+		const { bounded } = compareBounded(f, ['scratch', 'pound'].map(action));
+		assert.equal(bounded.choice, 'move scratch');
+	});
+	it('resumes a partial continuation without treating its upper bound as an exact cached value', () => {
+		const f = fixture([mon('Mew', ['icebeam'])], [mon('Garchomp', ['earthquake', 'dragonclaw']),
+			mon('Blissey', ['seismictoss'])]);
+		const search = new Search(new MatchupEvaluator());
+		const work = search.continuation(f.state, action('icebeam'), true);
+		search.advanceContinuation(work);
+		assert(work.pending.length > 0);
+		assert.equal(work.leaves, undefined);
+		const upper = work.upper, partialNodes = search.nodes;
+		const exact = search.continuationValue(f.state, action('icebeam'));
+		assert(upper >= exact - 1e-9);
+		assert(search.nodes > partialNodes);
+		const nodes = search.nodes;
+		assert.equal(search.continuationValue(f.state, action('icebeam')), exact);
+		assert.equal(search.nodes, nodes);
+	});
+	it('keeps unresolved rare profiles in the bound instead of extrapolating the evaluated majority', () => {
+		const f = fixture([mon('Mew', ['splash'])], [mon('Mew', ['splash'])]);
+		const foe = f.state.opponent.active[0];
+		foe.presetModels = [['synchronize', 0.99], ['pressure', 0.01]].map(([ability, weight]) => ({
+			name: ability, weight, matched: true, pokemon: { ...foe, ability },
+			moves: [{ id: 'splash', availability: 1 }],
+		}));
+		const search = new Search(new MatchupEvaluator());
+		search.value = state => state.opponent.active[0].ability === 'pressure' ? 10000 : -100;
+		const work = search.continuation(f.state, action('splash'), true);
+		search.advanceContinuation(work);
+		assert.equal(work.upper, Infinity, 'The unseen 1% profile has no proven bound yet');
+		assert.equal(search.continuationValue(f.state, action('splash')), 1);
+		assert.equal(work.upper, 1);
+	});
+	it('uses the whole random-recipient expectation when bounding a completed response', () => {
+		const f = fixture([mon('Mew', ['roar'])], [mon('Blissey', ['splash']),
+			mon('Pikachu', ['splash']), mon('Garchomp', ['splash'])]);
+		f.state.opponent.active[0].volatiles.add('trapped');
+		const search = new Search(new MatchupEvaluator());
+		search.value = state => state.opponent.active[0].species === 'Pikachu' ? 100 : -90;
+		const work = search.continuation(f.state, action('roar'));
+		search.advanceContinuation(work);
+		assert.equal(work.upper, 5);
+		assert.equal(search.continuationValue(f.state, action('roar')), 5);
+	});
+	it('bounds opposing entry choices without promoting random profiles to selectable outcomes', () => {
+		const leaf = (choice, value, weight) => ({ config: 0, configWeight: 1, reply: 'pivot', value, weight,
+			entries: [{ key: 'entry', side: 'opponent', choice, depth: 0 }] });
+		const leaves = [leaf('A', 100, 0.1), leaf('A', -100, 0.9), leaf('B', 20, 0.5), leaf('B', 40, 0.5)];
+		assert.equal(optimisticValue(leaves), -80, 'Opponent chooses the recipient with the lower expectation');
+		assert.equal(optimisticValue(leaves, false), 30, 'Shared continuation worlds relax control, not chance');
+		leaves[0].value = Infinity;
+		assert.equal(optimisticValue(leaves), 30, 'A complete opposing alternative bounds an unresolved recipient');
+		assert.equal(optimisticValue(leaves, false), Infinity);
+	});
+	it('does not give a shared opposing entrant knowledge of hidden configurations', () => {
+		const leaves = [0, 1].flatMap(config => ['A', 'B'].map((choice, i) => ({
+			config, configWeight: 0.5, reply: 'pivot', value: config === i ? 100 : -100, weight: 1,
+			entries: [{ key: 'shared', side: 'opponent', choice, depth: 0 }],
+		})));
+		assert.equal(optimisticValue(leaves), 100, 'Independent opposing minima would incorrectly give -100');
+		for (const b of leaves) b.entries[0].key = `observable ${b.config}`;
+		assert.equal(optimisticValue(leaves), -100, 'Distinct public observations permit independent choices');
+	});
+	it('keeps incomplete information sets and nested entries conservative', () => {
+		const leaves = [0, 1].flatMap(config => ['A', 'B'].map(choice => ({
+			config, configWeight: 0.5, reply: 'pivot', value: choice === 'A' ? 10 : 100, weight: 1,
+			entries: [{ key: 'shared', side: 'opponent', choice, depth: 0 }],
+		})));
+		assert.equal(optimisticValue(leaves.slice(1)), 100, 'A shared choice must not erase a hidden configuration');
+		leaves[0].entries.push({ key: 'nested', side: 'self', choice: 'C', depth: 1 });
+		assert.equal(optimisticValue(leaves), 100);
+		leaves[0].entries.pop(); leaves[0].weight = 0.1;
+		assert.equal(optimisticValue(leaves), 100, 'Unequal recipient mass cannot be silently renormalized');
+	});
+	it('bounds resolved shared and independent entry trees with partial leaf estimates', () => {
+		const search = new Search(new MatchupEvaluator());
+		for (let seed = 1; seed <= 64; seed++) {
+			let rng = seed;
+			const random = () => ((rng = Math.imul(rng, 1664525) + 1013904223 >>> 0) / 2 ** 32);
+			const leaves = [0, 1].flatMap(config => ['attack', 'pivot'].flatMap(reply => {
+				const base = { config, configWeight: config ? 0.1 : 0.9, reply };
+				const ordinary = { ...base, weight: 0.2, value: random() * 200 - 100, entries: [] };
+				const shared = seed % 2;
+				return [ordinary, ...['A', 'B'].flatMap(choice => [0.25, 0.75].map(weight => ({
+					...base, weight: weight * 0.8, value: random() * 200 - 100,
+					entries: [{ key: shared ? 'shared' : `${config}/${reply}`,
+						side: seed % 3 ? 'opponent' : 'self', choice, depth: 0 }],
+				})))];
+			}));
+			search.continuationBranches = () => leaves;
+			const exact = search.continuationValue();
+			assert(optimisticValue(leaves) >= exact - 1e-9, `Complete bound, seed ${seed}`);
+			const partial = leaves.map(b => ({ ...b, value: random() < 0.3 ? Infinity : b.value + random() * 50 }));
+			assert(optimisticValue(partial) >= exact - 1e-9, `Partial bound, seed ${seed}`);
+		}
+	});
+	it('projects damage from absorption-ability attackers without redirecting it back to themselves', () => {
+		for (const [species, ability, move] of [['Gastrodon', 'Storm Drain', 'scald'], ['Raichu', 'Lightning Rod', 'thunderbolt']]) {
+			const f = fixture([mon(species, [move], { ability })], [mon('Mew', ['splash'])]);
+			const next = step(f.state, move, 'splash');
+			assert.equal(f.state.opponent.active[0].hp - next.opponent.active[0].hp,
+				Math.floor(damage(f.state, move).average));
+			assert(next.opponent.active[0].hp < f.state.opponent.active[0].hp);
+		}
+	});
+	it('carries successful item exchanges into continuation scoring and cache identity', () => {
+		const { positionKey } = require('../../../dist/server/npc/ai/hard/projection');
+		for (const move of ['trick', 'switcheroo']) {
+			const f = fixture([mon('Rotom-Wash', [move], { item: 'Choice Scarf' })],
+				[mon('Gastrodon', ['splash'], { ability: 'Storm Drain', item: 'Leftovers' })]);
+			const next = step(f.state, move, 'splash'), actor = next.self.active[0], target = next.opponent.active[0];
+			assert.deepEqual(actor.itemExchange, { given: 'choicescarf', received: 'leftovers' });
+			assert.equal(target.itemExchange, undefined);
+			assert.equal(new HardEvaluation(next, 'gen6customgame').scoreMoves(actor,
+				[hardMove(move, 1, 'gen6customgame')], target, new Map())[0].score, 60);
+			const other = clonePosition(next);
+			delete other.self.active[0].itemExchange;
+			assert.notEqual(positionKey(next), positionKey(other));
+			assert.equal(f.state.self.active[0].itemExchange, undefined, 'The root state is immutable');
+		}
+	});
+	it('does not discourage an initial exchange, a failed exchange, or receiving a Choice item', () => {
+		for (const [item, ability, expected] of [['Choice Band', 'Storm Drain', true], ['Leftovers', 'Sticky Hold', false]]) {
+			const f = fixture([mon('Rotom-Wash', ['trick'], { item: 'Choice Scarf' })],
+				[mon('Gastrodon', ['splash'], { ability, item })]);
+			const next = step(f.state, 'trick', 'splash');
+			assert.equal(!!next.self.active[0].itemExchange, expected);
+			const score = new HardEvaluation(next, 'gen6customgame').scoreMoves(next.self.active[0],
+				[hardMove('trick', 1, 'gen6customgame')], next.opponent.active[0], new Map())[0];
+			assert.equal(score.flags.fixedScore, undefined);
+		}
+	});
+	it('evolves on generated actions for either side and preserves the resource on switches', () => {
+		const team = [mon('Diancie', ['moonblast', 'protect'], { item: 'Diancite' }), mon('Magikarp', ['splash'])];
+		const f = fixture(team, team), search = new Search(new MatchupEvaluator());
+		for (const side of ['self', 'opponent']) {
+			const moves = search.choices(f.state, side).filter(a => a.move);
+			assert(moves.length && moves.every(a => a.mega));
+			f.state[side].megaUsedByOwner = { [f.state[side].active[0].ownerSide]: true };
+			assert(search.choices(f.state, side).filter(a => a.move).every(a => !a.mega));
+			delete f.state[side].megaUsedByOwner;
+		}
+		const own = search.choices(f.state, 'self').find(a => a.move);
+		// The transition only spends Mega for an actual evolving action, never a switch.
+		const checkpoint = beginTurn(f.state, own,
+			{ id: 'switch 2', switchTo: f.state.opponent.reserve[0], prior: 0 });
+		assert.equal(checkpoint.state.self.active[0].species, 'Diancie-Mega');
+		assert(checkpoint.state.self.megaUsedByOwner[f.state.self.active[0].ownerSide]);
+		assert(!checkpoint.state.opponent.megaUsedByOwner?.[f.state.opponent.active[0].ownerSide]);
+	});
 	it('keeps a low-ranked protection candidate when waiting wins through residual damage', () => {
 		const f = fixture([mon('Blissey', ['tackle', 'pound', 'watergun', 'protect'])],
 			[mon('Alakazam', ['psychic'], { ability: 'Inner Focus' })]);
@@ -37,15 +245,18 @@ describe('Hard damage-based state search', () => {
 		const result = searchPosition(f.state, f.evaluator, actions, new Map());
 		assert.equal(result.choice, 'move protect', result.reason);
 	});
-	it('selects attack coverage and keeps useful effects without blanket priority or spin exemptions', () => {
+	it('uses the baseline boundary rather than the top score or effect exemptions', () => {
 		const moves = ['thunderbolt', 'icebeam', 'watergun', 'quickattack', 'uturn', 'gigadrain', 'knockoff', 'rapidspin'];
 		const f = fixture([mon('Mew', moves), mon('Magikarp', ['splash'])],
-			[mon('Gyarados', ['splash'], { item: 'Leftovers' }), mon('Garchomp', ['splash'])]);
+			[mon('Gyarados', ['splash'], { item: 'Leftovers' }), mon('Garchomp', ['earthquake'], { item: 'Yache Berry' })]);
 		const search = new Search(new MatchupEvaluator());
 		const kept = search.choices(f.state, 'self', moves.map(move => ({ ...action(move), prior: 1 })))
 			.map(a => a.move);
-		for (const id of ['watergun', 'quickattack', 'rapidspin']) assert(!kept.includes(id), kept.join(', '));
-		for (const id of moves.filter(id => !['watergun', 'quickattack', 'rapidspin'].includes(id))) assert(kept.includes(id), id);
+		// Ice Beam is just over 100; Giga Drain just under it. Even Water Gun remains
+		// because the boundary gap is small, despite Thunderbolt's much higher score.
+		assert.deepEqual([...kept].sort(), [...moves].sort());
+		const separated = search.choices(f.state, 'self', ['thunderbolt', 'rapidspin', 'uturn'].map(action));
+		assert.deepEqual(separated.map(a => a.move), ['thunderbolt'], 'No independent pivot or clearing exemption');
 	});
 	it('filters ineffective support through scores without using unavailable reserves to rescue it', () => {
 		const f = fixture([mon('Heatran', ['earthpower', 'willowisp'])],
@@ -85,68 +296,137 @@ describe('Hard damage-based state search', () => {
 		assert(kept.length && kept.every(a => a.move), 'Do not emit an illegal pass');
 		assert(kept.every(a => a.prior === Math.max(...actions.map(a => a.prior))));
 	});
-	it('retains weaker priority only for a finishing race or damage before an otherwise lethal hit', () => {
-		const f = fixture([mon('Mew', ['bodyslam', 'quickattack'])], [mon('Mew', ['tackle'])]);
+	it('scores priority for finishing races and damage before a lethal hit without independent pruning', () => {
+		const moves = ['bodyslam', 'quickattack'];
+		const f = fixture([mon('Mew', moves)], [mon('Mew', ['tackle'])]);
 		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
 		const search = new Search(new MatchupEvaluator());
-		const kept = () => search.choices(f.state, 'self').map(a => a.move);
+		const scores = () => scoresFor(search, f.state, moves);
 		actor.baseStats.spe = 100; foe.baseStats.spe = 200; foe.baseStats.atk = 10;
-		assert(!kept().includes('quickattack'), 'Slower, but survives and cannot finish: use stronger damage');
+		assert(scores().bodyslam > scores().quickattack, 'Survives and cannot finish: stronger damage scores higher');
 		hp(foe, 1);
-		assert(kept().includes('quickattack'), 'Priority finishes before the faster response');
+		assert(scores().quickattack > scores().bodyslam, 'Priority finishes before the faster response');
 		actor.baseStats.spe = 300;
-		assert(!kept().includes('quickattack'), 'Already first: the stronger attack also finishes');
+		assert.equal(scores().quickattack, scores().bodyslam, 'Already faster: priority has no additional reward');
+		assert.equal(search.choices(f.state, 'self').length, 2, 'Both high-scoring finishing options remain');
 		hp(foe, foe.maxHp); actor.baseStats.spe = 100; foe.baseStats.atk = 10000;
-		assert(kept().includes('quickattack'), 'Otherwise dies before dealing any damage');
+		assert(scores().quickattack > scores().bodyslam, 'Otherwise dies before dealing any damage');
 		foe.moves = ['extremespeed'];
-		assert(!kept().includes('quickattack'), 'Cannot salvage damage before an even earlier lethal response');
+		assert(scores().quickattack < scores().bodyslam, 'Cannot salvage damage before an earlier lethal response');
 	});
-	it('compares actual attack order including opposing priority and Trick Room', () => {
-		const f = fixture([mon('Mew', ['bodyslam', 'extremespeed'])], [mon('Mew', ['quickattack'])]);
+	it('scores actual attack order including opposing priority and Trick Room', () => {
+		const moves = ['bodyslam', 'extremespeed'];
+		const f = fixture([mon('Mew', moves)], [mon('Mew', ['quickattack'])]);
 		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
 		actor.baseStats.spe = 300; foe.baseStats.spe = 100; foe.baseStats.atk = 10000;
-		const search = new Search(new MatchupEvaluator());
-		assert(search.choices(f.state, 'self').some(a => a.move === 'extremespeed'));
+		const search = new Search(new MatchupEvaluator()), scores = () => scoresFor(search, f.state, moves);
+		assert(scores().extremespeed > scores().bodyslam);
 		foe.moves = ['tackle']; foe.baseStats.atk = 10; hp(foe, 1);
-		assert(!search.choices(f.state, 'self').some(a => a.move === 'extremespeed'));
+		assert.equal(scores().extremespeed, scores().bodyslam);
 		f.state.field.trickroom = true;
-		assert(search.choices(f.state, 'self').some(a => a.move === 'extremespeed'));
+		assert(scores().extremespeed > scores().bodyslam);
 	});
-	it('unions priority benefits over speed presets instead of trusting the representative speed', () => {
-		const f = fixture([mon('Mew', ['bodyslam', 'quickattack'])], [mon('Mew', ['tackle'])]);
+	it('weights priority benefits over speed presets instead of trusting the representative speed', () => {
+		const moves = ['bodyslam', 'quickattack'];
+		const f = fixture([mon('Mew', moves)], [mon('Mew', ['tackle'])]);
 		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
 		actor.baseStats.spe = 200; hp(foe, 1);
 		foe.presetModels = [100, 300].map(spe => ({ name: `speed ${spe}`, weight: 0.5, matched: true,
 			pokemon: { ...foe, baseStats: { ...foe.baseStats, spe } }, moves: [{ id: 'tackle', availability: 1 }] }));
-		const search = new Search(new MatchupEvaluator());
-		assert(search.choices(f.state, 'self').some(a => a.move === 'quickattack'));
-		foe.presetModels = [foe.presetModels[0]];
-		assert(!search.choices(f.state, 'self').some(a => a.move === 'quickattack'));
+		const search = new Search(new MatchupEvaluator()), scores = () => scoresFor(search, f.state, moves);
+		assert(scores().quickattack > scores().bodyslam);
+		foe.presetModels = [{ ...foe.presetModels[0], weight: 1 }];
+		assert.equal(scores().quickattack, scores().bodyslam);
 	});
-	it('retains spin for hazards and item removal for unknown items, but not empty effects', () => {
-		const f = fixture([mon('Mew', ['bodyslam', 'rapidspin', 'knockoff'])], [mon('Mew', ['splash'])]);
+	it('gets clearing and item removal value from tactical scores', () => {
+		const moves = ['bodyslam', 'rapidspin', 'knockoff'];
+		const f = fixture([mon('Mew', moves), mon('Blissey', ['splash'])], [mon('Mew', ['splash'])]);
 		const search = new Search(new MatchupEvaluator()), foe = f.state.opponent.active[0];
 		foe.types = ['Normal']; foe.item = '';
 		foe.itemKnown = true; foe.itemAssumed = false;
-		let moves = search.choices(f.state, 'self').map(a => a.move);
-		assert(!moves.includes('rapidspin')); assert(!moves.includes('knockoff'));
+		const empty = scoresFor(search, f.state, moves);
+		assert(empty.rapidspin < empty.bodyslam); assert(empty.knockoff < empty.bodyslam);
 		f.state.self.conditions.stealthrock = true; foe.itemKnown = false;
-		moves = search.choices(f.state, 'self').map(a => a.move);
-		assert(moves.includes('rapidspin')); assert(moves.includes('knockoff'));
-		f.state.self.conditions.stealthrock = false; foe.moves = ['stealthrock'];
-		assert(search.choices(f.state, 'self').some(a => a.move === 'rapidspin'), 'Can clear hazards placed this turn');
+		const useful = scoresFor(search, f.state, moves);
+		assert(useful.rapidspin > 100 && useful.rapidspin > empty.rapidspin);
+		assert(useful.knockoff > 100 && useful.knockoff > empty.knockoff);
+		assert(search.choices(f.state, 'self').some(a => a.move === 'rapidspin'));
+		assert(search.choices(f.state, 'self').some(a => a.move === 'knockoff'));
 	});
-	it('does not reserve an attack only to cover a reserve with no switching purpose', () => {
-		const f = fixture([mon('Mew', ['thunderbolt', 'magicalleaf'])],
-			[mon('Mew', ['tackle']), mon('Mew', ['splash'])]);
+	it('does not score an unavailable replacement as a possible recipient', () => {
+		const moves = ['thunderbolt', 'magicalleaf'];
+		const f = fixture([mon('Mew', moves)], [mon('Mew', ['tackle']), mon('Magikarp', ['splash'])]);
 		f.state.opponent.active[0].types = ['Normal'];
+		f.state.opponent.active[0].volatiles.add('trapped');
 		f.state.opponent.reserve[0].types = ['Rock'];
 		const search = new Search(new MatchupEvaluator());
 		assert.equal(search.destinations(f.state, 'opponent').length, 1);
-		assert(!search.choices(f.state, 'self').some(a => a.move === 'magicalleaf'));
+		const before = scoresFor(search, f.state, moves);
+		f.state.opponent.reserve[0].types = ['Water', 'Flying'];
+		assert.deepEqual(scoresFor(search, f.state, moves), before);
 		f.state.opponent.active[0].moves.push('uturn');
 		assert.equal(search.destinations(f.state, 'opponent').length, 2);
-		assert(search.choices(f.state, 'self').some(a => a.move === 'magicalleaf'));
+	});
+	it('prunes by score gap for attacks and support alike without effect exceptions', () => {
+		const score = (id, value) => ({ move: hardMove(id, 1, 'gen6customgame'), score: value,
+			flags: { hasNoEffect: false, isImmune: false } });
+		const choices = [score('earthquake', 120), score('stealthrock', 120), score('rapidspin', 80), score('uturn', 80)];
+		assert.deepEqual(selectMoveCandidates(choices, 20), choices.slice(0, 2));
+		assert.deepEqual(selectMoveCandidates([score('tackle', 55), score('pound', 50)], 20).map(s => s.score), [55, 50]);
+		assert.deepEqual(selectMoveCandidates([score('tackle', 120), score('pound', 100), score('watergun', 101)], 20)
+			.map(s => s.score), [120, 100, 101]);
+		for (const [values, expected] of [
+			[[170, 120, 80, 80], [170, 120]],
+			[[120, 100, 80, 80], [120, 100, 80, 80]],
+			[[120, 101, 80], [120, 101]],
+			[[80, 170, 80, 120], [170, 120]],
+			[[99, 70, 20], [99, 70, 20]],
+		]) {
+			assert.deepEqual(selectMoveCandidates(values.map(n => score('tackle', n)), 20)
+				.map(s => s.score), expected);
+		}
+		assert.equal(selectMoveCandidates(Array.from({ length: 8 }, () => score('tackle', 100)), 20).length, 8);
+	});
+
+	it('does not switch into the main attack merely to resist a weaker move', () => {
+		const f = fixture([mon('Excadrill', ['earthquake', 'ironhead', 'rapidspin', 'stealthrock'], {
+			ability: 'Mold Breaker', nature: 'Jolly', item: 'Leftovers',
+			evs: { hp: 176, atk: 12, def: 28, spd: 252, spe: 40 },
+		})], [mon('Rotom-Wash', ['hydropump', 'willowisp', 'painsplit'], {
+			ability: 'Levitate', nature: 'Bold', item: 'Leftovers', evs: { hp: 248, def: 252, spe: 8 },
+		}), mon('Metagross', ['earthquake', 'stealthrock'], { item: 'Metagrossite' }),
+		mon('Serperior', ['leafstorm', 'reflect']), mon('Tornadus-Therian', ['hurricane'])]);
+		const search = new Search(new MatchupEvaluator());
+		const entries = search.entryChoices(f.state, 'opponent', 'switch').map(p => p.species);
+		assert(!entries.includes('Metagross'), entries.join(', '));
+		assert(entries.includes('Serperior') || entries.includes('Tornadus-Therian'), 'Keep a real defensive improvement');
+		const moves = search.choices(f.state, 'self').map(a => a.move);
+		assert(!moves.includes('rapidspin'), 'A possible incoming hazard setter does not justify empty Spin');
+		assert(moves.includes('earthquake'));
+	});
+	it('shares pressure after the conceded attack with entry selection', () => {
+		const f = fixture([mon('Mew', ['tackle'])], [mon('Mew', ['tackle'])]);
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		actor.baseStats.spe = 100; foe.baseStats.spe = 200;
+		const hit = calculateDamage(foe, actor, hardMove('tackle', 1, 'gen6customgame'), f.state.field).average;
+		hp(actor, Math.floor(hit * 1.5));
+		const pair = new MatchupEvaluator().assess(f.state).matrix[0][0].self;
+		assert(pair.pressure > 0, 'Staying can deal damage after one hit');
+		assert.equal(pair.entryPressure, 0, 'Conceding an entry hit leaves no attack before the next hit');
+		assert.equal(pair.entrySustain, 0);
+	});
+	it('charges entry loss against the bound profile HP instead of the representative maximum', () => {
+		const f = fixture([mon('Mew', ['tackle'])], [mon('Mew', ['splash']), mon('Blissey', ['splash'])]);
+		f.state.self.active[0].baseStats.atk = 200;
+		const active = f.state.opponent.active[0], reserve = f.state.opponent.reserve[0];
+		for (const p of [active, reserve]) { p.maxHp = 100; hp(p, 100); }
+		active.baseStats.def = 100; reserve.baseStats.def = 200;
+		reserve.presetModels = [{ name: 'known spread', weight: 1, matched: true,
+			pokemon: { ...reserve, baseStats: { ...reserve.baseStats } }, moves: [{ id: 'splash', availability: 1 }] }];
+		const entries = () => new Search(new MatchupEvaluator()).entryChoices(f.state, 'opponent', 'switch').map(p => p.slot);
+		assert.deepEqual(entries(), [reserve.slot]);
+		reserve.maxHp = 1000; hp(reserve, 1000);
+		assert.deepEqual(entries(), [reserve.slot], 'A different representative HP must not fabricate hazard damage');
 	});
 	it('does not let conditional Sucker Punch remove an unconditional attack', () => {
 		const f = fixture([mon('Mew', ['bite', 'suckerpunch'])], [mon('Mew', ['tackle', 'swordsdance'])]);
@@ -178,23 +458,18 @@ describe('Hard damage-based state search', () => {
 		}
 		assert.deepEqual(clonePosition(f.state), original);
 	});
-	it('reuses real-position move choices across decisions but invalidates changed participants', () => {
+	it('keeps cached choices isolated from hypothetical branches and invalidates changed participants', () => {
 		const f = fixture([mon('Mew', ['thunderbolt', 'icebeam'])], [mon('Gyarados', ['splash'])]);
-		const matchups = new MatchupEvaluator(), actions = ['thunderbolt', 'icebeam'].map(action);
-		const first = new Search(matchups, f.state);
-		first.coverage(f.state, 'self', actions);
-		// A same-turn hypothetical replacement/damage branch must not overwrite real knowledge.
+		const search = new Search(new MatchupEvaluator(), f.state);
+		const original = search.choices(f.state, 'self').map(a => a.move);
 		const future = clonePosition(f.state); hp(future.self.active[0], 100);
-		first.coverage(future, 'self', actions);
-		f.state.turn++;
-		const again = new Search(matchups);
-		assert.deepEqual([...again.coverage(f.state, 'self', actions)].map(a => a.move), ['thunderbolt']);
-		assert.equal(again.reused.coverage, 1);
-		f.state.turn++; f.state.opponent.active[0].types = ['Ground', 'Dragon'];
-		const changed = new Search(matchups);
-		assert.deepEqual([...changed.coverage(f.state, 'self', actions)].map(a => a.move), ['icebeam']);
-		assert.equal(changed.reused.coverage, 0);
+		search.choices(future, 'self');
+		assert.deepEqual(search.choices(f.state, 'self').map(a => a.move), original);
+		assert.equal(search.reused.choices, 1);
+		f.state.opponent.active[0].types = ['Ground', 'Dragon'];
+		assert.deepEqual(search.choices(f.state, 'self').map(a => a.move), ['icebeam']);
 	});
+
 	it('unions representative attacks across different defensive presets', () => {
 		const f = fixture([mon('Mew', ['earthquake', 'psychic'])], [mon('Mew', ['splash'])]);
 		const target = f.state.opponent.active[0];
@@ -204,9 +479,9 @@ describe('Hard damage-based state search', () => {
 			moves: [{ id: 'splash', availability: 1 }],
 		}));
 		const search = new Search(new MatchupEvaluator()), actions = ['earthquake', 'psychic'].map(action);
-		assert.deepEqual([...search.coverage(f.state, 'self', actions)].map(a => a.move).sort(), ['earthquake', 'psychic']);
+		assert.deepEqual([...search.choices(f.state, 'self', actions)].map(a => a.move).sort(), ['earthquake', 'psychic']);
 		target.presetModels = [target.presetModels[0]];
-		assert.deepEqual([...search.coverage(f.state, 'self', actions)].map(a => a.move), ['psychic']);
+		assert.deepEqual([...search.choices(f.state, 'self', actions)].map(a => a.move), ['psychic']);
 	});
 	it('does not let a stronger pivot erase the option to attack without leaving', () => {
 		const f = fixture([mon('Mew', ['thundershock', 'voltswitch']), mon('Magikarp', ['splash'])],
@@ -215,28 +490,24 @@ describe('Hard damage-based state search', () => {
 		assert(choices.some(a => a.move === 'thundershock'));
 		assert(choices.some(a => a.move === 'voltswitch'));
 	});
-	it('caches representative move identities independently of unrelated teammates', () => {
-		const f = fixture([mon('Mew', ['thunderbolt', 'icebeam']), mon('Blissey', ['splash'])],
-			[mon('Gyarados', ['splash'])]);
+	it('returns current request action identifiers instead of stale cached identities', () => {
+		const f = fixture([mon('Mew', ['thunderbolt', 'icebeam'])], [mon('Gyarados', ['splash'])]);
 		const search = new Search(new MatchupEvaluator()), actions = ['thunderbolt', 'icebeam'].map(action);
-		assert.deepEqual([...search.coverage(f.state, 'self', actions)].map(a => a.move), ['thunderbolt']);
-		hp(f.state.self.reserve[0], 100);
+		search.choices(f.state, 'self', actions);
 		const renamed = actions.map(a => ({ ...a, id: a.id + ' renamed' }));
-		assert.deepEqual([...search.coverage(f.state, 'self', renamed)].map(a => a.move), ['thunderbolt']);
-		assert.equal(search.reused.coverage, 1);
+		assert(search.choices(f.state, 'self', renamed).every(a => a.id.endsWith(' renamed')));
 	});
-	it('expands every eligible root without count caps and discards low-scoring empty protection', () => {
+
+	it('expands every root when the boundary gap is small without count caps', () => {
 		const moves = ['reflect', 'lightscreen', 'safeguard', 'mist', 'tailwind', 'protect'];
 		const f = fixture([mon('Mew', moves)], [mon('Mew', ['tackle'])]);
 		const result = searchPosition(f.state, f.evaluator, moves.map((move, i) =>
 			({ ...action(move), prior: i })), new Map());
-		assert.deepEqual(result.values.map(v => v.id).sort(), moves.filter(id => id !== 'protect')
-			.map(id => `move ${id}`).sort(), result.reason);
+		assert.deepEqual(result.values.map(v => v.id).sort(), moves.map(id => `move ${id}`).sort(), result.reason);
 	});
 	it('does not cap favorable switches or free replacements', () => {
-		const f = fixture(['Mew', 'Garchomp', 'Dragonite', 'Gengar', 'Machamp', 'Alakazam']
-			.map(species => mon(species, ['tackle'])), [mon('Magikarp', ['splash'])]);
-		f.state.self.active[0].volatiles.add('yawn'); // Every counter is a meaningful exit from Yawn.
+		const f = fixture(['Magikarp', 'Garchomp', 'Dragonite', 'Gengar', 'Machamp', 'Alakazam']
+			.map((species, i) => mon(species, [i ? 'tackle' : 'splash'])), [mon('Magikarp', ['tackle'])]);
 		const search = new Search(new MatchupEvaluator());
 		assert.equal(search.choices(f.state, 'self').filter(a => a.switchTo).length, 5);
 		hp(f.state.self.active[0], 0);
@@ -252,13 +523,35 @@ describe('Hard damage-based state search', () => {
 		assert(search.choices(f.state, 'self').some(a => a.move === 'thunderbolt'));
 		// Heatran need not cover Scizor when Garchomp is expected to stay.
 		assert(search.choices(f.state, 'opponent').some(a => a.move === 'icebeam'));
-		assert(!search.choices(f.state, 'opponent').some(a => a.move === 'flamethrower'));
+		assert.deepEqual(search.destinations(f.state, 'self').map(p => p.species), ['Garchomp']);
 		assert(search.choices(f.state, 'opponent').some(a => a.switchTo));
-		f.state.self.active[0].volatiles.add('perish1');
-		assert(!search.favorableStay(f.state, 'self'));
-		assert(search.choices(f.state, 'self').some(a => a.switchTo));
-		assert([...search.coverage(f.state, 'opponent', ['icebeam', 'flamethrower'].map(action))]
-			.some(a => a.move === 'flamethrower'), 'Coverage includes the possible replacement; score eligibility is separate');
+	});
+	it('retains a wounded Regenerator users advantage without generating voluntary switches', () => {
+		const f = fixture([mon('Tornadus-Therian', ['hurricane', 'heatwave', 'knockoff', 'uturn'],
+			{ ability: 'Regenerator', item: 'Assault Vest' }), mon('Rotom-Wash', ['hydropump'], { ability: 'Levitate' })],
+		[mon('Excadrill', ['stealthrock', 'rapidspin', 'earthquake', 'ironhead'], { ability: 'Mold Breaker' })]);
+		hp(f.state.self.active[0], f.state.self.active[0].maxHp * 0.76);
+		hp(f.state.opponent.active[0], f.state.opponent.active[0].maxHp * 0.82);
+		f.state.opponent.active[0].status = 'brn';
+		for (const rocks of [false, true]) {
+			f.state.self.conditions.stealthrock = rocks;
+			const search = new Search(new MatchupEvaluator());
+			assert(search.favorableStay(f.state, 'self'));
+			assert(!search.choices(f.state, 'self').some(a => a.switchTo));
+			const reversed = { ...f.state, self: f.state.opponent, opponent: f.state.self };
+			assert(!new Search(new MatchupEvaluator()).choices(reversed, 'opponent').some(a => a.switchTo));
+			assert(search.entryChoices(f.state, 'self', 'free').length, 'A required pivot entry remains available');
+		}
+	});
+	it('does not override a winning matchup just to cure status with Natural Cure', () => {
+		const f = fixture([mon('Celebi', ['psychic'], { ability: 'Natural Cure' }), mon('Mew', ['psychic'])],
+			[mon('Machop', ['tackle'])]);
+		f.state.self.active[0].status = 'psn';
+		const search = new Search(new MatchupEvaluator());
+		assert(search.favorableStay(f.state, 'self'));
+		assert(!search.choices(f.state, 'self').some(a => a.switchTo));
+		const next = clonePosition(f.state); switchIn(next, 'self', next.self.reserve[0]);
+		assert.equal(next.self.reserve.find(p => p.species === 'Celebi').status, '');
 	});
 	it('keeps the matchup advantage against Taunt and Will-O-Wisp when direct attacks win', () => {
 		const f = fixture([mon('Rotom-Wash', ['hydropump', 'voltswitch', 'willowisp', 'painsplit'], { ability: 'Levitate' }),
@@ -280,12 +573,12 @@ describe('Hard damage-based state search', () => {
 		foe.status = ''; hp(foe, 100); actor.baseStats.spe = 20;
 		assertStays();
 	});
-	it('reuses choices for identical snapshots and recomputes coverage after a public change', () => {
+	it('reuses choices for identical snapshots and recomputes scores after a public change', () => {
 		const f = fixture([mon('Mew', ['thunderbolt', 'icebeam'])], [mon('Gyarados', ['splash'])]);
 		const search = new Search(new MatchupEvaluator());
 		let computations = 0;
-		const coverage = search.coverage.bind(search);
-		search.coverage = (...args) => { computations++; return coverage(...args); };
+		const scoreActions = search.scoreActions.bind(search);
+		search.scoreActions = (...args) => { computations++; return scoreActions(...args); };
 		assert(search.choices(f.state, 'self').some(a => a.move === 'thunderbolt'));
 		search.choices(clonePosition(f.state), 'self'); assert.equal(computations, 1);
 		f.state.opponent.active[0].types = ['Ground', 'Dragon'];
@@ -297,15 +590,54 @@ describe('Hard damage-based state search', () => {
 		assert.equal(search.continuationValue(clonePosition(f.state), action('icebeam')), value);
 		assert.equal(search.nodes, nodes);
 	});
-	it('expands both pivot selections and all free replacements', () => {
+	it('filters both pivot selections and free replacements through their entry matchups', () => {
 		const team = [mon('Mew', ['uturn']), mon('Blissey', ['splash']), mon('Garchomp', ['splash'])];
 		const f = fixture(team, team), search = new Search(new MatchupEvaluator());
 		const pivots = search.transitions(f.state, action('uturn'), action('uturn'), false);
-		assert.equal(pivots.length, 4);
-		assert.equal(new Set(pivots.map(b => `${b.state.self.active[0].slot}/${b.state.opponent.active[0].slot}`)).size, 4);
+		assert.equal(pivots.length, 2);
+		assert(pivots.every(b => b.entries.length === 2));
+		assert.equal(new Set(pivots.map(b => `${b.state.self.active[0].slot}/${b.state.opponent.active[0].slot}`)).size, 2);
 		hp(f.state.self.active[0], 1);
 		const entries = search.transitions(f.state, action('splash'), action('seismictoss'), false);
-		assert.deepEqual(entries.map(b => b.state.self.active[0].species).sort(), ['Blissey', 'Garchomp']);
+		assert.deepEqual(entries.map(b => b.state.self.active[0].species).sort(), ['Garchomp']);
+	});
+	it('uses the same entry policy for voluntary switching and a pivot with an opposing action pending', () => {
+		const f = fixture([mon('Mew', ['uturn']), mon('Alakazam', ['psychic']), mon('Gengar', ['psychic'])],
+			[mon('Machamp', ['closecombat'])]);
+		hp(f.state.self.reserve[0], 100); hp(f.state.opponent.active[0], 180);
+		f.state.self.active[0].volatiles.add('yawn');
+		const search = new Search(new MatchupEvaluator());
+		const names = context => search.entryChoices(f.state, 'self', context).map(p => p.species);
+		assert(names('free').includes('Alakazam'), 'Can finish before receiving an attack on the next turn');
+		assert(names('exposed').includes('Gengar'), 'Can enter into the pending attack');
+		assert.deepEqual(names('switch'), names('exposed'));
+	});
+	it('re-evaluates pivot recipients against the occupant after a voluntary switch', () => {
+		const f = fixture([mon('Skarmory', ['ironhead', 'roost'],
+			{ nature: 'Careful', evs: { hp: 252, spd: 252 }, item: 'Leftovers' }), mon('Charizard', ['surf'])],
+		[mon('Rotom-Wash', ['voltswitch']), mon('Heatran', ['flamethrower'], { ability: 'Flash Fire' }),
+			mon('Excadrill', ['earthquake', 'ironhead', 'rockslide']), mon('Metagross', ['meteormash'])]);
+		f.state.self.reserve[0].baseStats.spe = 10;
+		const search = new Search(new MatchupEvaluator());
+		const staying = search.transitions(f.state, action('roost'), action('voltswitch'), false);
+		assert(staying.every(b => !['Excadrill', 'Metagross'].includes(b.state.opponent.active[0].species)));
+		const switched = search.transitions(f.state,
+			{ id: 'switch 2', switchTo: f.state.self.reserve[0], prior: 100 }, action('voltswitch'), false);
+		assert(switched.some(b => b.state.opponent.active[0].species === 'Excadrill'));
+	});
+	it('uses the public belief pool to filter entries consistently across hidden stat profiles', () => {
+		const f = fixture([mon('Jolteon', ['voltswitch']), mon('Skarmory', ['ironhead']), mon('Garchomp', ['earthquake'])],
+			[mon('Mew', ['icebeam', 'thunderbolt'])]);
+		const foe = f.state.opponent.active[0];
+		foe.presetModels = [50, 400].map(spa => ({ name: `spa ${spa}`, weight: 0.5, matched: true,
+			pokemon: { ...foe, baseStats: { ...foe.baseStats, spa } },
+			moves: foe.moves.map(id => ({ id, availability: 1 })) }));
+		const search = new Search(new MatchupEvaluator(), f.state);
+		const choices = modelsFor(foe).map(model => {
+			const state = clonePosition(f.state); bindOpponent(state, foe, model);
+			return search.entryChoices(state, 'self', 'exposed').map(p => p.species);
+		});
+		assert.deepEqual(choices[0], choices[1]);
 	});
 	it('does not let a fast pivot choose its recipient after seeing a queued opposing attack', () => {
 		const f = fixture([mon('Jolteon', ['voltswitch']), mon('Skarmory', ['splash']), mon('Garchomp', ['splash'])],
@@ -698,13 +1030,16 @@ describe('Hard damage-based state search', () => {
 			pokemon: { ...p, item: i ? 'leftovers' : 'choiceband' }, moves: [{ id: 'bulletpunch', availability: 1 }] }));
 		assert.deepEqual(modelsFor(p).map(m => m.weight), [0.25, 0.75]);
 	});
-	it('prunes capped setup but keeps recovery before incoming damage and coverage into switches', () => {
-		const f = fixture([mon('Mew', ['swordsdance', 'recover', 'thunderbolt'])], [mon('Garchomp', ['splash'])]);
+	it('uses scoring to reject capped setup and evaluates recovery in its actual damage context', () => {
+		const f = fixture([mon('Mew', ['swordsdance', 'recover', 'thunderbolt'])], [mon('Mew', ['tackle'])]);
 		f.state.self.active[0].boosts.atk = 6;
-		assert(certainlyUseless(f.state, 'self', action('swordsdance')));
-		assert(!certainlyUseless(f.state, 'self', action('recover')));
-		assert(!certainlyUseless(f.state, 'self', action('thunderbolt')));
+		const actions = ['swordsdance', 'recover', 'thunderbolt'].map(action);
+		const kept = new Search(new MatchupEvaluator()).choices(f.state, 'self', actions);
+		assert(actions.find(a => a.move === 'swordsdance').prior <= 60);
+		assert(!kept.some(a => a.move === 'swordsdance'));
+		assert(kept.some(a => a.move === 'thunderbolt'));
 	});
+
 	it('finds a two-turn setup win and keeps source state isolated', () => {
 		const f = fixture([mon('Garchomp', ['swordsdance', 'earthquake'], { evs: { atk: 252, spe: 252 }, nature: 'Jolly' })],
 			[mon('Umbreon', ['moonlight', 'tackle'])]);

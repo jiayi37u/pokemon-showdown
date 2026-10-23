@@ -16,6 +16,100 @@ function fixture(own, foe) {
 
 describe('Hard singles matchup value', () => {
 	afterEach(() => { battles.splice(0).forEach(b => b.destroy()); });
+	it('keeps the stationary check but cannot enforce it against a faster successful pivot', () => {
+		const { hp, clonePosition } = require('../../../dist/server/npc/ai/hard/projection');
+		const f = fixture([mon('Volcanion', ['flamethrower', 'steameruption'], { ability: 'Water Absorb' }),
+			mon('Excadrill', ['earthquake'], { ability: 'Mold Breaker' })],
+		[mon('Rotom-Wash', ['voltswitch'], { ability: 'Levitate', item: 'Choice Scarf' }), mon('Mew', ['tackle'])]);
+		hp(f.state.self.active[0], f.state.self.active[0].maxHp * 0.65);
+		hp(f.state.opponent.active[0], f.state.opponent.active[0].maxHp * 0.1);
+		const before = clonePosition(f.state), assessment = f.evaluator.assess(f.state);
+		assert.equal(assessment.matrix[0][0].self.check, 1);
+		assert.equal(assessment.matrix[0][0].opponent.check, 0);
+		assert(!f.evaluator.holdsAdvantage(f.state, 'self', assessment));
+		assert.deepEqual(clonePosition(f.state), before);
+		assert.equal(f.evaluator.assess(f.state).value, assessment.value);
+		const { Search } = require('../../../dist/server/npc/ai/hard/search');
+		assert(new Search(f.evaluator).choices(f.state, 'self').some(a => a.switchTo?.species === 'Excadrill'));
+		f.state.self.active[0].baseStats.spe = 1000;
+		assert(f.evaluator.holdsAdvantage(f.state, 'self'), 'A first-strike KO prevents the pivot');
+	});
+	it('uses resolved pivot success and keeps uncertain effects from proving a forced stay', () => {
+		const { hp } = require('../../../dist/server/npc/ai/hard/projection');
+		for (const [species, ability, attack, pivot, blocked] of [
+			['Excadrill', 'Mold Breaker', 'earthquake', 'voltswitch', true],
+			['Excadrill', 'Mold Breaker', 'earthquake', 'uturn', false],
+			['Volcanion', 'Water Absorb', 'flamethrower', 'partingshot', false],
+			['Jolteon', 'Volt Absorb', 'thunderbolt', 'voltswitch', true],
+		]) {
+			const f = fixture([mon(species, [attack], { ability })],
+				[mon('Rotom-Wash', [pivot], { ability: 'Levitate' }), mon('Mew', ['tackle'])]);
+			hp(f.state.opponent.active[0], 1); f.state.opponent.active[0].baseStats.spe = 1000;
+			assert.equal(f.evaluator.assess(f.state).matrix[0][0].self.check, 1);
+			assert.equal(f.evaluator.holdsAdvantage(f.state, 'self'), blocked, pivot);
+			hp(f.state.opponent.reserve[0], 0);
+			assert(f.evaluator.holdsAdvantage(f.state, 'self'), 'A pivot needs a living recipient');
+		}
+	});
+	it('invalidates the cached hold proof when pivot PP, sleep or a hidden move pool changes', () => {
+		const { hp } = require('../../../dist/server/npc/ai/hard/projection');
+		const f = fixture([mon('Volcanion', ['flamethrower'], { ability: 'Water Absorb' })],
+			[mon('Rotom-Wash', ['voltswitch'], { ability: 'Levitate' }), mon('Mew', ['tackle'])]);
+		const foe = f.state.opponent.active[0]; hp(foe, 1); foe.baseStats.spe = 1000;
+		assert(!f.evaluator.holdsAdvantage(f.state, 'self'));
+		foe.projection = { pp: { voltswitch: 0 } };
+		assert(f.evaluator.holdsAdvantage(f.state, 'self'));
+		delete foe.projection;
+		foe.status = 'slp'; foe.sleepTurns = 3;
+		assert(f.evaluator.holdsAdvantage(f.state, 'self'));
+		foe.status = ''; foe.sleepTurns = 0; foe.moves = [];
+		foe.presetModels = [['splash', 0.99], ['voltswitch', 0.01]].map(([id, weight]) => ({
+			name: id, weight, matched: true, pokemon: { ...foe }, moves: [{ id, availability: 1 }],
+		}));
+		assert(!f.evaluator.holdsAdvantage(f.state, 'self'), 'A low-weight pivot still invalidates the proof');
+	});
+	it('does not use a weak priority attack to justify a slower winning attack against a pivot', () => {
+		const f = fixture([mon('Mew', ['quickattack', 'icebeam'])],
+			[mon('Gliscor', ['uturn']), mon('Mew', ['tackle'])]);
+		f.state.opponent.active[0].baseStats.spe = 1000;
+		assert.equal(f.evaluator.assess(f.state).matrix[0][0].self.check, 1);
+		assert(!f.evaluator.holdsAdvantage(f.state, 'self'));
+	});
+	it('reuses an evaluation across search histories without merging their action states', () => {
+		const { clonePosition, positionKey } = require('../../../dist/server/npc/ai/hard/projection');
+		const f = fixture([mon('Mew', ['psychic'])], [mon('Machamp', ['closecombat'])]);
+		f.state = clonePosition(f.state);
+		const initial = f.evaluator.assess(f.state), next = clonePosition(f.state);
+		next.self.active[0].projection = { pp: { psychic: 1 } };
+		assert.notEqual(positionKey(next), positionKey(f.state));
+		assert.equal(f.evaluator.assess(next), initial);
+		assert.equal(f.evaluator.stats.positions, 1);
+	});
+	it('invalidates cached values for state changes and hidden-profile weights', () => {
+		const f = fixture([mon('Mew', ['psychic', 'recover']), mon('Skarmory', ['bravebird'])],
+			[mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);
+		const foe = f.state.opponent.active[0];
+		foe.presetModels = [0.2, 0.8].map((weight, i) => ({ name: String(i), weight, matched: true,
+			pokemon: { ...foe, baseStats: { ...foe.baseStats, atk: i ? 150 : 350 } },
+			moves: [{ id: 'closecombat', availability: 1 }] }));
+		let previous = f.evaluator.assess(f.state);
+		for (const change of [
+			() => { foe.presetModels[0].weight = 0.8; foe.presetModels[1].weight = 0.2; },
+			() => { f.state.self.team[0].hp--; },
+			() => { f.state.self.team[1].status = 'brn'; },
+			() => { f.state.self.team[0].boosts.spa = 2; },
+			() => { f.state.self.conditions.stealthrock = true; },
+			() => { f.state.field.weather = 'rain'; },
+			() => { f.state.self.team[1].fainted = true; },
+			() => { foe.presetModels[0].moves.push({ id: 'knockoff', availability: 1 }); },
+		]) {
+			change();
+			const value = f.evaluator.assess(f.state);
+			assert.notEqual(value, previous);
+			assert.deepEqual(value, new MatchupEvaluator().assess(f.state));
+			previous = value;
+		}
+	});
 	it('values an unresisted wallbreaking move even against faster revenge killers', () => {
 		const f = fixture([mon('Medicham-Mega', ['highjumpkick', 'zenheadbutt'],
 			{ ability: 'Pure Power', nature: 'Adamant', evs: { atk: 252, spe: 252 } })],

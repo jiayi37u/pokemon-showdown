@@ -15,6 +15,13 @@ export function normalizeWeather(weather: string): string {
 type AbilityField = Partial<Pick<FieldConditions, 'formatId' | 'magicroom' | 'neutralizingGas'>>;
 type AbilityPokemon = Pick<AIPokemon, 'ability' | 'item' | 'itemLost' | 'volatiles'>;
 
+/** Configuration/state copies retain the same participant identity. Slots alone overlap across players. */
+export function samePokemon(a: AIPokemon, b: AIPokemon): boolean {
+	if (a === b) return true;
+	if (a.ident && b.ident) return a.ident === b.ident;
+	return !!a.ownerSide && a.ownerSide === b.ownerSide && a.slot === b.slot;
+}
+
 /** Ability identity is retained while suppressed, including inside preset hypotheses. */
 export function effectiveAbility(pokemon: AbilityPokemon, field: AbilityField = {}): string {
 	const ability = rulesDex(field).abilities.get(pokemon.ability);

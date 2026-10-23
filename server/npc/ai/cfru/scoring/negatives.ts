@@ -1902,6 +1902,12 @@ export const checkItemMove: NegativeScoringFunction = ctx => {
 		ctx.adjustments.push({ reason: failure, amount: -100, category: 'negative' });
 		return -100;
 	}
+	const exchange = ctx.attacker.itemExchange;
+	if (['trick', 'switcheroo'].includes(ctx.move.id) && exchange?.given && exchange.received &&
+		!['choiceband', 'choicespecs', 'choicescarf'].includes(toID(exchange.received))) {
+		ctx.flags.fixedScore = DISCOURAGED_SCORE;
+		return discourageMove(ctx, 'Successful item exchange already obtained a non-Choice item');
+	}
 	if (['trick', 'switcheroo'].includes(ctx.move.id) && ctx.attacker.item &&
 		toID(ctx.attacker.item) === toID(ctx.target.item)) {
 		ctx.adjustments.push({ reason: 'Swapping identical items offers little benefit', amount: -10, category: 'negative' });

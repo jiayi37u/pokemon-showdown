@@ -202,6 +202,9 @@ export abstract class NPCBattleAI extends BattlePlayer {
 				return `switch ${decision.target}`;
 			}
 
+			// Shared policy: staying in uses an available Mega immediately; switches never spend it.
+			if (canMegaEvo && active.canMegaEvo) decision.transform = 'mega';
+
 			// Handle move decision
 			let moveStr = `move ${decision.slot}`;
 

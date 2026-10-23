@@ -241,9 +241,7 @@ export class NormalAI extends NPCBattleAI {
 		const mega = state && actor && args[3].canMegaEvo ? megaEvolutionState(state, actor) : null;
 		if (mega) this.battleState = mega;
 		try {
-			const decision = this.decide(...args);
-			if (mega && decision.type === 'move') decision.transform = 'mega';
-			return decision;
+			return this.decide(...args);
 		} finally {
 			this.battleState = state;
 		}

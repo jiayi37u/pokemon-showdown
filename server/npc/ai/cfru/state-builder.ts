@@ -241,6 +241,7 @@ function applyPublicMechanics(
 ): AIPokemon {
 	pokemon.faintedAllies = tracker.getFaintCount(pokemon.ownerSide || identity.slice(0, 2));
 	pokemon.terastallized = tracker.getTerastallized(identity);
+	pokemon.itemExchange = tracker.getItemExchange(identity);
 	pokemon.stellarBoostedTypes = tracker.getStellarBoostedTypes(identity);
 	const types = speciesDefaults(pokemon.species, formatId).types;
 	pokemon.originalTypes = pokemon.active ? tracker.getTypes(identity, types, true) : types;

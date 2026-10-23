@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('assert').strict;
 const { Battle, Dex } = require('../../../dist/sim');
+const { BasicAI } = require('../../../dist/server/npc/ai/basic');
 const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 const { HardAI } = require('../../../dist/server/npc/ai/hard');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
@@ -72,7 +73,7 @@ describe('Gen6 preset and tactical integration', () => {
 		const models = inferOpponent(g.state().opponent.active[0], 'gen6ou');
 		assert.equal(models.length, 1); assert.equal(models[0].matched, false);
 	});
-	for (const AI of [NormalAI, HardAI]) {
+	for (const AI of [BasicAI, NormalAI, HardAI]) {
 		it(`${AI.name} issues Mega in singles and does not give Gen6 immediate Mega speed`, () => {
 			const g = game([{ species: 'Diancie', item: 'Diancite', nature: 'Naive', evs: { spe: 252, spa: 252 }, moves: ['moonblast'] }], [fish], AI);
 			const state = g.state(), actor = state.self.active[0], projected = megaEvolutionState(state, actor);
@@ -86,6 +87,27 @@ describe('Gen6 preset and tactical integration', () => {
 		it(`${AI.name} can Mega in the second doubles slot after a non-Mega first slot`, () => {
 			const g = game([fish, { species: 'Diancie', item: 'Diancite', moves: ['moonblast'] }], [fish, fish], AI, 'doubles');
 			const choice = g.decide(); assert(/, move .* mega$/.test(choice), choice);
+		});
+	}
+	for (const AI of [BasicAI, NormalAI, HardAI]) {
+		it(`${AI.name} evolves on a support action and spends only one Mega in doubles`, () => {
+			const team = [{ species: 'Diancie', item: 'Diancite', moves: ['protect'] },
+				{ species: 'Metagross', item: 'Metagrossite', moves: ['protect'] }];
+			const g = game(team, [fish, fish], AI, 'doubles');
+			const choice = g.decide();
+			assert.equal(choice, 'move 1 mega, move 1');
+			g.b.makeChoices('move 1, move 1', choice);
+			assert.equal(g.b.p2.active[0].species.name, 'Diancie-Mega');
+			assert.equal(g.b.p2.active[1].species.name, 'Metagross');
+		});
+		it(`${AI.name} leaves Mega available when choosing to switch`, () => {
+			const g = game([{ species: 'Diancie', item: 'Diancite', moves: ['moonblast'] }, fish], [fish], AI);
+			g.ai.makeDecision = () => ({ type: 'switch', target: 2 });
+			assert.equal(g.decide(), 'switch 2');
+			g.b.makeChoices('move 1', 'switch 2');
+			const slot = g.b.p2.pokemon.findIndex(p => p.species.name === 'Diancie') + 1;
+			g.b.makeChoices('move 1', `switch ${slot}`);
+			assert(g.b.p2.activeRequest.active[0].canMegaEvo);
 		});
 	}
 	it('keeps a free Mega Fake Out turn instead of fleeing the attack it prevents', () => {
@@ -256,7 +278,7 @@ describe('Gen6 preset and tactical integration', () => {
 		const recipient = g.b.p2.active[0];
 		assert.equal(recipient.hp, recipient.maxhp - Math.floor(recipient.maxhp / 2));
 	});
-	for (const AI of [NormalAI, HardAI]) it(`${AI.name} supports the p4 Mega slot in Multi`, () => {
+	for (const AI of [BasicAI, NormalAI, HardAI]) it(`${AI.name} supports the p4 Mega slot in Multi`, () => {
 		const b = new Battle({ format: { ...Dex.formats.get('gen6customgame'), gameType: 'multi', playerCount: 4 }, seed: [1, 2, 3, 4],
 			p1: { name: 'A', team: [fish] }, p2: { name: 'B', team: [fish] }, p3: { name: 'C', team: [fish] },
 			p4: { name: 'D', team: [{ species: 'Diancie', item: 'Diancite', moves: ['moonblast'] }] } });
@@ -267,7 +289,8 @@ describe('Gen6 preset and tactical integration', () => {
 		const ai = new AI({ write() {} }, { seed: [1, 2, 3, 4] }); ai.setBattle({ format: 'gen6customgame' }); ai.tracker = tracker;
 		let choice;
 		ai.choose = x => { choice = x; };
-		ai.receiveRequestWithState(b.p4.activeRequest, state, 2);
+		if (ai.receiveRequestWithState) ai.receiveRequestWithState(b.p4.activeRequest, state, 2);
+		else ai.receiveRequest(b.p4.activeRequest);
 		assert(choice.endsWith(' mega'), choice);
 	});
 });

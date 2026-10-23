@@ -197,7 +197,7 @@ export interface PredictedAction {
 export function predictOpponent(
 	state: BattleState, opponent: AIPokemon, target: AIPokemon, formatId: string,
 	score: (state: BattleState, actor: AIPokemon, moves: AIMove[], target: AIPokemon) => MoveScore[],
-	hypotheses = inferOpponent(opponent, formatId), switchConfidence = 0.6, leaving = false
+	hypotheses = inferOpponent(opponent, formatId), switchConfidence = 0.6
 ): PredictedAction[] {
 	const dex = formatId ? Dex.forFormat(formatId) : Dex;
 	const actions: PredictedAction[] = [];
@@ -232,6 +232,7 @@ export function predictOpponent(
 			const conditionalState = replaceActivePokemon(projected, user, conditional);
 			const result = score({ ...conditionalState, self: conditionalState.opponent, opponent: conditionalState.self },
 				conditional, [hardMove(candidate.id, 1, formatId)], target)[0];
+			if (result.flags.fixedScore !== undefined) return result;
 			// Normal's damage rewards alone can favor a powerful move that never gets to act.
 			// A threatening opponent also considers priority/escape before a first-strike KO.
 			const interrupted = target.moves.some((id, i) => {
@@ -271,7 +272,7 @@ export function predictOpponent(
 					projected.self.conditions, projected.opponent.conditions) > 0);
 		});
 		// Slightly weak moves are weaker evidence than no useful action or an imminent first-strike KO.
-		const retreatSignal = threatened || leaving ? 1 : Math.max(0, Math.min(1, (100 - best) / (100 - DISCOURAGED_SCORE)));
+		const retreatSignal = threatened ? 1 : Math.max(0, Math.min(1, (100 - best) / (100 - DISCOURAGED_SCORE)));
 		const switchWeight = canSwitch && !user.volatiles.has('trapped') ? switchConfidence * retreatSignal : 0;
 		if (switchWeight) actions.push({ move: null, weight: hypothesis.weight * switchWeight,
 			switching: true, user: modelUser, modelUser, preset: hypothesis.name });

@@ -135,6 +135,8 @@ export interface AIPokemon {
 	originalItem?: string;
 	abilityChanged?: boolean;
 	itemChanged?: boolean;
+	/** Last successful item exchange initiated by this Pokemon, retained across switches. */
+	itemExchange?: { given: string, received: string };
 	/** Last move is cleared on entry, but a failed action still consumes Fake Out's first turn. */
 	activeMoveActions?: number;
 
@@ -495,6 +497,8 @@ export interface MoveScoreFlags {
 
 	/** Legal but lacks a useful tactical opportunity; advanced rewards must respect this limit. */
 	discouraged?: boolean;
+	/** A fixed tactical score shared by the base scorer and Hard adjustments. */
+	fixedScore?: number;
 
 	/** Move has no effect (other than immunity) */
 	hasNoEffect: boolean;

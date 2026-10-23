@@ -9,12 +9,11 @@ import {
 	supportsMove, switchIn, transitionSupported, type SearchAction, type Side, type TurnCheckpoint,
 } from './projection';
 export type { SearchAction } from './projection';
-export { certainlyUseless } from './candidates';
 
 export interface SearchResult {
 	choice?: string;
 	reason: string;
-	values: { id: string, value: number }[];
+	values: { id: string, value: number, upperBound?: boolean }[];
 	nodes: number;
 }
 interface EntryDecision {
@@ -32,6 +31,24 @@ interface Leaf {
 	entries: EntryDecision[];
 }
 interface Branch extends Leaf { state: BattleState }
+interface Response {
+	config: number;
+	profile: OpponentModel;
+	state: BattleState;
+	action: SearchAction;
+}
+interface Continuation {
+	action: SearchAction;
+	responses: Response[];
+	pending: Response[];
+	completed: Map<Response, Leaf[]>;
+	upper: number;
+	leaves?: Leaf[];
+}
+export interface SearchOptions {
+	/** Reference mode evaluates the same candidate tree without bound cutoffs or work reordering. */
+	prune?: boolean;
+}
 
 /** Terminal values dominate finite positional heuristics. */
 export function positionValue(state: BattleState, matchups = new MatchupEvaluator()): number {
@@ -48,9 +65,10 @@ class UnsupportedTransition extends Error {
 
 export class Search extends CandidateSelector {
 	nodes = 0;
-	override reused = { choices: 0, coverage: 0, continuations: 0 };
+	override reused = { choices: 0, continuations: 0 };
 	private values = new Map<string, number>();
-	private continuations = new Map<string, Leaf[]>();
+	private continuations = new Map<string, Continuation>();
+	readonly cutoffs = { actions: 0, roots: 0 };
 
 	value(state: BattleState): number {
 		const key = positionKey(state);
@@ -68,15 +86,59 @@ export class Search extends CandidateSelector {
 		return actions;
 	}
 
-	/** Cache the uncollapsed decision tree: entries must be selected across compatible
-	 * hidden profiles together, not independently for each hypothetical world.
-	 */
-	continuationBranches(state: BattleState, action: SearchAction): Leaf[] {
+	/** Work ordering only: no action is removed for having expensive random/replacement outcomes. */
+	expansionCost(state: BattleState, side: Side, action: SearchAction): number {
+		if (action.switchTo) return side === 'opponent' ? modelsFor(action.switchTo).length : 1;
+		const move = rulesDex(state.field).moves.get(action.move || '');
+		const recipient = move.forceSwitch ? (side === 'self' ? 'opponent' : 'self') : side;
+		if (!move.forceSwitch && !move.selfSwitch) return 1;
+		return Math.max(1, state[recipient].reserve.filter(p => !p.fainted).reduce((n, p) =>
+			n + (recipient === 'opponent' ? modelsFor(p).length : 1), 0));
+	}
+
+	/** Retain partial work, never cache an optimistic bound as an exact continuation value. */
+	continuation(state: BattleState, action: SearchAction, reorder = false): Continuation {
 		const key = `${positionKey(state)}:${action.id}:${!!action.mega}`;
 		const cached = this.continuations.get(key);
 		if (cached) { this.reused.continuations++; return cached; }
-		const branches = this.branches(state, action).map(({ state: _state, ...leaf }) => leaf);
-		this.continuations.set(key, branches); return branches;
+		const responses = this.responses(state), pending = [...responses];
+		if (reorder) pending.sort((a, b) =>
+			this.expansionCost(a.state, 'opponent', a.action) - this.expansionCost(b.state, 'opponent', b.action) ||
+			b.action.prior - a.action.prior);
+		const work: Continuation = { action, responses, pending, completed: new Map(), upper: Infinity };
+		this.continuations.set(key, work); return work;
+	}
+
+	advanceContinuation(work: Continuation): void {
+		const response = work.pending.shift();
+		if (response) work.completed.set(response,
+			this.expandResponse(response, work.action).map(({ state: _state, ...leaf }) => leaf));
+		const configs = new Map<number, { weight: number, upper: number }>();
+		for (const reply of work.responses) {
+			let config = configs.get(reply.config);
+			if (!config) configs.set(reply.config, config = { weight: reply.profile.weight, upper: Infinity });
+			const leaves = work.completed.get(reply);
+			if (leaves?.length) {
+				// Another continuation world may share these entry decisions. Relax control,
+				// but retain the complete random/configuration mass under each recipient.
+				const upper = optimisticValue(leaves, false);
+				config.upper = Math.min(config.upper, upper);
+			}
+		}
+		const mass = [...configs.values()].reduce((n, c) => n + c.weight, 0);
+		work.upper = mass ? [...configs.values()].filter(c => c.weight > 0)
+			.reduce((n, c) => n + c.weight * c.upper, 0) / mass : Infinity;
+		if (!work.pending.length) {
+			// Canonical response order preserves reference summation and tie behavior.
+			work.leaves = work.responses.flatMap(r => work.completed.get(r) || []);
+		}
+	}
+
+	/** Cache the uncollapsed tree so indistinguishable worlds still share entry decisions. */
+	continuationBranches(state: BattleState, action: SearchAction): Leaf[] {
+		const work = this.continuation(state, action);
+		while (!work.leaves) this.advanceContinuation(work);
+		return work.leaves;
 	}
 
 	continuationValue(state: BattleState, action: SearchAction): number {
@@ -96,7 +158,11 @@ export class Search extends CandidateSelector {
 			}
 			if (!pending) { this.nodes++; return [{ state, weight, entries }]; }
 			const { side, cause } = pending;
-			const options = state[side].reserve.filter(p => !p.fainted && p.hp > 0);
+			const legal = state[side].reserve.filter(p => !p.fainted && p.hp > 0);
+			const exposed = turn?.remaining.some(a => a.side !== side &&
+				!state[a.side].active[0]?.fainted && a.actor === identity(state[a.side].active[0]));
+			const options = cause === 'phaze' ? legal : this.entryChoices(state, side, exposed ? 'exposed' : 'free');
+			this.pruned.entries += legal.length - options.length;
 			// The key omits hidden spreads and the opponent's unexecuted action.
 			const key = JSON.stringify([side, cause, history, observationKey(perspective(state, side))]);
 			return options.flatMap(pokemon => {
@@ -121,37 +187,44 @@ export class Search extends CandidateSelector {
 		return walk(next, undefined, [], 1, []);
 	}
 
-	/** Bind only the participant needed for this branch. Reserve profiles stay as distributions. */
-	branches(state: BattleState, own: SearchAction, replacing = false): Branch[] {
+	private responses(state: BattleState, replacing = false): Response[] {
 		const active = state.opponent.active[0];
 		const profiles = active.fainted ?
 			[{ name: 'fainted', pokemon: active, moves: [], weight: 1, matched: true }] : modelsFor(active);
-		const branches: Branch[] = [];
-		for (const [config, profile] of profiles.entries()) {
+		return profiles.flatMap((profile, config) => {
 			const bound = clonePosition(state); bindOpponent(bound, active, profile);
 			const replies = replacing ? [{ id: 'pass', prior: 0 }] : this.choices(bound, 'opponent');
-			for (const reply of replies) {
-				const targets: (OpponentModel | undefined)[] = reply.switchTo ? modelsFor(reply.switchTo) : [undefined];
-				for (const target of targets) {
-					const start = clonePosition(bound);
-					if (target) bindOpponent(start, reply.switchTo!, target);
-					for (const a of actionOutcomes(start, 'self', own)) {
-						for (const b of actionOutcomes(start, 'opponent', reply, profile.moves)) {
-							for (const outcome of [a, b]) if (outcome.action.calledMove &&
-								!supportsMove(start, outcome.action.calledMove)) {
-								throw new UnsupportedTransition(outcome.action.calledMove, this.nodes);
-							}
-							for (const next of this.transitions(start, a.action, b.action, replacing)) {
-								branches.push({ state: next.state, config, configWeight: profile.weight, reply: reply.id,
-									weight: (target?.weight ?? 1) * a.weight * b.weight * next.weight,
-									value: this.value(next.state), entries: next.entries });
-							}
-						}
+			return replies.map(action => ({ config, profile, state: bound, action }));
+		});
+	}
+
+	/** Expand one complete opponent response, keeping all random outcomes and their weights. */
+	private expandResponse(response: Response, own: SearchAction, replacing = false): Branch[] {
+		const { config, profile, state: bound, action: reply } = response;
+		const branches: Branch[] = [];
+		const targets: (OpponentModel | undefined)[] = reply.switchTo ? modelsFor(reply.switchTo) : [undefined];
+		for (const target of targets) {
+			const start = clonePosition(bound);
+			if (target) bindOpponent(start, reply.switchTo!, target);
+			for (const a of actionOutcomes(start, 'self', own)) {
+				for (const b of actionOutcomes(start, 'opponent', reply, profile.moves)) {
+					for (const outcome of [a, b]) if (outcome.action.calledMove &&
+						!supportsMove(start, outcome.action.calledMove)) {
+						throw new UnsupportedTransition(outcome.action.calledMove, this.nodes);
+					}
+					for (const next of this.transitions(start, a.action, b.action, replacing)) {
+						branches.push({ state: next.state, config, configWeight: profile.weight, reply: reply.id,
+							weight: (target?.weight ?? 1) * a.weight * b.weight * next.weight,
+							value: this.value(next.state), entries: next.entries });
 					}
 				}
 			}
 		}
 		return branches;
+	}
+
+	branches(state: BattleState, own: SearchAction, replacing = false): Branch[] {
+		return this.responses(state, replacing).flatMap(reply => this.expandResponse(reply, own, replacing));
 	}
 }
 
@@ -212,9 +285,117 @@ function aggregate(branches: Leaf[]): number {
 	return resolveEntries([branches], values => values[0] ?? -Infinity)[0];
 }
 
+/** Bound complete response trees, preserving chance mass underneath each entry choice.
+ * Only an opposing decision confined to one configuration/response can be minimized
+ * independently. Shared decisions are relaxed to our best recipient, never chosen with
+ * knowledge of the hidden world. Nested entries retain the conservative leaf envelope.
+ */
+export function optimisticValue(branches: Leaf[], independentOpponent = true): number {
+	if (!branches.some(b => b.entries.length)) return aggregateLeaves(branches);
+	const envelope = () => Math.max(...branches.map(b => b.value));
+	if (branches.some(b => b.entries.length > 1)) return envelope();
+	const cells = new Map<string, Leaf[]>();
+	const events = new Map<string, Map<string, Set<string>>>();
+	for (const branch of branches) {
+		const cell = JSON.stringify([branch.config, branch.reply]);
+		if (!cells.has(cell)) cells.set(cell, []);
+		cells.get(cell)!.push(branch);
+		const entry = branch.entries[0];
+		if (!entry) continue;
+		if (!events.has(entry.key)) events.set(entry.key, new Map());
+		const members = events.get(entry.key)!;
+		if (!members.has(cell)) members.set(cell, new Set());
+		members.get(cell)!.add(entry.choice);
+	}
+	// A shared choice must not erase an opposing response or a hidden configuration.
+	// Different available options need the unrestricted envelope instead.
+	for (const members of events.values()) {
+		const options = [...members.values()];
+		if (options.some(set => set.size !== options[0].size || [...set].some(c => !options[0].has(c)))) {
+			return envelope();
+		}
+	}
+	const bounded: Leaf[] = [];
+	for (const members of cells.values()) {
+		const entries = new Map<string, Map<string, Leaf[]>>();
+		for (const branch of members) {
+			const entry = branch.entries[0];
+			if (!entry) { bounded.push(branch); continue; }
+			if (!entries.has(entry.key)) entries.set(entry.key, new Map());
+			const choices = entries.get(entry.key)!;
+			if (!choices.has(entry.choice)) choices.set(entry.choice, []);
+			choices.get(entry.choice)!.push(branch);
+		}
+		for (const [key, choices] of entries) {
+			const outcomes = [...choices.values()].map(leaves => ({
+				mass: leaves.reduce((n, b) => n + b.weight, 0), value: aggregateLeaves(leaves),
+			}));
+			const mass = outcomes[0].mass;
+			// Selecting a recipient changes the position, not the probability of reaching
+			// this checkpoint. Do not infer a normalized chance model if that is untrue.
+			if (!(mass > 0) || outcomes.some(o => Math.abs(o.mass - mass) > 1e-9 * mass)) return envelope();
+			const representative = choices.values().next().value![0];
+			const minimize = independentOpponent && representative.entries[0].side === 'opponent' &&
+				events.get(key)!.size === 1;
+			const value = (minimize ? Math.min : Math.max)(...outcomes.map(o => o.value));
+			bounded.push({ ...representative, weight: mass, value, entries: [] });
+		}
+	}
+	return aggregateLeaves(bounded);
+}
+
+/** Race continuations by proven upper bounds. A fully evaluated common action is
+ * an executable lower bound; unresolved actions may only win within their upper bound.
+ */
+function resolveContinuations(
+	search: Search, group: Branch[], pruning: boolean, reject: (upper: number[]) => boolean
+): number[] | undefined {
+	const alternatives = new Map<string, SearchAction>();
+	for (const branch of group) for (const action of search.choices(branch.state, 'self')) {
+		alternatives.set(action.id, action);
+	}
+	const options = [...alternatives.values()].map((action, rank) => ({
+		action, rank, upper: Infinity, uppers: group.map(() => Infinity),
+		works: undefined as Continuation[] | undefined, done: false,
+	}));
+	if (pruning) options.sort((a, b) =>
+		search.expansionCost(group[0].state, 'self', a.action) - search.expansionCost(group[0].state, 'self', b.action) ||
+		b.action.prior - a.action.prior || a.rank - b.rank);
+	let best = -Infinity, bestRank = Infinity, chosen: number[] | undefined;
+	while (true) {
+		let next: typeof options[number] | undefined;
+		for (const option of options) {
+			if (option.done) continue;
+			if (pruning && option.upper < best - 1e-9) {
+				option.done = true; search.cutoffs.actions++; continue;
+			}
+			if (!next || pruning && option.upper > next.upper) next = option;
+		}
+		if (!next) return chosen;
+		const works = next.works ||= group.map(b => search.continuation(b.state, next.action, pruning));
+		// Keep all hidden worlds represented. Each response includes its complete chance outcomes.
+		for (const work of works) if (!work.leaves) search.advanceContinuation(work);
+		next.uppers = works.map(w => w.upper);
+		next.upper = optimisticValue(group.map((b, i) => ({ ...b, value: next.uppers[i] })));
+		if (works.every(w => w.leaves)) {
+			const values = resolveEntries(works.map(w => w.leaves!), estimates => aggregate(group.flatMap((branch, i) =>
+				estimates[i] === undefined ? [] : [{ ...branch, value: estimates[i] }])));
+			const value = aggregate(group.map((branch, i) => ({ ...branch, value: values[i] })));
+			next.done = true;
+			if (value > best || value === best && next.rank < bestRank) {
+				best = value; bestRank = next.rank; chosen = values;
+			}
+		}
+		// Even before a common continuation is settled, allow a different action in each
+		// world for the root upper bound. Keep bounds of locally rejected actions too:
+		// losing on average does not imply losing in every individual hidden world.
+		if (pruning && reject(group.map((_, i) => Math.max(...options.map(o => o.uppers[i]))))) return undefined;
+	}
+}
+
 function runSearch(
 	state: BattleState, evaluator: HardEvaluation, actions: SearchAction[], ownPP: Map<string, number>,
-	matchups = new MatchupEvaluator(), replacing = false
+	matchups = new MatchupEvaluator(), replacing = false, options: SearchOptions = {}
 ): SearchResult {
 	const unsupported = transitionSupported(state);
 	if (unsupported) return { reason: unsupported, values: [], nodes: 0 };
@@ -237,46 +418,61 @@ function runSearch(
 	}
 	Object.assign(root.self.active[0], { projection: { pp: Object.fromEntries(ownPP) } });
 	const search = new Search(matchups, root);
-	const candidates = replacing ? actions : search.choices(root, 'self', actions);
-	const roots = candidates.filter(a => a.id !== 'pass').map(action =>
-		({ action, branches: search.branches(root, action, replacing) }));
-	// Every root is expanded; sorting by an intermediate value adds no pruning benefit.
+	const entries = replacing ? new Set(search.entryChoices(root, 'self', 'free').map(identity)) : undefined;
+	const candidates = entries ? actions.filter(a => a.switchTo && entries.has(identity(a.switchTo))) :
+		search.choices(root, 'self', actions);
+	const order = new Map(candidates.map((action, index) => [action.id, index]));
+	const roots = candidates.filter(a => a.id !== 'pass').map(action => ({
+		action, branches: search.branches(root, action, replacing), value: -Infinity, upperBound: false,
+	}));
+	const pruning = options.prune !== false;
+	// All actions receive a shallow evaluation. Cheap candidates establish an exact
+	// incumbent before expensive replacement trees; heuristic values only order work.
+	if (pruning) roots.sort((a, b) => a.branches.length - b.branches.length ||
+		aggregate(b.branches) - aggregate(a.branches) || order.get(a.action.id)! - order.get(b.action.id)!);
+	let incumbent = -Infinity;
 	for (const candidate of roots) {
 		const groups = new Map<string, Branch[]>();
+		const bounds = new Map<Branch, number>();
 		for (const branch of candidate.branches) {
+			bounds.set(branch, Math.abs(branch.value) >= 10000 ? branch.value : Infinity);
 			if (Math.abs(branch.value) >= 10000) continue;
 			const key = observationKey(branch.state);
 			if (!groups.has(key)) groups.set(key, []);
 			groups.get(key)!.push(branch);
 		}
-		for (const group of groups.values()) {
-			const options = new Map<string, SearchAction>();
-			for (const branch of group) for (const action of search.choices(branch.state, 'self')) {
-				options.set(action.id, action);
+		const pending = [...groups.values()];
+		if (pruning) pending.sort((a, b) => aggregate(a) - aggregate(b));
+		for (const group of pending) {
+			const chosen = resolveContinuations(search, group, pruning, upper => {
+				group.forEach((branch, i) => bounds.set(branch, upper[i]));
+				const value = optimisticValue(candidate.branches.map(b => ({ ...b, value: bounds.get(b)! })));
+				if (!(value < incumbent - 1e-9)) return false;
+				candidate.upperBound = true; candidate.value = value;
+				search.cutoffs.roots++; return true;
+			});
+			if (candidate.upperBound) break;
+			if (chosen) group.forEach((branch, i) => { branch.value = chosen[i]; bounds.set(branch, chosen[i]); });
+			const upper = optimisticValue(candidate.branches.map(b => ({ ...b, value: bounds.get(b)! })));
+			if (pruning && [...bounds.values()].some(value => value === Infinity) && upper < incumbent - 1e-9) {
+				candidate.upperBound = true; candidate.value = upper; search.cutoffs.roots++; break;
 			}
-			let best = -Infinity, chosen: number[] | undefined;
-			for (const action of options.values()) {
-				const outcomes = group.map(branch => search.continuationBranches(branch.state, action));
-				const values = resolveEntries(outcomes, estimates => aggregate(group.flatMap((branch, i) =>
-					estimates[i] === undefined ? [] : [{ ...branch, value: estimates[i] }])));
-				// One continuation per public observation; retain configuration weights and adversarial replies.
-				const value = aggregate(group.map((branch, i) => ({ ...branch, value: values[i] })));
-				if (value > best) { best = value; chosen = values; }
-			}
-			if (chosen) group.forEach((branch, i) => { branch.value = chosen[i]; });
 		}
+		if (!candidate.upperBound) candidate.value = aggregate(candidate.branches);
+		incumbent = Math.max(incumbent, candidate.value);
 	}
 	const initial = search.value(root);
-	const order = new Map(candidates.map((action, index) => [action.id, index]));
-	const values = roots.map(c => ({ id: c.action.id, value: aggregate(c.branches) - initial }))
+	const values = roots.map(c => ({ id: c.action.id, value: c.value - initial,
+		...(c.upperBound ? { upperBound: true } : {}) }))
 		.sort((a, b) => b.value - a.value || order.get(a.id)! - order.get(b.id)!);
 	if (!values.length || !Number.isFinite(values[0].value)) {
 		return { reason: 'no resolved action', values: [], nodes: search.nodes };
 	}
 	return { choice: values[0].id, values, nodes: search.nodes,
-		reason: `${replacing ? 'Replacement search' : 'Two-turn search'} (${search.nodes} nodes, damage-only): ${values.map(v => `${v.id}=${v.value.toFixed(1)}`).join(', ')}` +
-			`; Pruned invalid=${search.pruned.invalid}, low-score=${search.pruned.scores}, attack-coverage=${search.pruned.attacks}, switch-purpose=${search.pruned.switches}` +
-			`; Reused choices=${search.reused.choices}, coverage=${search.reused.coverage}, continuation=${search.reused.continuations}` };
+		reason: `${replacing ? 'Replacement search' : 'Two-turn search'} (${search.nodes} nodes, damage-only): ${values.map(v => `${v.id}${v.upperBound ? '<=' : '='}${v.value.toFixed(1)}`).join(', ')}` +
+			`; Pruned invalid=${search.pruned.invalid}, score-gap=${search.pruned.scores}, switch-purpose=${search.pruned.switches}, entry-purpose=${search.pruned.entries}` +
+			`; Reused choices=${search.reused.choices}, continuation=${search.reused.continuations}` +
+			`; Bound cutoffs actions=${search.cutoffs.actions}, roots=${search.cutoffs.roots}` };
 }
 
 /** Unsupported effects abort immediately instead of spending the rest of the search budget. */

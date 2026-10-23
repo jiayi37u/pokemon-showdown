@@ -10,7 +10,7 @@
 import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, AICache, FieldConditions } from '../types';
 import {
-	effectiveAbility, defensiveAbility, effectiveItem, effectivePriority, getEffectiveStat, grounded, rulesDex,
+	effectiveAbility, defensiveAbility, effectiveItem, effectivePriority, getEffectiveStat, grounded, rulesDex, samePokemon,
 } from './mechanics';
 import { itemMoveFailure } from './items';
 
@@ -407,7 +407,7 @@ export function getMoveInteraction(
 		!data.tracksTarget && !move.flags.pledgecombo) {
 		const redirectAbility = move.type === 'Electric' ? 'lightningrod' : move.type === 'Water' ? 'stormdrain' : '';
 		for (const holder of context.activePokemon || context.defenderAllies || []) {
-			if (holder === attacker || holder === defender || holder.fainted || !redirectAbility) continue;
+			if (samePokemon(holder, attacker) || samePokemon(holder, defender) || holder.fainted || !redirectAbility) continue;
 			if (defensiveAbility(attacker, holder, move, field) === redirectAbility) {
 				return block(`${holder.ability} redirects the move away from this target`);
 			}

@@ -104,19 +104,15 @@ export class HardAI extends NPCBattleAI {
 		const dex = Dex.forFormat(formatId);
 		const evaluator = new HardEvaluation(state, formatId);
 		const predictions = evaluator.predictions(actor);
-		const variants = [{ actor, evaluator, predictions, transform: undefined as 'mega' | undefined }];
 		const megaState = flags.canMegaEvo ? megaEvolutionState(state, actor) : null;
-		if (megaState) {
-			const mega = megaState.self.active.find(p => p.slot === actor.slot)!;
-			// The opponent does not observe our current choice before choosing its own action.
-			const evaluation = new HardEvaluation(megaState, formatId);
-			variants.push({ actor: mega, evaluator: evaluation, predictions, transform: 'mega' });
-		}
-		const candidates: { choice: MoveChoice, result: MoveScore, targetPos?: string, targetName: string,
-			variant: typeof variants[number], }[] = [];
-		for (const variant of variants) for (const choice of moves.filter(m => !m.disabled)) {
+		// Staying in always evolves when authorized. Switching still uses the original state.
+		const moveActor = megaState?.self.active.find(p => p.slot === actor.slot) || actor;
+		const moveEvaluator = megaState ? new HardEvaluation(megaState, formatId) : evaluator;
+		const transform = flags.canMegaEvo ? 'mega' : undefined;
+		const candidates: { choice: MoveChoice, result: MoveScore, targetPos?: string, targetName: string }[] = [];
+		for (const choice of moves.filter(m => !m.disabled)) {
 			// Return/Frustration power and Hidden Power type are public in our own side request.
-			const requestId = variant.actor.moves[choice.slot - 1] || choice.move;
+			const requestId = moveActor.moves[choice.slot - 1] || choice.move;
 			const base = hardMove(requestId, choice.slot, formatId);
 			const move = { ...(choice.zMove ? hardMove(choice.move, choice.slot, formatId) : base),
 				target: choice.target, isZMove: choice.zMove };
@@ -132,7 +128,7 @@ export class HardAI extends NPCBattleAI {
 			}
 			const targets = moveTargets(state, actor, move);
 			for (const target of targets) {
-				const result = variant.evaluator.scoreMoves(variant.actor, [move], target, variant.predictions)[0];
+				const result = moveEvaluator.scoreMoves(moveActor, [move], target, predictions)[0];
 				const adjust = (amount: number, reason: string) => {
 					result.score = Math.max(0, result.score + amount);
 					result.breakdown.styleAdjust += amount;
@@ -140,16 +136,15 @@ export class HardAI extends NPCBattleAI {
 					result.breakdown.details.push({ amount, reason, category: 'style' });
 				};
 				if (choice.zMove && result.score > 0) {
-					const ordinary = variant.evaluator.damage(variant.actor, target, base);
-					const zDamage = variant.evaluator.damage(variant.actor, target, move);
+					const ordinary = moveEvaluator.damage(moveActor, target, base);
+					const zDamage = moveEvaluator.damage(moveActor, target, move);
 					adjust(ordinary.min >= target.hp ? -50 : zDamage.min >= target.hp ? 20 : -12,
 						'Z resource: prefer a new KO over redundant damage');
 				}
-				if (variant.transform && result.score > 0) adjust(2, 'Mega evolution improves future turns');
 				const targeted = ['normal', 'any', 'adjacentFoe', 'adjacentAlly', 'adjacentAllyOrSelf'].includes(move.target);
 				const targetPos = state.isDoubles && targeted ?
 					String(state.self.active.includes(target) ? -target.slot : target.slot) : undefined;
-				candidates.push({ choice, result, targetPos, targetName: target.species, variant });
+				candidates.push({ choice, result, targetPos, targetName: target.species });
 			}
 		}
 		if (!candidates.length) {
@@ -180,8 +175,8 @@ export class HardAI extends NPCBattleAI {
 		// search owns contextual pruning; a failure against the current occupant is not final.
 		// Preserve the existing tie preference when search values are exactly equal.
 		const searchActions = [best, ...candidates.filter(c => c !== best)].filter(c => !c.choice.zMove).map(c => ({
-			id: `move ${c.choice.slot}${c.variant.transform ? ' mega' : ''}`, move: hardMoveId(c.result.move),
-			mega: !!c.variant.transform, prior: c.result.score,
+			id: `move ${c.choice.slot}${transform ? ' mega' : ''}`, move: hardMoveId(c.result.move),
+			mega: !!transform, prior: c.result.score,
 		}));
 		const search = this.useSearch && !flags.canZMove ? searchPosition(state, evaluator, [...searchActions,
 			...(!active.trapped ? switches.map(sw => ({ id: `switch ${sw.slot}`,
@@ -198,15 +193,16 @@ export class HardAI extends NPCBattleAI {
 				v.id.startsWith('switch')).map(v => ({
 				pokemon: buildPokemonFromRequest(switches.find(s => s.slot === Number(v.id.split(' ')[1]))!.pokemon,
 					Number(v.id.split(' ')[1]), false, formatId).species,
-				score: v.value, reasons: ['Two-turn team-position value'],
+				score: v.value,
+				reasons: [v.upperBound ? 'Two-turn value upper bound; dominated action' : 'Two-turn team-position value'],
 			})), search.reason, state);
 			return { type: 'switch', target };
 		}
 		if (search?.choice) best = candidates.find(c =>
-			`move ${c.choice.slot}${c.variant.transform ? ' mega' : ''}` === search.choice)!;
+			`move ${c.choice.slot}${transform ? ' mega' : ''}` === search.choice)!;
 		if (!search?.choice && !active.trapped && replacement) {
-			const reason = best.variant.evaluator.switchReason(
-				best.variant.actor, best.result, replacement, best.variant.predictions,
+			const reason = moveEvaluator.switchReason(
+				moveActor, best.result, replacement, predictions,
 				state.turn - (this.lastSwitchTurn.get(slot) ?? -10) <= 2);
 			if (reason) {
 				this.lastSwitchTurn.set(slot, state.turn);
@@ -233,14 +229,14 @@ export class HardAI extends NPCBattleAI {
 		this.logger.logMoveDecision(state.turn, actor, candidates.map(c => c.result), best.result.move,
 			state, reasoning, undefined, best.targetName);
 		if (['healingwish', 'lunardance'].includes(best.result.move.id)) {
-			const recipient = best.variant.evaluator.sacrificeRecipient(best.variant.actor);
+			const recipient = moveEvaluator.sacrificeRecipient(moveActor);
 			if (recipient) this.sacrificePlans.set(actor.ident || actor.species, {
 				turn: state.turn, recipient: recipient.pokemon.slot,
 				position: `${actor.ownerSide || this.tracker.getOurSide()}${String.fromCharCode(96 + actor.slot)}`,
 				move: best.result.move.id });
 		}
 		return { type: 'move', slot: best.choice.slot, targetPos: best.targetPos,
-			zMove: best.choice.zMove, transform: best.variant.transform };
+			zMove: best.choice.zMove, transform };
 	}
 
 	protected override chooseSwitch(active: AnyObject | undefined, switches: SwitchChoice[]): number {

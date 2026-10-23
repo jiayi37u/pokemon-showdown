@@ -34,7 +34,7 @@ function setup(foes, team, { doubles = false, AI = HardAI, format = '' } = {}) {
 }
 
 describe('Hard CFRU tactical decisions', () => {
-	it('admits an ineffective status move only when a plausible switch gives it enough value', () => {
+	it('does not admit an ineffective status move merely because the opponent may switch', () => {
 		const game = setup([mon('Skarmory', ['splash', 'tackle', 'growl', 'leer']), mon('Blissey', ['splash'])],
 			[mon('Mew', ['toxic', 'psychic'])], { format: 'gen6customgame' });
 		game.reveal();
@@ -42,9 +42,10 @@ describe('Hard CFRU tactical decisions', () => {
 		game.ai.getLogger().logMoveDecision = (...args) => { reasoning = args[5]; };
 		game.decide();
 		assert(reasoning.some(r => r.startsWith('Two-turn search') && !r.includes('move 1=')), JSON.stringify(reasoning));
-		game.ai.getTracker().parseMessage('|-start|p1a: Skarmory|perish1');
+		game.ai.getTracker().parseMessage('|-damage|p1a: Skarmory|1/100');
 		game.decide();
-		assert(reasoning.some(r => r.startsWith('Two-turn search') && r.includes('move 1=')), JSON.stringify(reasoning));
+		assert(reasoning.some(r => r.includes('prediction: switch')), JSON.stringify(reasoning));
+		assert(reasoning.some(r => r.startsWith('Two-turn search') && !r.includes('move 1=')), JSON.stringify(reasoning));
 	});
 	it('preserves Hidden Power Ice through the controller and chooses its finishing attack', () => {
 		const game = setup([mon('Landorus-Therian', ['splash', 'tackle', 'growl', 'leer'])],
@@ -487,7 +488,7 @@ describe('Hard gen7 OU inference and tactics', () => {
 		assert.equal(evaluate(game).scores[0].score, 0);
 	});
 
-	it('passes a pending Wish to a safe injured reserve', () => {
+	it('keeps a winning matchup instead of switching only to pass a pending Wish', () => {
 		const game = setup([mon('Magikarp', ['splash'])], [
 			mon('Jirachi', ['wish', 'tackle']), mon('Blissey', ['seismictoss']),
 		], { format: 'gen7customgame' });
@@ -495,7 +496,7 @@ describe('Hard gen7 OU inference and tactics', () => {
 		battle.makeRequest('move');
 		game.reveal(['splash']);
 		game.ai.getTracker().parseMessage('|turn|1\n|move|p2a: Jirachi|Wish|p2a: Jirachi\n|turn|2');
-		assert.equal(game.decide(), 'switch 2');
+		assert.equal(game.decide(), 'move 2');
 	});
 
 	for (const AI of [NormalAI, HardAI]) {
@@ -551,7 +552,12 @@ describe('Hard gen7 OU inference and tactics', () => {
 
 	it('uses Mega evolution and evaluates a physical Z attack from its base move', () => {
 		const game = setup([mon('Blissey', ['seismictoss'])], [mon('Lopunny', ['return'], { item: 'Lopunnite' })], { format: 'gen7customgame' });
+		let reasoning;
+		game.ai.getLogger().logMoveDecision = (...args) => { reasoning = args[5]; };
 		assert(/ mega$/.test(game.decide()));
+		const search = reasoning.find(r => r.startsWith('Two-turn search'));
+		assert(search.includes('move 1 mega='), search);
+		assert(!search.includes('move 1='), 'Do not search staying without Mega');
 		battle.destroy(); battle = undefined;
 		const z = setup([mon('Mew', ['psychic'])], [mon('Garchomp', ['earthquake'], {
 			item: 'Groundium Z', nature: 'Adamant', evs: { atk: 252 },

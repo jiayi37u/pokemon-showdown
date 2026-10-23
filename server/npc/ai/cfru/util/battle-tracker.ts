@@ -104,6 +104,7 @@ export interface TrackedPokemon {
 
 /** Identity-bound facts; position-bound effects remain in the active maps. */
 interface IdentityMemory {
+	itemExchange?: AIPokemon['itemExchange'];
 	terastallized?: string;
 	stellarBoostedTypes?: string[];
 	timesAttacked?: number;
@@ -175,6 +176,7 @@ export class BattleTracker {
 	private faintCounts = new Map<string, number>();
 	private formatId = '';
 	private activeIdentities = new Map<string, string>();
+	private itemExchange?: { user: string, target: string, native: Set<string>, items: Map<string, string> };
 	private identityMemory = new Map<string, IdentityMemory>();
 	private entries = new Map<string, EntryObservations>();
 	private yawnSources = new Map<string, string>();
@@ -362,6 +364,7 @@ export class BattleTracker {
 			this.skipPrivateLine = true;
 			return;
 		}
+		this.trackItemExchange(parts);
 		this.evidence.observe(parts);
 		this.handleAbilityEvent(parts);
 		this.recordAttackHit(parts);
@@ -1048,6 +1051,45 @@ export class BattleTracker {
 		case '-block':
 			if (direct) this.recordAbility(of || pokemon, direct);
 			break;
+		}
+	}
+
+	/** Successful swap activation identifies both donors; item lines reveal what each handed over. */
+	private trackItemExchange(parts: string[]): void {
+		const [command, holder, effect] = parts;
+		if (['move', 'turn', 'switch', 'drag', 'replace'].includes(command)) this.itemExchange = undefined;
+		if (command === '-activate' && ['move: Trick', 'move: Switcheroo'].includes(effect)) {
+			const target = parts.find(p => p.startsWith('[of] '))?.slice(5).split(':')[0].trim();
+			if (!target) return;
+			const user = holder.split(':')[0].trim();
+			const native = new Set([user, target].filter(position => {
+				const entry = this.entries.get(position);
+				return !(entry?.item?.itemChanged || entry?.previous?.itemChanged ||
+					this.opponentPokemon.get(position)?.itemChanged);
+			}));
+			this.itemExchange = { user, target, native, items: new Map() };
+		}
+		const exchange = this.itemExchange;
+		if (!exchange || !['-item', '-enditem'].includes(command) ||
+			!parts.some(p => ['[from] move: Trick', '[from] move: Switcheroo'].includes(p))) return;
+		const position = holder.split(':')[0].trim();
+		if (![exchange.user, exchange.target].includes(position)) return;
+		const received = command === '-item' ? effect : '';
+		exchange.items.set(position, toID(received));
+		const donor = position === exchange.user ? exchange.target : exchange.user;
+		if (received && exchange.native.has(donor)) {
+			const entry = this.entries.get(donor), tracked = this.opponentPokemon.get(donor);
+			if (entry) {
+				entry.item ||= { item: received, itemLost: false };
+				entry.item.originalItem ||= received;
+			}
+			if (tracked) tracked.originalItem ||= received;
+		}
+		if (exchange.items.size === 2) {
+			this.updateIdentityMemory(this.activeIdentities.get(exchange.user) || exchange.user, {
+				itemExchange: { given: exchange.items.get(exchange.target)!, received: exchange.items.get(exchange.user)! },
+			}, exchange.user);
+			this.itemExchange = undefined;
 		}
 	}
 
@@ -2174,6 +2216,10 @@ export class BattleTracker {
 		return this.getIdentityMemory(pokemon).terastallized;
 	}
 
+	getItemExchange(pokemon: string): AIPokemon['itemExchange'] {
+		return this.getIdentityMemory(pokemon).itemExchange;
+	}
+
 	getTimesAttacked(pokemon: string): number {
 		return this.getIdentityMemory(pokemon).timesAttacked || 0;
 	}
@@ -2275,6 +2321,7 @@ export class BattleTracker {
 
 	/** Reset tracker state for a new battle. */
 	reset(): void {
+		this.itemExchange = undefined;
 		this.opponentPreview = [];
 		this.evidence.reset();
 		this.turn = 0;

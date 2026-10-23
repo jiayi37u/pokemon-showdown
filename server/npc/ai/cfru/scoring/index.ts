@@ -9,20 +9,20 @@
  */
 
 import { beneficialTargets } from '../util/move-effects';
-import type {
-	AIPokemon,
-	AIMove,
-	BattleState,
-	MoveScore,
-	MoveScoreFlags,
-	ScoreBreakdown,
-	ScoreAdjustment,
-	CFRUAIConfig,
-	AICache,
+import {
+	BASE_SCORE,
+	type AIPokemon,
+	type AIMove,
+	type BattleState,
+	type MoveScore,
+	type MoveScoreFlags,
+	type ScoreBreakdown,
+	type ScoreAdjustment,
+	type CFRUAIConfig,
+	type AICache,
 } from '../types';
-import { BASE_SCORE } from '../types';
-import { Dex } from '../../../../../sim/dex';
-import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
+import type { Dex } from '../../../../../sim/dex';
+import { calculateDamage } from '../util/damage-calc';
 import { attacksFirst } from '../util/speed';
 import { resolveMove } from '../util/type-calc';
 import { rulesDex } from '../util/mechanics';
@@ -91,6 +91,20 @@ export type NegativeScoringFunction = (ctx: ScoringContext) => number;
  * Positive scoring function type
  */
 export type PositiveScoringFunction = (ctx: ScoringContext) => number;
+
+/** Cut the below-baseline group only across a clear gap at the baseline boundary.
+ * Effects and tactical value belong exclusively to the scoring rules.
+ */
+export function selectMoveCandidates(scores: readonly MoveScore[], gap: number): MoveScore[] {
+	if (!(gap > 0)) throw new Error('Score gap must be positive');
+	const effective = scores.filter(s => !s.flags.hasNoEffect && !s.flags.isImmune);
+	const candidates = effective.length ? effective : scores;
+	const higher = candidates.filter(s => s.score >= BASE_SCORE);
+	const lower = candidates.filter(s => s.score < BASE_SCORE);
+	if (!higher.length || !lower.length) return [...candidates];
+	const boundary = Math.min(...higher.map(s => s.score)) - Math.max(...lower.map(s => s.score));
+	return boundary > gap ? higher : [...candidates];
+}
 
 /**
  * Scoring Engine - Main class for evaluating moves
@@ -276,6 +290,15 @@ export class ScoringEngine {
 					totalPositives += adjustment;
 					ctx.score += adjustment;
 				}
+			}
+		}
+
+		if (ctx.flags.fixedScore !== undefined && !ctx.flags.hasNoEffect && !ctx.flags.isImmune) {
+			const adjustment = ctx.flags.fixedScore - ctx.score;
+			if (adjustment) {
+				ctx.adjustments.push({ reason: 'Fixed tactical score', amount: adjustment, category: 'negative' });
+				totalNegatives += adjustment;
+				ctx.score = ctx.flags.fixedScore;
 			}
 		}
 

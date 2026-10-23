@@ -38,6 +38,15 @@ interface ProjectedPokemon extends AIPokemon {
 }
 export const identity = (p: AIPokemon) => p.ident || `${p.ownerSide}:${p.slot}:${p.species}`;
 const other = (side: Side): Side => side === 'self' ? 'opponent' : 'self';
+
+/** Staying actions share the immediate-Mega rule in candidate selection and matchup verification. */
+export function moveAction(state: BattleState, side: Side, move: string): SearchAction {
+	const party = state[side], actor = party.active[0], dex = rulesDex(state.field);
+	return { id: `move ${move}`, move, prior: 0,
+		mega: !!dex.items.get(actor.item).megaStone?.[dex.species.get(actor.species).baseSpecies] &&
+			!dex.species.get(actor.species).isMega && !party.megaUsedByOwner?.[actor.ownerSide || ''] };
+}
+
 export function hp(p: AIPokemon, amount: number): void {
 	p.hp = Math.max(0, Math.min(p.maxHp, amount)); p.hpPercent = 100 * p.hp / p.maxHp;
 	p.fainted = p.hp <= 0;
@@ -69,7 +78,7 @@ export function positionKey(state: BattleState): string {
 	const pokemon = (p: ProjectedPokemon) => [identity(p), p.species, p.hp, p.maxHp, p.active, p.fainted,
 		p.status, p.sleepTurns, p.toxicCounter, p.boosts, p.baseStats, p.statSpread, p.trapSource,
 		p.types, p.item, p.itemKnown, p.itemLost,
-		p.itemChanged, p.ability, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
+		p.itemChanged, p.itemExchange, p.ability, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
 		[...p.volatiles].sort(), p.projection, p.queuedSpeed, p.queuedPriorityAbility,
 		p.moveKnowledge, p.presetModels?.map(m => {
 			let key = profileKeys.get(m);
@@ -530,7 +539,9 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		target.item = ''; target.itemLost = true;
 	}
 	if (['trick', 'switcheroo'].includes(id) && !itemMoveFailure(actor, target, move, state.field)) {
-		const item = actor.item; actor.item = target.item; target.item = item;
+		const item = actor.item;
+		actor.itemExchange = { given: toID(item), received: toID(target.item) };
+		actor.item = target.item; target.item = item;
 		actor.itemChanged = target.itemChanged = true; actor.itemLost = !actor.item; target.itemLost = !target.item;
 	}
 	if (['healbell', 'aromatherapy'].includes(id)) for (const p of party.team) { p.status = ''; p.sleepTurns = 0; }

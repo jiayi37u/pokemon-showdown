@@ -103,12 +103,12 @@ export class HardEvaluation {
 		return engine.scoreMoves(state, actor, moves, target);
 	}
 
-	predictions(actor: AIPokemon, replacements?: ReplacementHypothesis[], leaving = false):
+	predictions(actor: AIPokemon, replacements?: ReplacementHypothesis[]):
 	Map<AIPokemon, PredictedAction[]> {
 		return new Map(this.state.opponent.active.filter(p => !p.fainted).map(foe => [foe,
 			predictOpponent(this.calculationState(actor), foe, actor, this.formatId, (state, attacker, moves, target) =>
 				this.baseScores(state, attacker, moves, target, true), this.models.get(foe),
-			replacements && !replacements.length ? 0 : this.retreatConfidence(actor, foe, replacements), leaving),
+			replacements && !replacements.length ? 0 : this.retreatConfidence(actor, foe, replacements)),
 		]));
 	}
 
@@ -316,6 +316,8 @@ export class HardEvaluation {
 			result.flags = { ...result.flags,
 				isImmune: groups.every(g => g.scores[i].flags.isImmune),
 				hasNoEffect: groups.every(g => g.scores[i].flags.hasNoEffect),
+				fixedScore: groups.every(g => g.scores[i].flags.fixedScore === result.flags.fixedScore) ?
+					result.flags.fixedScore : undefined,
 				discouraged: groups.every(g => g.scores[i].flags.discouraged),
 			};
 			result.breakdown = { ...result.breakdown, final: result.score,
@@ -328,6 +330,10 @@ export class HardEvaluation {
 		const switchProbability = (predictions.get(target) || []).reduce((n, a) => n + (a.switching ? a.weight : 0), 0);
 		const switchTargets = switchProbability ? replacements ?? this.switchTargets(actor, target) : [];
 		for (const result of scores) {
+			if (result.flags.fixedScore !== undefined && !result.flags.hasNoEffect && !result.flags.isImmune) {
+				result.score = result.flags.fixedScore; result.breakdown.final = result.score;
+				continue;
+			}
 			const { move } = result;
 			const data = this.dex.moves.get(move.id);
 			const add = (amount: number, reason: string) => {

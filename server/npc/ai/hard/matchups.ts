@@ -6,7 +6,8 @@ import type { AIPokemon, AIMove, BattleState, FieldConditions, SideConditions } 
 import { hardMove, hardMoveId } from './opponent-model';
 import { getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { calculateDamage, selectDamage, type DamagePolicy } from './damage';
-import { modelsFor, knownMoves, clonePosition, settleFutureAttacks } from './projection';
+import { modelsFor, knownMoves, clonePosition, settleFutureAttacks, bindOpponent, beginTurn, continueTurn,
+	moveAction, positionKey, supportsMove, usableMove, type Side } from './projection';
 import { compareActionOrder } from '../cfru/util/speed';
 import { directRecoveryAmount, entryHazardDamage } from '../cfru/util/turn-outcome';
 import { effectiveAbility, effectiveItem, fieldWithActivePokemon, grounded, rulesDex } from '../cfru/util/mechanics';
@@ -22,15 +23,20 @@ export interface Matchup {
 	switchPressure: Record<string, number>;
 	/** Capacity to repeat the defensive assignment. */
 	sustain: number;
+	/** Pressure and sustain after conceding the entry action, shared with entry pruning. */
+	entryPressure: number;
+	entrySustain: number;
 }
 interface Pair { self: Matchup; opponent: Matchup }
+interface Assessment { value: number; self: number; opponent: number; matrix: Pair[][] }
 interface PairState extends BattleState {
 	evaluator: MatchupEvaluator;
 	/** Object-local lookup avoids serializing the same race participants for each hit. */
 	damageMemo: Map<AIPokemon, Map<AIPokemon, Map<string, number>>>;
 }
 export interface AttackFacts { damage: number; delay: number }
-const zero = (): Matchup => ({ check: 0, counter: 0, pressure: 0, switchPressure: {}, sustain: 0 });
+const zero = (): Matchup => ({ check: 0, counter: 0, pressure: 0, switchPressure: {}, sustain: 0,
+	entryPressure: 0, entrySustain: 0 });
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const hp = (p: AIPokemon, value: number): AIPokemon => ({ ...p, hp: Math.max(0, value),
 	hpPercent: 100 * Math.max(0, value) / p.maxHp });
@@ -43,7 +49,7 @@ function fingerprint(p: AIPokemon): string {
 	return JSON.stringify([p.species, p.level, p.hp, p.maxHp, p.types, p.status, p.ability, p.item,
 		p.itemLost, p.itemKnown, p.itemAssumed, p.baseStats, p.boosts, [...p.volatiles].sort(), p.moves,
 		p.lastMove, p.active, p.activeMoveActions, p.sleepTurns, p.toxicCounter, p.sleepSelfInflicted,
-		p.queuedSpeed, p.queuedPriorityAbility, p.abilityStatMod, p.terastallized, p.gender]);
+		p.queuedSpeed, p.queuedPriorityAbility, p.abilityStatMod, p.terastallized, p.gender, p.fainted]);
 }
 
 function moves(p: AIPokemon, field: FieldConditions): AIMove[] {
@@ -134,10 +140,10 @@ function attrition(target: AIPokemon, state: BattleState): boolean {
 /** Attack race plus sustainable recovery. The two-turn search handles exact move effects;
  * this estimates the remaining assignment beyond its horizon using shared mechanics.
  */
-function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup {
+function outlook(actor: AIPokemon, target: AIPokemon, state: PairState, attackChoices?: AIMove[]): Matchup {
 	if (actor.hp <= 0 || target.hp <= 0 || actor.fainted || target.fainted) return zero();
 	const theirs = reverse(state);
-	const attacks = moves(actor, state.field).filter(m => m.category !== 'Status');
+	const attacks = attackChoices || moves(actor, state.field).filter(m => m.category !== 'Status');
 	const responses = moves(target, state.field).filter(m => m.category !== 'Status');
 	const incoming = responses.map(move => ({ move, amount: damage(target, actor, move, theirs) }));
 	const worst = Math.max(0, ...incoming.map(r => r.amount));
@@ -193,7 +199,7 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 	}
 	const sustain = clamp((actor.hp - worst - residual) / actor.maxHp +
 		(healing > worst + residual ? 0.5 : 0));
-	return { check, counter: 0, pressure, switchPressure, sustain };
+	return { check, counter: 0, pressure, switchPressure, sustain, entryPressure: 0, entrySustain: 0 };
 }
 
 function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup {
@@ -210,8 +216,9 @@ function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Mat
 	const entryDamage = Math.max(0, ...options.filter(m => m.category !== 'Status').map(m =>
 		damage(target, actor, m, reverse(state))));
 	const damaged = hp(actor, actor.hp - entryDamage);
-	counter = Math.min(counter, outlook(hp(damaged, getEffectiveHpAfterSecondary(damaged, state.field.weather,
-		effectiveAbility(target, state.field), state.field)), restedTarget, state).check);
+	const entry = outlook(hp(damaged, getEffectiveHpAfterSecondary(damaged, state.field.weather,
+		effectiveAbility(target, state.field), state.field)), restedTarget, state);
+	counter = Math.min(counter, entry.check);
 	for (const move of options.filter(m => m.category === 'Status')) {
 		let defender = actor, attacker = restedTarget;
 		if (move.boosts && move.target === 'self') {
@@ -233,9 +240,12 @@ function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Mat
 		}
 		defender = hp(defender, getEffectiveHpAfterSecondary(defender, state.field.weather,
 			effectiveAbility(attacker, state.field), state.field));
-		counter = Math.min(counter, outlook(defender, attacker, state).check);
+		const response = outlook(defender, attacker, state);
+		counter = Math.min(counter, response.check);
+		entry.pressure = Math.min(entry.pressure, response.pressure);
+		entry.sustain = Math.min(entry.sustain, response.sustain);
 	}
-	return { ...result, counter };
+	return { ...result, counter, entryPressure: entry.pressure, entrySustain: entry.sustain };
 }
 
 /** Diminishing redundancy: the first reliable answer matters much more than a backup. */
@@ -277,6 +287,8 @@ function teamValue(party: AIPokemon[], foes: AIPokemon[], rows: Matchup[][], sta
 
 export class MatchupEvaluator {
 	private cache = new Map<string, Pair>();
+	private positions = new Map<string, Assessment>();
+	private advantages = new Map<string, boolean>();
 	private attacks = new Map<string, Map<string, AttackFacts>>();
 	private tokens = new Map<string, number>();
 	private token(value: string): number {
@@ -284,11 +296,53 @@ export class MatchupEvaluator {
 		if (token === undefined) this.tokens.set(value, token = this.tokens.size + 1);
 		return token;
 	}
-	readonly stats = { hits: 0, misses: 0 };
+	readonly stats = { hits: 0, misses: 0, positions: 0 };
 	private capacity: number;
 	readonly damagePolicy: DamagePolicy;
 	constructor(capacity = 12000, damagePolicy: DamagePolicy = 'mean') {
 		this.capacity = capacity; this.damagePolicy = damagePolicy;
+	}
+
+	/** A winning stationary race alone cannot exclude switching when the foe can pivot away.
+	 * Verify one common winning attack against every compatible pivot, stopping at the
+	 * existing entry checkpoint. No recipient trees or additional positional scores are needed.
+	 */
+	holdsAdvantage(state: BattleState, side: Side, assessment = this.assess(state)): boolean {
+		if (state.self.active[0]?.fainted || state.opponent.active[0]?.fainted) return false;
+		const i = state.self.team.indexOf(state.self.active[0]), j = state.opponent.team.indexOf(state.opponent.active[0]);
+		const other = side === 'self' ? 'opponent' : 'self', pair = assessment.matrix[i]?.[j];
+		if (!pair || pair[side].check < 1 || pair[other].check !== 0) return false;
+		const view = side === 'self' ? state : reverse(state);
+		if (!view.opponent.reserve.some(p => p.hp > 0 && !p.fainted)) return true;
+		const key = `${side}:${positionKey(state)}`, cached = this.advantages.get(key);
+		if (cached !== undefined) return cached;
+		const dex = rulesDex(state.field), actor = view.self.active[0], target = view.opponent.active[0];
+		const worlds = modelsFor(target).flatMap(foe => modelsFor(actor).map(own => {
+			const bound = clonePosition(view);
+			bindOpponent(bound, target, foe); bindOpponent(reverse(bound), actor, own);
+			bound.self.active[0].moves = own.moves.map(m => m.id);
+			bound.opponent.active[0].moves = foe.moves.map(m => m.id);
+			const pivots = bound.opponent.active[0].moves.filter(id =>
+				dex.moves.get(id).selfSwitch && usableMove(bound, 'opponent', id));
+			return { bound, pivots };
+		})).filter(world => world.pivots.length);
+		const result = !worlds.length || knownMoves(actor).some(id => {
+			const move = hardMove(id, 1, state.field.formatId || '');
+			if (move.category === 'Status' || !supportsMove(view, id)) return false;
+			return worlds.every(({ bound, pivots }) => {
+				if (!bound.self.active[0].moves.includes(id) || !usableMove(bound, 'self', id)) return false;
+				const pairState: PairState = { ...bound, evaluator: this, damageMemo: new Map() };
+				if (outlook(bound.self.active[0], bound.opponent.active[0], pairState, [move]).check < 1) return false;
+				return pivots.every(reply => {
+					if (!supportsMove(bound, reply)) return false;
+					const turn = beginTurn(bound, moveAction(bound, 'self', id), moveAction(bound, 'opponent', reply));
+					continueTurn(turn, this.damagePolicy);
+					return !turn.pending && !turn.state.self.active[0].fainted;
+				});
+			});
+		});
+		if (this.advantages.size >= this.capacity) this.advantages.delete(this.advantages.keys().next().value!);
+		this.advantages.set(key, result); return result;
 	}
 
 	/** Concrete pair facts shared by matchup races, coverage and defensive switching.
@@ -319,6 +373,7 @@ export class MatchupEvaluator {
 		}
 		if (this.tokens.size > 40000) {
 			this.tokens.clear(); this.cache.clear(); this.attacks.clear();
+			this.positions.clear();
 		}
 		const own = state.self.team, foes = state.opponent.team;
 		const sleepers = (party: AIPokemon[]) => party.filter(p => p.hp && p.status === 'slp')
@@ -333,6 +388,12 @@ export class MatchupEvaluator {
 			return { pokemon, weight: model.weight, key: this.token(fingerprint(pokemon)) };
 		}));
 		const prefix = this.token(context + JSON.stringify(this.damagePolicy));
+		// Cache evaluation inputs, not search history. PP, pending choices and reveal
+		// bookkeeping still distinguish search states but do not alter this value function.
+		const position = JSON.stringify([prefix, ownKeys, foes.map(p => this.token(fingerprint(p))),
+			profiles.map(pool => pool.map(p => [p.key, p.weight]))]);
+		const cached = this.positions.get(position);
+		if (cached) { this.stats.positions++; return cached; }
 		const matrix = actors.map((actor, i) => foes.map((target, j): Pair => {
 			if (!actor.hp || !target.hp || actor.fainted || target.fainted) return { self: zero(), opponent: zero() };
 			const sum: Pair = { self: zero(), opponent: zero() };
@@ -352,7 +413,7 @@ export class MatchupEvaluator {
 					this.cache.set(key, result);
 				}
 				for (const side of ['self', 'opponent'] as const) {
-					for (const metric of ['check', 'counter', 'pressure', 'sustain'] as const) {
+					for (const metric of ['check', 'counter', 'pressure', 'sustain', 'entryPressure', 'entrySustain'] as const) {
 						sum[side][metric] += model.weight * result[side][metric];
 					}
 					for (const [move, value] of Object.entries(result[side].switchPressure)) {
@@ -366,7 +427,12 @@ export class MatchupEvaluator {
 		const opponentRows = foes.map((foe, j) => own.map((actor, i) => matrix[i][j].opponent));
 		const self = teamValue(own, foes, selfRows, state);
 		const opponent = teamValue(foes, own, opponentRows, reverse(state));
-		return { value: self - opponent, self, opponent, matrix };
+		const assessment = { value: self - opponent, self, opponent, matrix };
+		// A table holds up to 36 pairs; keep its storage within the pair-cache budget.
+		if (this.positions.size >= Math.max(1, Math.floor(this.capacity / 36))) {
+			this.positions.delete(this.positions.keys().next().value!);
+		}
+		this.positions.set(position, assessment); return assessment;
 	}
 
 	/** Marginal team value, including the offensive routes opened for the opposing team. */

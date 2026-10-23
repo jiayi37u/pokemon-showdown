@@ -3,6 +3,7 @@ import { Dex } from '../../../../../sim/dex';
 import type { AIPokemon, BattleState } from '../types';
 import { effectiveAbility, fieldWithActivePokemon, replaceActivePokemon } from './mechanics';
 import { getEffectiveSpeed } from './speed';
+import { computeStatsFromPreset } from './opponent-presets';
 
 export function megaEvolutionState(state: BattleState, actor: AIPokemon): BattleState | null {
 	const dex = Dex.forFormat(state.field.formatId || 'gen9customgame');
@@ -10,12 +11,14 @@ export function megaEvolutionState(state: BattleState, actor: AIPokemon): Battle
 	const evolution = dex.items.get(actor.item).megaStone?.[before.baseSpecies];
 	if (before.isMega || !evolution) return null;
 	const after = dex.species.get(evolution);
-	const stats = { ...actor.baseStats };
-	// Requests expose actual stats, but not nature. Keep a conservative bound on the stat delta.
-	for (const stat of ['atk', 'def', 'spa', 'spd', 'spe'] as const) {
+	const stats = actor.statSpread ? computeStatsFromPreset(after.baseStats, actor.level, actor.statSpread) :
+		{ ...actor.baseStats };
+	// Legacy snapshots without a spread use the neutral stat delta, without a directional penalty.
+	if (!actor.statSpread) for (const stat of ['atk', 'def', 'spa', 'spd', 'spe'] as const) {
 		const delta = Math.floor(2 * (after.baseStats[stat] - before.baseStats[stat]) * actor.level / 100);
-		stats[stat] = Math.max(1, stats[stat] + Math.floor(delta * (delta > 0 ? 0.9 : 1.1)));
+		stats[stat] = Math.max(1, stats[stat] + delta);
 	}
+	stats.hp = actor.maxHp;
 	const mega: AIPokemon = { ...actor, species: after.name, types: after.types, ability: after.abilities[0],
 		baseStats: stats,
 		queuedPriorityAbility: dex.gen <= 6 ? effectiveAbility(actor, state.field) : undefined,

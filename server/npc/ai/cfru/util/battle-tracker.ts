@@ -159,6 +159,7 @@ export class BattleTracker {
 	/** Tracked opponent Pokemon (keyed by position like 'p1a', 'p1b') */
 	private opponentPokemon: Map<string, TrackedPokemon> = new Map();
 	private activeVolatiles = new Map<string, Set<string>>();
+	private trapSources = new Map<string, string>();
 	/** Protocol-declared effects expire either at the end of this turn or the holder's next action. */
 	private transientEffects = new Map<string, Map<string, 'turn' | 'move'>>();
 	private turn = 0;
@@ -455,6 +456,8 @@ export class BattleTracker {
 			const effectDex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
 			if (effectDex.moves.get(parts[2]?.replace(/^move: /, '')).volatileStatus === 'partiallytrapped') {
 				this.handleVolatileStatus(['-start', parts[1], 'partiallytrapped']);
+				const source = parts.find(p => p.startsWith('[of] '))?.slice(5);
+				if (source) this.trapSources.set(parts[1].split(':')[0], this.publicIdentity(source));
 			}
 			if (parts[2]?.startsWith('item: ')) this.handleItem(['-item', parts[1], parts[2].slice(6)], true);
 			break;
@@ -590,6 +593,7 @@ export class BattleTracker {
 			this.updateIdentityMemory(outgoingIdent, { consumedItem: undefined });
 		}
 		this.yawnSources.delete(position);
+		this.trapSources.delete(position);
 		this.activeIdentities.set(position, sleepIdent);
 		entry.memory = this.memoryOnEntry(entry.memory, entry.sleeping);
 
@@ -1441,7 +1445,10 @@ export class BattleTracker {
 		}
 		let effects = this.activeVolatiles.get(position);
 		if (!effects) this.activeVolatiles.set(position, effects = new Set());
-		if (command === '-end' && parts.includes('[partiallytrapped]')) effects.delete('partiallytrapped');
+		if (command === '-end' && (parts.includes('[partiallytrapped]') || effect === 'partiallytrapped')) {
+			effects.delete('partiallytrapped');
+			this.trapSources.delete(position);
+		}
 		if (/^stockpile[1-3]$/.test(effect) || effect === 'stockpile') {
 			for (const old of effects) if (/^stockpile[1-3]$/.test(old)) effects.delete(old);
 		}
@@ -2220,6 +2227,13 @@ export class BattleTracker {
 		return new Set(this.activeVolatiles.get(key));
 	}
 
+	getTrapSource(pokemon: string): string | undefined {
+		const entry = this.getIdentityEntry(pokemon);
+		const position = [...this.entries].find(([, value]) => value === entry)?.[0];
+		return position && this.activeVolatiles.get(position)?.has('partiallytrapped') ?
+			this.trapSources.get(position) : undefined;
+	}
+
 	/** Effective public ability at an event's instant, before later requests or switches. */
 	getEffectiveAbility(position: string): string {
 		const facts = (key: string) => {
@@ -2282,6 +2296,7 @@ export class BattleTracker {
 		this.ourPokemon.clear();
 		this.activeAbilities.clear();
 		this.activeVolatiles.clear();
+		this.trapSources.clear();
 		this.transientEffects.clear();
 		this.activeTypes.clear();
 		this.activeFormes.clear();

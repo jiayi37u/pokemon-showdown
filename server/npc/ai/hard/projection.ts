@@ -1,5 +1,6 @@
 /** Deterministic, decision-oriented state transitions. Never instantiate a PS Battle here. */
 import { toID } from '../../../../sim/dex';
+import type { PokemonConditionData } from '../../../../sim/dex-conditions';
 import type { AIPokemon, BattleState, OpponentModel } from '../cfru/types';
 import { hardMove } from './opponent-model';
 import { calculateDamage, selectDamage, type DamagePolicy } from './damage';
@@ -66,19 +67,24 @@ const profileKeys = new WeakMap<OpponentModel, string>();
 /** Compact cache identity: never serialize whole repeated preset objects per search node. */
 export function positionKey(state: BattleState): string {
 	const pokemon = (p: ProjectedPokemon) => [identity(p), p.species, p.hp, p.maxHp, p.active, p.fainted,
-		p.status, p.sleepTurns, p.toxicCounter, p.boosts, p.baseStats, p.types, p.item, p.itemKnown, p.itemLost,
+		p.status, p.sleepTurns, p.toxicCounter, p.boosts, p.baseStats, p.statSpread, p.trapSource,
+		p.types, p.item, p.itemKnown, p.itemLost,
 		p.itemChanged, p.ability, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
 		[...p.volatiles].sort(), p.projection, p.queuedSpeed, p.queuedPriorityAbility,
 		p.moveKnowledge, p.presetModels?.map(m => {
 			let key = profileKeys.get(m);
 			if (!key) {
 				key = JSON.stringify([m.weight, m.pokemon.baseStats, m.pokemon.maxHp, m.pokemon.item,
-					m.pokemon.ability, m.moves, m.pokemon.moveKnowledge]); profileKeys.set(m, key);
+					m.pokemon.ability, m.spread, m.moves, m.pokemon.moveKnowledge]); profileKeys.set(m, key);
 			}
 			return key;
 		})];
+	const conditions = (side: BattleState['self']) => ({ ...side.conditions,
+		wishes: side.conditions.wishes || {}, futureMoves: side.conditions.futureMoves || {},
+		wishSources: side.conditions.wishSources || {}, futureAttacks: side.conditions.futureAttacks || {} });
 	return JSON.stringify([state.self.team.map(pokemon), state.opponent.team.map(pokemon), state.field,
-		state.self.conditions, state.opponent.conditions, state.self.megaUsedByOwner, state.opponent.megaUsedByOwner]);
+		conditions(state.self), conditions(state.opponent),
+		state.self.megaUsedByOwner || {}, state.opponent.megaUsedByOwner || {}]);
 }
 
 /** Project the same hidden profile onto current public/hypothetical HP, boosts and conditions. */
@@ -92,7 +98,7 @@ export function modelsFor(p: AIPokemon): OpponentModel[] {
 		const maxHp = m.pokemon.maxHp;
 		return { ...m, weight: m.weight / mass, moves: m.moves.filter(move =>
 			!m.pokemon.moveKnowledge || canHaveOpponentMoves(m.pokemon.moveKnowledge, [...known, move.id])),
-		pokemon: { ...p, baseStats: m.pokemon.baseStats, maxHp,
+		pokemon: { ...p, baseStats: m.pokemon.baseStats, statSpread: m.spread || p.statSpread, maxHp,
 			hp: maxHp === p.maxHp ? p.hp : Math.ceil(p.hpPercent * maxHp / 100),
 			item: p.itemKnown || p.itemChanged || p.itemLost ? p.item : m.pokemon.item,
 			ability: p.abilityChanged ? p.ability : m.pokemon.ability,
@@ -147,15 +153,26 @@ function entryAbility(state: BattleState, side: Side): void {
 	state.field = fieldWithActivePokemon(state.field, [...state.self.active, ...state.opponent.active]);
 }
 
+/** Binding ends when its source leaves; a new occupant of that slot is not the source. */
+function releaseTraps(state: BattleState, source: AIPokemon): void {
+	for (const p of [...state.self.active, ...state.opponent.active]) {
+		if (p.trapSource && toID(p.trapSource) === toID(identity(source))) {
+			p.volatiles.delete('partiallytrapped'); delete p.trapSource;
+		}
+	}
+}
+
 export function switchIn(state: BattleState, side: Side, selected: AIPokemon): void {
 	const party = state[side], outgoing = party.active[0];
 	const incoming = party.team.find(p => identity(p) === identity(selected))!;
 	if (!incoming || incoming.fainted || incoming === outgoing) return;
 	if (outgoing) {
+		releaseTraps(state, outgoing);
 		const ability = effectiveAbility(outgoing, state.field);
 		if (!outgoing.fainted && ability === 'regenerator') hp(outgoing, outgoing.hp + Math.floor(outgoing.maxHp / 3));
 		if (ability === 'naturalcure') outgoing.status = '';
 		outgoing.active = false; outgoing.volatiles.clear();
+		delete outgoing.trapSource;
 		outgoing.lastMove = ''; outgoing.activeMoveActions = 0;
 		outgoing.toxicCounter = 0;
 		for (const key of Object.keys(outgoing.boosts) as (keyof AIPokemon['boosts'])[]) outgoing.boosts[key] = 0;
@@ -241,10 +258,11 @@ export function supportsMove(state: BattleState, id: string): boolean {
 		'curse', 'imprison', 'sleeptalk', 'bellydrum', 'perishsong', 'reflecttype', 'transform', 'skillswap', 'magnetrise', 'fairylock', 'healingwish', 'lunardance', 'synthesis', 'moonlight', 'morningsun', 'shoreup', 'splash', 'trickroom'].includes(id));
 }
 
-export type ChooseEntry = (state: BattleState, side: Side) => AIPokemon | undefined;
+export type ChooseEntry = (state: BattleState, side: Side, cause: 'pivot' | 'phaze') => AIPokemon | undefined;
+interface PendingEntry { side: Side; cause: 'pivot' | 'phaze' }
 
 function execute(state: BattleState, side: Side, action: SearchAction, reply: SearchAction,
-	policy: DamagePolicy, chooseEntry: ChooseEntry): void {
+	policy: DamagePolicy): PendingEntry | undefined {
 	if (action.switchTo) { switchIn(state, side, action.switchTo); return; }
 	let party = state[side], foeParty = state[other(side)];
 	let actor = party.active[0] as ProjectedPokemon, target = foeParty.active[0] as ProjectedPokemon;
@@ -393,8 +411,11 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 	if (data.self?.volatileStatus === 'mustrecharge' && actor.hp) actor.volatiles.add('mustrecharge');
 	if (data.selfdestruct) hp(actor, 0);
 	if (hitSubstitute) {
-		if (data.selfSwitch && actor.hp) { const entry = chooseEntry(state, side); if (entry) switchIn(state, side, entry); }
+		if (data.selfSwitch && actor.hp) return { side, cause: 'pivot' };
 		return;
+	}
+	if (data.volatileStatus === 'partiallytrapped' && !target.fainted && !target.volatiles.has('partiallytrapped')) {
+		target.volatiles.add('partiallytrapped'); target.trapSource = identity(actor);
 	}
 	if (id === 'bellydrum' && actor.hp > actor.maxHp / 2 && actor.boosts.atk < 6) {
 		hp(actor, actor.hp - Math.floor(actor.maxHp / 2));
@@ -496,7 +517,10 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		for (const team of id === 'defog' && dex.gen >= 6 ? [party, foeParty] : [party]) {
 			Object.assign(team.conditions, { stealthrock: false, spikes: 0, toxicspikes: 0, stickyweb: false });
 		}
-		if (id === 'rapidspin') actor.volatiles.delete('leechseed');
+		if (id === 'rapidspin') {
+			actor.volatiles.delete('leechseed'); actor.volatiles.delete('partiallytrapped'); delete actor.trapSource;
+			if (dex.gen >= 8) boosts(actor, { spe: 1 }, state);
+		}
 		if (id === 'defog') Object.assign(foeParty.conditions, { reflect: 0, lightscreen: 0, auroraveil: 0 });
 	}
 	if (id === 'haze' || id === 'clearsmog') for (const p of id === 'haze' ? [actor, target] : [target]) {
@@ -517,10 +541,8 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 	}
 
 	triggerHealthItem(actor, state);
-	if (data.forceSwitch && target.hp) {
-		const entry = chooseEntry(state, other(side)); if (entry) switchIn(state, other(side), entry);
-	}
-	if (data.selfSwitch && actor.hp) { const entry = chooseEntry(state, side); if (entry) switchIn(state, side, entry); }
+	if (data.forceSwitch && target.hp) return { side: other(side), cause: 'phaze' };
+	if (data.selfSwitch && actor.hp) return { side, cause: 'pivot' };
 }
 
 /** Resolve due future attacks, or their pending liability at the search horizon.
@@ -582,6 +604,15 @@ export function endTurn(state: BattleState, policy: DamagePolicy = 'mean'): void
 	settleFutureAttacks(state, policy);
 	state.field = fieldWithActivePokemon(state.field, [...state.self.active, ...state.opponent.active]);
 	const active = [...state.self.active, ...state.opponent.active] as ProjectedPokemon[];
+	const trap = rulesDex(state.field).conditions.get('partiallytrapped') as PokemonConditionData;
+	const trapOrder = trap.onResidualOrder || 13;
+	for (const source of active) {
+		if (!active.some(p => p.trapSource && toID(p.trapSource) === toID(identity(source)))) continue;
+		const foe = active.find(p => p !== source);
+		if (!getEffectiveHpAfterSecondary(source, state.field.weather, foe?.ability || '', state.field, trapOrder)) {
+			releaseTraps(state, source);
+		}
+	}
 	for (const p of active) {
 		if (!p.hp) continue;
 		const foe = active.find(q => q !== p)!;
@@ -627,8 +658,14 @@ export function endTurn(state: BattleState, policy: DamagePolicy = 'mean'): void
 	state.turn++;
 }
 
-export function advancePosition(state: BattleState, own: SearchAction, foe: SearchAction,
-	chooseEntry: ChooseEntry, policy: DamagePolicy = 'mean'): BattleState {
+/** A forkable turn continuation. Completed actions never run again after an entry choice. */
+export interface TurnCheckpoint {
+	state: BattleState;
+	pending?: PendingEntry;
+	remaining: { side: Side, actor: string, action: SearchAction, reply: SearchAction }[];
+}
+
+export function beginTurn(state: BattleState, own: SearchAction, foe: SearchAction): TurnCheckpoint {
 	let next = clonePosition(state);
 	for (const [side, action] of [['self', own], ['opponent', foe]] as const) {
 		if (!action.mega || next[side].megaUsedByOwner?.[next[side].active[0].ownerSide || '']) continue;
@@ -650,13 +687,35 @@ export function advancePosition(state: BattleState, own: SearchAction, foe: Sear
 			next.self.conditions, next.opponent.conditions) > 0;
 	// Speed ties conservatively let the opponent act first; no random tie samples.
 	const order: Side[] = first ? ['self', 'opponent'] : ['opponent', 'self'];
-	for (const side of order) {
-		const action = side === 'self' ? own : foe;
-		const original = side === 'self' ? a : b;
+	return { state: next, remaining: order.map(side => ({ side,
+		actor: identity(side === 'self' ? a : b), action: side === 'self' ? own : foe,
+		reply: side === 'self' ? foe : own })) };
+}
+
+/** Mutates this checkpoint only; callers clone its state when branching at an entry. */
+export function continueTurn(turn: TurnCheckpoint, policy: DamagePolicy = 'mean'): BattleState | undefined {
+	const next = turn.state;
+	while (turn.remaining.length) {
+		const { side, actor, action, reply } = turn.remaining.shift()!;
 		// Phazing/pivots must not give the replacement the outgoing Pokemon's queued attack.
-		if (!action.switchTo && identity(next[side].active[0]) !== identity(original)) continue;
-		execute(next, side, action, side === 'self' ? foe : own, policy, chooseEntry);
+		if (!action.switchTo && identity(next[side].active[0]) !== actor) continue;
+		const pending = execute(next, side, action, reply, policy);
+		if (pending && next[pending.side].reserve.some(p => !p.fainted && p.hp > 0)) {
+			turn.pending = pending; return undefined;
+		}
 	}
 	endTurn(next, policy);
 	return next;
+}
+
+export function advancePosition(state: BattleState, own: SearchAction, foe: SearchAction,
+	chooseEntry: ChooseEntry, policy: DamagePolicy = 'mean'): BattleState {
+	const turn = beginTurn(state, own, foe);
+	while (!continueTurn(turn, policy)) {
+		const { side, cause } = turn.pending!;
+		const entrant = chooseEntry(turn.state, side, cause);
+		if (entrant) switchIn(turn.state, side, entrant);
+		turn.pending = undefined;
+	}
+	return turn.state;
 }

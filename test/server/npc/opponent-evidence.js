@@ -55,6 +55,22 @@ function refine(state, presets) {
 
 describe('Hard inference from observed battle outcomes', () => {
 	afterEach(() => { battles.forEach(b => b.destroy()); battles = []; });
+	it('carries public binding sources and own Mega spreads through singles, doubles and Multi', () => {
+		const own = { species: 'Diancie', item: 'Diancite', nature: 'Timid', moves: ['protect'], evs: { spe: 252 } };
+		for (const mode of ['singles', 'doubles', 'multi']) {
+			const g = game(own, passive, mode, 'gen6ou', own);
+			const source = mode === 'multi' ? 'p4b: Diancie' : 'p2a: Diancie';
+			const target = mode === 'multi' ? 'p3b: Mew' : 'p1a: Mew';
+			g.tracker.parseMessage(`|-activate|${target}|move: Fire Spin|[of] ${source}`);
+			const state = g.state();
+			const foe = state.opponent.active.find(p => p.ownerSide === target.slice(0, 2));
+			assert.equal(foe.trapSource, `${source.slice(0, 2)}:Diancie`, mode);
+			assert.equal(foe.statSpread, undefined);
+			assert(state.self.active.some(p => p.ownerSide === source.slice(0, 2) && p.statSpread?.nature === 'Timid'));
+			g.tracker.parseMessage(`|-end|${target}|Fire Spin|[partiallytrapped]`);
+			assert.equal(g.state().opponent.active.find(p => p.ownerSide === target.slice(0, 2)).trapSource, undefined);
+		}
+	});
 	it('excludes active Choice items after distinct selected moves during one stay', () => {
 		const g = game({ species: 'Skarmory', moves: ['splash'], evs: { hp: 252, def: 252 } },
 			{ species: 'Scizor', ability: 'Technician', moves: ['bulletpunch', 'bugbite'] });

@@ -73,6 +73,8 @@ export interface PokemonSwitchRequestData {
 	condition: string;
 	active: boolean;
 	stats: StatsExceptHPTable;
+	/** Own configuration for calculating a possible Mega form's stats. */
+	statSpread?: { nature: string, evs: StatsTable, ivs: StatsTable };
 	/**
 	 * Move IDs for choosable moves. Also includes Hidden Power Type, Frustration/Return power.
 	 */

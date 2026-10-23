@@ -34,6 +34,18 @@ function setup(foes, team, { doubles = false, AI = HardAI, format = '' } = {}) {
 }
 
 describe('Hard CFRU tactical decisions', () => {
+	it('admits an ineffective status move only when a plausible switch gives it enough value', () => {
+		const game = setup([mon('Skarmory', ['splash', 'tackle', 'growl', 'leer']), mon('Blissey', ['splash'])],
+			[mon('Mew', ['toxic', 'psychic'])], { format: 'gen6customgame' });
+		game.reveal();
+		let reasoning;
+		game.ai.getLogger().logMoveDecision = (...args) => { reasoning = args[5]; };
+		game.decide();
+		assert(reasoning.some(r => r.startsWith('Two-turn search') && !r.includes('move 1=')), JSON.stringify(reasoning));
+		game.ai.getTracker().parseMessage('|-start|p1a: Skarmory|perish1');
+		game.decide();
+		assert(reasoning.some(r => r.startsWith('Two-turn search') && r.includes('move 1=')), JSON.stringify(reasoning));
+	});
 	it('preserves Hidden Power Ice through the controller and chooses its finishing attack', () => {
 		const game = setup([mon('Landorus-Therian', ['splash', 'tackle', 'growl', 'leer'])],
 			[mon('Tornadus-Therian', ['hiddenpowerice', 'hurricane'], { nature: 'Timid', evs: { spa: 252, spe: 252 } })],

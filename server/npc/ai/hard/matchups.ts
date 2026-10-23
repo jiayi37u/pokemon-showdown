@@ -2,8 +2,7 @@
  * Ratings are bounded estimates, not proofs of a counter or calibrated win probabilities.
  * Inputs are knowledge snapshots (or disposable search hypotheses), never a live opponent team.
  */
-import type { AIPokemon, AIMove, BattleState, FieldConditions, SideConditions, AICache } from '../cfru/types';
-import { createCache } from '../cfru/util/cache';
+import type { AIPokemon, AIMove, BattleState, FieldConditions, SideConditions } from '../cfru/types';
 import { hardMove, hardMoveId } from './opponent-model';
 import { getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { calculateDamage, selectDamage, type DamagePolicy } from './damage';
@@ -26,9 +25,11 @@ export interface Matchup {
 }
 interface Pair { self: Matchup; opponent: Matchup }
 interface PairState extends BattleState {
-	calculations: AICache; damagePolicy?: DamagePolicy;
+	evaluator: MatchupEvaluator;
+	/** Object-local lookup avoids serializing the same race participants for each hit. */
 	damageMemo: Map<AIPokemon, Map<AIPokemon, Map<string, number>>>;
 }
+export interface AttackFacts { damage: number; delay: number }
 const zero = (): Matchup => ({ check: 0, counter: 0, pressure: 0, switchPressure: {}, sustain: 0 });
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const hp = (p: AIPokemon, value: number): AIPokemon => ({ ...p, hp: Math.max(0, value),
@@ -42,7 +43,7 @@ function fingerprint(p: AIPokemon): string {
 	return JSON.stringify([p.species, p.level, p.hp, p.maxHp, p.types, p.status, p.ability, p.item,
 		p.itemLost, p.itemKnown, p.itemAssumed, p.baseStats, p.boosts, [...p.volatiles].sort(), p.moves,
 		p.lastMove, p.active, p.activeMoveActions, p.sleepTurns, p.toxicCounter, p.sleepSelfInflicted,
-		p.queuedSpeed, p.queuedPriorityAbility, p.abilityStatMod, p.terastallized]);
+		p.queuedSpeed, p.queuedPriorityAbility, p.abilityStatMod, p.terastallized, p.gender]);
 }
 
 function moves(p: AIPokemon, field: FieldConditions): AIMove[] {
@@ -81,15 +82,12 @@ function entered(p: AIPokemon, side: SideConditions, field: FieldConditions): AI
 function damage(actor: AIPokemon, target: AIPokemon, move: AIMove, state: PairState): number {
 	let targets = state.damageMemo.get(actor);
 	if (!targets) state.damageMemo.set(actor, targets = new Map());
-	let results = targets.get(target);
-	if (!results) targets.set(target, results = new Map());
-	const cached = results.get(hardMoveId(move)); if (cached !== undefined) return cached;
-	const value = selectDamage(calculateDamage(actor, target, move, state.field, state.calculations, {
-		isDoubles: false, numAliveTargets: 1,
-		attackerSideConditions: state.self.conditions, defenderSideConditions: state.opponent.conditions,
-		activePokemon: [actor, target], defenderAllies: [target],
-	}), state.damagePolicy);
-	results.set(hardMoveId(move), value); return value;
+	let amounts = targets.get(target);
+	if (!amounts) targets.set(target, amounts = new Map());
+	const id = hardMoveId(move), cached = amounts.get(id);
+	if (cached !== undefined) return cached;
+	const amount = state.evaluator.attack(state, actor, target, move).damage;
+	amounts.set(id, amount); return amount;
 }
 
 function reverse<T extends BattleState>(state: T): T {
@@ -107,7 +105,7 @@ function recovery(p: AIPokemon, state: BattleState): number {
 }
 
 /** Remaining missed actions; sleep-usable and thawing attacks retain their own timing. */
-function actionDelay(p: AIPokemon, field: FieldConditions, move?: AIMove): number {
+export function actionDelay(p: AIPokemon, field: FieldConditions, move?: AIMove): number {
 	if (p.volatiles.has('mustrecharge')) return 1;
 	const data = move && rulesDex(field).moves.get(move.id);
 	if (p.status === 'slp' && !data?.sleepUsable) {
@@ -279,6 +277,7 @@ function teamValue(party: AIPokemon[], foes: AIPokemon[], rows: Matchup[][], sta
 
 export class MatchupEvaluator {
 	private cache = new Map<string, Pair>();
+	private attacks = new Map<string, Map<string, AttackFacts>>();
 	private tokens = new Map<string, number>();
 	private token(value: string): number {
 		let token = this.tokens.get(value);
@@ -292,12 +291,35 @@ export class MatchupEvaluator {
 		this.capacity = capacity; this.damagePolicy = damagePolicy;
 	}
 
+	/** Concrete pair facts shared by matchup races, coverage and defensive switching.
+	 * The key includes HP, resolved profile and field; estimates never outlive their inputs.
+	 */
+	attack(state: BattleState, actor: AIPokemon, target: AIPokemon, move: AIMove): AttackFacts {
+		const context = this.token(JSON.stringify([state.field, state.self.conditions, state.opponent.conditions]));
+		const key = `${context}:${this.token(fingerprint(actor))}:${this.token(fingerprint(target))}`;
+		let estimates = this.attacks.get(key);
+		if (!estimates) {
+			if (this.attacks.size >= this.capacity) this.attacks.delete(this.attacks.keys().next().value!);
+			this.attacks.set(key, estimates = new Map());
+		}
+		const id = hardMoveId(move), cached = estimates.get(id);
+		if (cached) return cached;
+		const facts = { damage: selectDamage(calculateDamage(actor, target, move, state.field, undefined, {
+			isDoubles: false, numAliveTargets: 1,
+			attackerSideConditions: state.self.conditions, defenderSideConditions: state.opponent.conditions,
+			activePokemon: [actor, target], defenderAllies: [target],
+		}), this.damagePolicy), delay: actionDelay(actor, state.field, move) };
+		estimates.set(id, facts); return facts;
+	}
+
 	/** At most 36 cells per concrete singles world. Content keys also survive switches/turns. */
 	assess(state: BattleState) {
 		if ([state.self, state.opponent].some(s => Object.values(s.conditions.futureMoves).some(n => n > 0))) {
 			state = clonePosition(state); settleFutureAttacks(state, this.damagePolicy, true);
 		}
-		if (this.tokens.size > 40000) { this.tokens.clear(); this.cache.clear(); }
+		if (this.tokens.size > 40000) {
+			this.tokens.clear(); this.cache.clear(); this.attacks.clear();
+		}
 		const own = state.self.team, foes = state.opponent.team;
 		const sleepers = (party: AIPokemon[]) => party.filter(p => p.hp && p.status === 'slp')
 			.map(p => [p.ownerSide, !!p.sleepSelfInflicted]);
@@ -323,8 +345,7 @@ export class MatchupEvaluator {
 					this.stats.misses++;
 					const field = fieldWithActivePokemon(state.field, [actor, foe]);
 					const a = entered(actor, state.self.conditions, field), b = entered(foe, state.opponent.conditions, field);
-					const pairState: PairState = { ...state, field, calculations: createCache(state.turn),
-						damagePolicy: this.damagePolicy, damageMemo: new Map(),
+					const pairState: PairState = { ...state, field, evaluator: this, damageMemo: new Map(),
 						self: { ...state.self, active: [a] }, opponent: { ...state.opponent, active: [b] } };
 					result = { self: directional(a, b, pairState), opponent: directional(b, a, reverse(pairState)) };
 					if (this.cache.size >= this.capacity) this.cache.delete(this.cache.keys().next().value!);

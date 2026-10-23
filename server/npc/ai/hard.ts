@@ -176,10 +176,10 @@ export class HardAI extends NPCBattleAI {
 				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId), predictions, false, actor))
 			.sort((a, b) => b.score - a.score);
 		const replacement = replacements.find(p => p.safe && p.hasFollowUp);
-		// Keep established impossibility checks: a lucky rollout must not revive a redundant status move.
-		// Attacks remain available for a possible opposing switch into a different matchup.
-		const searchActions = candidates.filter(c => !c.choice.zMove && (c.result.move.category !== 'Status' ||
-			!c.result.flags.hasNoEffect && !c.result.flags.isImmune)).map(c => ({
+		// A status move may affect a replacement or recover after incoming damage. The
+		// search owns contextual pruning; a failure against the current occupant is not final.
+		// Preserve the existing tie preference when search values are exactly equal.
+		const searchActions = [best, ...candidates.filter(c => c !== best)].filter(c => !c.choice.zMove).map(c => ({
 			id: `move ${c.choice.slot}${c.variant.transform ? ' mega' : ''}`, move: hardMoveId(c.result.move),
 			mega: !!c.variant.transform, prior: c.result.score,
 		}));

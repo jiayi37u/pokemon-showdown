@@ -1145,6 +1145,9 @@ export class Pokemon {
 			item: this.item,
 			pokeball: this.pokeball,
 		};
+		if (this.canMegaEvo) {
+			entry.statSpread = { nature: this.set.nature, evs: { ...this.set.evs }, ivs: { ...this.set.ivs } };
+		}
 		if (this.battle.gen > 6) entry.ability = this.ability;
 		if (this.battle.gen >= 9) {
 			entry.commanding = !!this.volatiles['commanding'] && !this.fainted;

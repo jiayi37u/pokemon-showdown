@@ -46,7 +46,7 @@ export interface SwitchEvaluation {
 	reasons: string[];
 }
 
-interface ReplacementHypothesis {
+export interface ReplacementHypothesis {
 	pokemon: AIPokemon;
 	weight: number;
 	prior: number;
@@ -60,16 +60,18 @@ export class HardEvaluation {
 	private models = new Map<AIPokemon, OpponentHypothesis[]>();
 	readonly inferenceNotes = new Map<AIPokemon, string[]>();
 	private opposing = new Set<AIPokemon>();
-	constructor(state: BattleState, formatId: string) {
+	constructor(state: BattleState, formatId: string, models?: ReadonlyMap<AIPokemon, OpponentHypothesis[]>) {
 		this.state = { ...state, field: { ...state.field, formatId } };
 		this.formatId = formatId;
 		this.dex = formatId ? Dex.forFormat(formatId) : Dex;
 		for (const foe of [...state.opponent.team, ...(state.opponent.preview || [])]) {
-			const { models, notes } = refineOpponentModels(foe, inferOpponent(foe, formatId), state.opponentEvidence);
+			const supplied = models?.get(foe);
+			const { models: hypotheses, notes } = supplied ? { models: supplied, notes: [] } :
+				refineOpponentModels(foe, inferOpponent(foe, formatId), state.opponentEvidence);
 			this.inferenceNotes.set(foe, notes);
-			this.models.set(foe, models);
+			this.models.set(foe, hypotheses);
 			this.opposing.add(foe);
-			for (const model of models) this.opposing.add(model.pokemon);
+			for (const model of hypotheses) this.opposing.add(model.pokemon);
 		}
 	}
 
@@ -101,10 +103,12 @@ export class HardEvaluation {
 		return engine.scoreMoves(state, actor, moves, target);
 	}
 
-	predictions(actor: AIPokemon): Map<AIPokemon, PredictedAction[]> {
+	predictions(actor: AIPokemon, replacements?: ReplacementHypothesis[], leaving = false):
+	Map<AIPokemon, PredictedAction[]> {
 		return new Map(this.state.opponent.active.filter(p => !p.fainted).map(foe => [foe,
 			predictOpponent(this.calculationState(actor), foe, actor, this.formatId, (state, attacker, moves, target) =>
-				this.baseScores(state, attacker, moves, target, true), this.models.get(foe), this.retreatConfidence(actor, foe)),
+				this.baseScores(state, attacker, moves, target, true), this.models.get(foe),
+			replacements && !replacements.length ? 0 : this.retreatConfidence(actor, foe, replacements), leaving),
 		]));
 	}
 
@@ -264,9 +268,10 @@ export class HardEvaluation {
 	}
 
 	/** Public reserves and preview species bound switch predictions; no actual opposing sets are read. */
-	private switchTargets(actor: AIPokemon, outgoing: AIPokemon): ReplacementHypothesis[] {
+	switchTargets(actor: AIPokemon, outgoing: AIPokemon,
+		reserves = [...this.state.opponent.reserve, ...(this.state.opponent.preview || [])]): ReplacementHypothesis[] {
 		const attacks = actor.moves.map((id, i) => hardMove(id, i + 1, this.formatId)).filter(m => m.category !== 'Status');
-		const targets = [...this.state.opponent.reserve, ...(this.state.opponent.preview || [])]
+		const targets = reserves
 			.filter(p => !p.fainted && (!outgoing.ownerSide || p.ownerSide === outgoing.ownerSide))
 			.flatMap(p => (this.models.get(p) || inferOpponent(p, this.formatId)).flatMap(model => {
 				const pokemon = { ...model.pokemon, slot: outgoing.slot };
@@ -281,9 +286,10 @@ export class HardEvaluation {
 	}
 
 	/** A bad current matchup is not enough: retreat needs a plausible destination. */
-	private retreatConfidence(actor: AIPokemon, foe: AIPokemon): number {
+	private retreatConfidence(actor: AIPokemon, foe: AIPokemon,
+		replacements = this.switchTargets(actor, foe)): number {
 		const destinations = new Map<string, { safe: number, total: number }>();
-		for (const candidate of this.switchTargets(actor, foe)) {
+		for (const candidate of replacements) {
 			const p = candidate.pokemon;
 			const key = p.ident || `${p.ownerSide}:${p.species}`;
 			const value = destinations.get(key) || { safe: 0, total: 0 };
@@ -296,7 +302,8 @@ export class HardEvaluation {
 	}
 
 	scoreMoves(
-		actor: AIPokemon, moves: AIMove[], target: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>
+		actor: AIPokemon, moves: AIMove[], target: AIPokemon, predictions: Map<AIPokemon, PredictedAction[]>,
+		replacements?: ReplacementHypothesis[]
 	): MoveScore[] {
 		const models = this.models.get(target) || [{ pokemon: target, weight: 1 }];
 		const groups = models.map(model => ({ weight: model.weight,
@@ -319,7 +326,7 @@ export class HardEvaluation {
 		}
 		const role = fightingStyle(actor, this.formatId);
 		const switchProbability = (predictions.get(target) || []).reduce((n, a) => n + (a.switching ? a.weight : 0), 0);
-		const switchTargets = switchProbability ? this.switchTargets(actor, target) : [];
+		const switchTargets = switchProbability ? replacements ?? this.switchTargets(actor, target) : [];
 		for (const result of scores) {
 			const { move } = result;
 			const data = this.dex.moves.get(move.id);
@@ -329,7 +336,7 @@ export class HardEvaluation {
 				result.breakdown.details.push({ amount, reason, category: 'style' });
 			};
 			let canHitReplacement = false;
-			if (move.category !== 'Status' && (!this.state.isDoubles ||
+			if ((!this.state.isDoubles && move.category !== 'Status' ||
 				['normal', 'any', 'adjacentFoe'].includes(move.target)) && switchTargets.length) {
 				const switchedScore = switchTargets.reduce((sum, candidate) => {
 					const state = replaceActivePokemon(this.state, target, candidate.pokemon);
@@ -338,7 +345,7 @@ export class HardEvaluation {
 					return sum + candidate.weight * score.score;
 				}, 0);
 				add(switchProbability * (switchedScore - result.score),
-					'Predicted switch: evaluate damage against public replacement candidates');
+					'Predicted switch: evaluate move against public replacement candidates');
 			}
 			if ((result.flags.hasNoEffect || result.flags.isImmune) && !canHitReplacement) {
 				add(-result.score, 'Move has no effect');

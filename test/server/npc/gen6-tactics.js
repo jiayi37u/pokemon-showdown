@@ -29,6 +29,18 @@ function game(team, foes = [fish], AI = HardAI, mode = 'singles') {
 }
 describe('Gen6 preset and tactical integration', () => {
 	afterEach(() => { battles.forEach(b => b.destroy()); battles = []; });
+	it('computes own Mega stats exactly from authorized spreads at different levels and natures', () => {
+		for (const level of [50, 100]) for (const nature of ['Timid', 'Naive', 'Bold']) {
+			const g = game([{ species: 'Diancie', item: 'Diancite', level, nature,
+				evs: { spa: 252, spd: 4, spe: 252 }, ivs: { atk: 0, spe: 30 }, moves: ['protect'] }]);
+			const state = g.state(), actor = state.self.active[0], mega = megaEvolutionState(state, actor).self.active[0];
+			assert.equal(actor.statSpread.nature, nature);
+			assert.equal(state.opponent.active[0].statSpread, undefined);
+			g.b.makeChoices('move 1', 'move 1 mega');
+			assert.deepEqual(mega.baseStats, { hp: g.b.p2.active[0].maxhp, ...g.b.p2.active[0].storedStats });
+			assert.equal(mega.queuedSpeed, actor.baseStats.spe);
+		}
+	});
 	it('loads local Gen6 variants and keeps base and Mega stats distinct', () => {
 		const g = game([fish], [{ species: 'Charizard', moves: ['flamethrower'] }]);
 		let foe = g.state().opponent.active[0], models = inferOpponent(foe, 'gen6ou');

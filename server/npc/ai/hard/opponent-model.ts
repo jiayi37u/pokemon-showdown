@@ -197,12 +197,12 @@ export interface PredictedAction {
 export function predictOpponent(
 	state: BattleState, opponent: AIPokemon, target: AIPokemon, formatId: string,
 	score: (state: BattleState, actor: AIPokemon, moves: AIMove[], target: AIPokemon) => MoveScore[],
-	hypotheses = inferOpponent(opponent, formatId), switchConfidence = 0.6
+	hypotheses = inferOpponent(opponent, formatId), switchConfidence = 0.6, leaving = false
 ): PredictedAction[] {
 	const dex = formatId ? Dex.forFormat(formatId) : Dex;
 	const actions: PredictedAction[] = [];
 	for (const hypothesis of hypotheses) {
-		const modelUser = hypothesis.pokemon;
+		const modelUser = { ...hypothesis.pokemon, statSpread: hypothesis.spread };
 		let projected = replaceActivePokemon(state, opponent, modelUser);
 		// Forecast an action using the hypothesized item; do not promote an unobserved form
 		// to tracker knowledge. Gen 6 retains the pre-Mega speed for this action.
@@ -271,7 +271,7 @@ export function predictOpponent(
 					projected.self.conditions, projected.opponent.conditions) > 0);
 		});
 		// Slightly weak moves are weaker evidence than no useful action or an imminent first-strike KO.
-		const retreatSignal = threatened ? 1 : Math.max(0, Math.min(1, (100 - best) / (100 - DISCOURAGED_SCORE)));
+		const retreatSignal = threatened || leaving ? 1 : Math.max(0, Math.min(1, (100 - best) / (100 - DISCOURAGED_SCORE)));
 		const switchWeight = canSwitch && !user.volatiles.has('trapped') ? switchConfidence * retreatSignal : 0;
 		if (switchWeight) actions.push({ move: null, weight: hypothesis.weight * switchWeight,
 			switching: true, user: modelUser, modelUser, preset: hypothesis.name });

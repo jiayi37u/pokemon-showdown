@@ -161,6 +161,10 @@ export interface AIPokemon {
 		spd: number;
 		spe: number;
 	};
+	/** Authorized own spread, or the spread of a bound opponent hypothesis. */
+	statSpread?: OpponentModel['spread'];
+	/** Public source identity of a binding move; absent when the source was not observed. */
+	trapSource?: string;
 
 	/** Gen 6 Mega projections retain the speed used when this turn's order was queued. */
 	queuedSpeed?: number;

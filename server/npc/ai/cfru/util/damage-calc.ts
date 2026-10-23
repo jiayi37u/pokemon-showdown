@@ -1655,11 +1655,14 @@ export function getEffectiveHpAfterSecondary(
 	defender: AIPokemon,
 	weather: string,
 	attackerAbility = '',
-	field?: FieldConditions
+	field?: FieldConditions,
+	/** Stop before this residual order when checking whether an effect's source survives. */
+	beforeOrder = Infinity
 ): number {
-	if (defender.hp <= 0 || defender.volatiles.has('perish0')) return 0;
+	if (defender.hp <= 0 || beforeOrder === Infinity && defender.volatiles.has('perish0')) return 0;
 	let hp = defender.hp;
 	for (const event of residualEvents(defender, weather, attackerAbility, field)) {
+		if (event.order >= beforeOrder) break;
 		hp = Math.min(defender.maxHp || 100, hp - event.damage);
 		if (hp <= 0) return 0;
 	}

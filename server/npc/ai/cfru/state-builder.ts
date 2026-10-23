@@ -66,6 +66,7 @@ export function buildPokemonFromRequest(mon: AnyObject, slot: number, isActive: 
 		itemKnown: true,
 		moves: mon.moves || [],
 		baseStats: actualStats,
+		statSpread: mon.statSpread,
 		active: isActive,
 		level,
 		gender,
@@ -245,7 +246,10 @@ function applyPublicMechanics(
 	pokemon.originalTypes = pokemon.active ? tracker.getTypes(identity, types, true) : types;
 	pokemon.types = pokemon.terastallized && pokemon.terastallized !== 'Stellar' ?
 		[pokemon.terastallized] : pokemon.originalTypes;
-	if (pokemon.active) pokemon.usedMoves = tracker.getUsedMoves(identity);
+	if (pokemon.active) {
+		pokemon.usedMoves = tracker.getUsedMoves(identity);
+		pokemon.trapSource = tracker.getTrapSource(identity);
+	}
 	return pokemon;
 }
 

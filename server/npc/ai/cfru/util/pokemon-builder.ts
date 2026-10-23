@@ -68,6 +68,7 @@ export function makeAIPokemonSkeleton(spec: {
 	itemKnown?: boolean,
 	moves: string[];
 	baseStats: AIPokemon['baseStats'];
+	statSpread?: AIPokemon['statSpread'],
 	boosts?: AIPokemon['boosts'];
 	active: boolean;
 	level: number;
@@ -93,6 +94,7 @@ export function makeAIPokemonSkeleton(spec: {
 		moves: spec.moves,
 		lastMove: spec.lastMove ?? '',
 		baseStats: spec.baseStats,
+		statSpread: spec.statSpread,
 		boosts: spec.boosts ?? defaultBoosts(),
 		abilityStatMod: { stat: null, multiplier: 1 },
 		volatiles: new Set<string>(),

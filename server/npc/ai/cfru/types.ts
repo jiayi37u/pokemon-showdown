@@ -245,9 +245,11 @@ export interface SideConditions {
 	futureMoves: Record<number, number>;
 	/** Public identities of delayed-effect sources, retained across switches. */
 	wishSources?: Record<number, string>;
+	/** Recovery fixed when a projected Wish is cast; public Wishes use their source's estimated HP. */
+	wishAmounts?: Record<number, number>;
 	futureAttacks?: Record<number, { source: string, move: string }>;
-	/** Projected sacrifice healing follows the field position. */
-	healingWish?: 'healingwish' | 'lunardance';
+	/** Sacrifice healing belongs to a field position, not to a team member. */
+	healingWishes?: Record<number, 'healingwish' | 'lunardance'>;
 }
 
 /** Field conditions */

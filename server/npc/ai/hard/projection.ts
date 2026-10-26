@@ -3,7 +3,7 @@ import { toID } from '../../../../sim/dex';
 import type { PokemonConditionData } from '../../../../sim/dex-conditions';
 import type { AIPokemon, BattleState, OpponentModel } from '../cfru/types';
 import { hardMove } from './opponent-model';
-import { calculateDamage, selectDamage, type DamagePolicy } from './damage';
+import { calculateDamage, selectDamage, type DamageCache, type DamagePolicy } from './damage';
 import { canHaveOpponentMoves } from '../cfru/util/opponent-presets';
 import {
 	effectiveAbility, defensiveAbility, effectiveItem, fieldWithActivePokemon, grounded, rulesDex, tracedAbility,
@@ -14,6 +14,7 @@ import { directRecoveryAmount, entryHazardDamage, flinchesOnHit } from '../cfru/
 import { getEffectiveHpAfterSecondary, getExpectedHitCount } from '../cfru/util/damage-calc';
 import {
 	boostsCanChange, boostChanges, statusFailure, protectionMoves, volatileEffectFailure, moveSelectionFailure,
+	pendingWishRecovery,
 } from '../cfru/util/move-effects';
 import { getMoveInteraction } from '../cfru/util/type-calc';
 import { itemMoveFailure, itemRemovalFailure } from '../cfru/util/items';
@@ -30,7 +31,7 @@ export interface SearchAction {
 export type Side = 'self' | 'opponent';
 interface ProjectedPokemon extends AIPokemon {
 	projection?: { pp?: Record<string, number>, substituteHp?: number, protect?: boolean, flinch?: boolean,
-		tauntTurns?: number, encoreTurns?: number, startHp?: number, wishHp?: number, roostTypes?: string[],
+		tauntTurns?: number, encoreTurns?: number, startHp?: number, roostTypes?: string[],
 		chargingMove?: string, damageTaken?: number, damageCategory?: string,
 		nativePP?: Record<string, number>,
 		native?: Pick<AIPokemon, 'species' | 'types' | 'baseStats' | 'ability' | 'abilityChanged' | 'moves' | 'moveKnowledge'>,
@@ -58,24 +59,48 @@ function triggerHealthItem(pokemon: AIPokemon, state: BattleState): void {
 	}
 }
 
+/** Branch-local mutable data; preset pools and move knowledge are immutable inputs. */
+export function clonePokemon(p: ProjectedPokemon): ProjectedPokemon {
+	const projection = p.projection;
+	return { ...p, boosts: { ...p.boosts }, volatiles: new Set(p.volatiles),
+		moves: [...p.moves], types: [...p.types], baseStats: { ...p.baseStats },
+		projection: projection && { ...projection,
+			pp: projection.pp && { ...projection.pp }, nativePP: projection.nativePP && { ...projection.nativePP },
+			roostTypes: projection.roostTypes && [...projection.roostTypes],
+			native: projection.native && { ...projection.native, types: [...projection.native.types],
+				moves: [...projection.native.moves], baseStats: { ...projection.native.baseStats } },
+		} };
+}
+
 export function clonePosition(state: BattleState): BattleState {
 	const side = (s: BattleState['opponent']) => {
-		const team = s.team.map((p: ProjectedPokemon): ProjectedPokemon => ({ ...p, boosts: { ...p.boosts },
-			volatiles: new Set(p.volatiles), moves: [...p.moves], baseStats: { ...p.baseStats },
-			projection: p.projection ? { ...p.projection, pp: p.projection.pp && { ...p.projection.pp } } : undefined }));
+		const team = s.team.map(clonePokemon);
 		const get = (p: AIPokemon) => team.find(q => identity(q) === identity(p))!;
 		return { ...s, team, active: s.active.map(get).filter(Boolean), reserve: s.reserve.map(get).filter(Boolean),
 			conditions: { ...s.conditions, wishes: { ...s.conditions.wishes }, futureMoves: { ...s.conditions.futureMoves },
-				wishSources: { ...s.conditions.wishSources }, futureAttacks: { ...s.conditions.futureAttacks } },
+				wishSources: { ...s.conditions.wishSources }, wishAmounts: { ...s.conditions.wishAmounts },
+				healingWishes: { ...s.conditions.healingWishes }, futureAttacks: { ...s.conditions.futureAttacks } },
 			megaUsedByOwner: { ...s.megaUsedByOwner } };
 	};
 	return { ...state, self: side(state.self), opponent: side(state.opponent), field: { ...state.field } };
 }
 
+const snapshotKeys = new WeakMap<BattleState, string>();
+const snapshotMembers = new WeakSet<AIPokemon>();
+const snapshotModels = new WeakMap<AIPokemon, OpponentModel[]>();
+
+/** Hand a completed search snapshot to read-only consumers. Further transitions must clone it. */
+export function snapshotPosition(state: BattleState): BattleState {
+	snapshotKeys.set(state, positionKey(state));
+	for (const party of [state.self, state.opponent]) for (const pokemon of party.team) snapshotMembers.add(pokemon);
+	return state;
+}
+
 const profileKeys = new WeakMap<OpponentModel, string>();
 /** Compact cache identity: never serialize whole repeated preset objects per search node. */
 export function positionKey(state: BattleState): string {
-	const pokemon = (p: ProjectedPokemon) => [identity(p), p.species, p.hp, p.maxHp, p.active, p.fainted,
+	const cached = snapshotKeys.get(state); if (cached !== undefined) return cached;
+	const pokemon = (p: ProjectedPokemon) => [identity(p), p.slot, p.species, p.hp, p.maxHp, p.active, p.fainted,
 		p.status, p.sleepTurns, p.toxicCounter, p.boosts, p.baseStats, p.statSpread, p.trapSource,
 		p.types, p.item, p.itemKnown, p.itemLost,
 		p.itemChanged, p.itemExchange, p.ability, p.observedAbility, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
@@ -90,7 +115,8 @@ export function positionKey(state: BattleState): string {
 		})];
 	const conditions = (side: BattleState['self']) => ({ ...side.conditions,
 		wishes: side.conditions.wishes || {}, futureMoves: side.conditions.futureMoves || {},
-		wishSources: side.conditions.wishSources || {}, futureAttacks: side.conditions.futureAttacks || {} });
+		wishSources: side.conditions.wishSources || {}, wishAmounts: side.conditions.wishAmounts || {},
+		healingWishes: side.conditions.healingWishes || {}, futureAttacks: side.conditions.futureAttacks || {} });
 	return JSON.stringify([state.self.team.map(pokemon), state.opponent.team.map(pokemon), state.field,
 		conditions(state.self), conditions(state.opponent),
 		state.self.megaUsedByOwner || {}, state.opponent.megaUsedByOwner || {}]);
@@ -98,12 +124,13 @@ export function positionKey(state: BattleState): string {
 
 /** Project the same hidden profile onto current public/hypothetical HP, boosts and conditions. */
 export function modelsFor(p: AIPokemon): OpponentModel[] {
+	const cached = snapshotModels.get(p); if (cached) return cached;
 	const pool = p.presetModels || [{ name: 'bound', weight: 1, matched: true, pokemon: p,
 		moves: [...new Set([...p.moves, ...(p.moveKnowledge?.presetCandidates || [])])].map(id => ({ id, availability: 1 })) }];
 	const known = p.moveKnowledge?.revealedMoves || p.moves;
 	const models = pool.filter(m => !m.pokemon.moveKnowledge || canHaveOpponentMoves(m.pokemon.moveKnowledge, known));
 	const mass = models.reduce((n, m) => n + m.weight, 0) || 1;
-	return models.map(m => {
+	const result = models.map(m => {
 		const maxHp = m.pokemon.maxHp;
 		return { ...m, weight: m.weight / mass, moves: m.moves.filter(move =>
 			!m.pokemon.moveKnowledge || canHaveOpponentMoves(m.pokemon.moveKnowledge, [...known, move.id])),
@@ -113,11 +140,13 @@ export function modelsFor(p: AIPokemon): OpponentModel[] {
 			ability: p.abilityChanged ? p.ability : m.pokemon.ability,
 			moveKnowledge: m.pokemon.moveKnowledge, presetModels: undefined } };
 	});
+	if (snapshotMembers.has(p)) snapshotModels.set(p, result);
+	return result;
 }
 
 export function bindOpponent(state: BattleState, original: AIPokemon, model: OpponentModel): void {
 	const pokemon = state.opponent.team.find(p => identity(p) === identity(original))!;
-	Object.assign(pokemon, model.pokemon, { presetModels: undefined, active: pokemon.active });
+	Object.assign(pokemon, clonePokemon(model.pokemon), { presetModels: undefined, active: pokemon.active });
 }
 
 export function knownMoves(p: AIPokemon): string[] {
@@ -137,7 +166,8 @@ export function usableMove(state: BattleState, side: Side, id: string): boolean 
 	return !p.moveKnowledge || canHaveOpponentMoves(p.moveKnowledge, [id]);
 }
 
-function boosts(p: AIPokemon, changes: SparseBoostsTable, state: BattleState, hostile = false): void {
+export function boosts(p: AIPokemon, changes: SparseBoostsTable,
+	state: Pick<BattleState, 'field'>, hostile = false): void {
 	const ability = effectiveAbility(p, state.field);
 	for (const [stat, amount] of Object.entries(changes)) {
 		if (hostile && amount < 0 && ['clearbody', 'whitesmoke', 'fullmetalbody'].includes(ability)) continue;
@@ -199,40 +229,70 @@ export function switchIn(state: BattleState, side: Side, selected: AIPokemon): v
 		if (outgoing.abilityChanged && outgoing.observedAbility) {
 			outgoing.ability = outgoing.observedAbility; outgoing.abilityChanged = false;
 		}
-		projected.projection = { pp: projected.projection?.pp, wishHp: projected.projection?.wishHp };
+		projected.projection = { pp: projected.projection?.pp };
+		// Preserve identities while moving the recipient into the vacated field position.
+		outgoing.ident ||= identity(outgoing); incoming.ident ||= identity(incoming);
+		[incoming.slot, outgoing.slot] = [outgoing.slot, incoming.slot];
 	}
 	incoming.active = true; incoming.lastMove = ''; incoming.activeMoveActions = 0;
 	party.active = [incoming]; party.reserve = party.team.filter(p => p !== incoming && !p.fainted);
-	const healing = party.conditions.healingWish;
-	if (healing && !incoming.fainted) {
-		hp(incoming, incoming.maxHp); incoming.status = '';
-		incoming.sleepTurns = 0; incoming.toxicCounter = 0;
-		if (healing === 'lunardance') {
-			const p = incoming as ProjectedPokemon;
-			p.projection ||= {};
-			p.projection.pp = Object.fromEntries(knownMoves(p).map(id => {
-				const move = rulesDex(state.field).moves.get(id);
-				return [move.id, move.noPPBoosts ? move.pp : Math.floor(move.pp * 8 / 5)];
-			}));
-		}
-		delete party.conditions.healingWish;
-	}
-	hp(incoming, incoming.hp - entryHazardDamage(incoming, party.conditions, state.field));
-	if (!incoming.fainted && grounded(incoming, state.field) && effectiveItem(incoming, state.field) !== 'heavydutyboots') {
-		if (party.conditions.stickyweb) boosts(incoming, { spe: -1 }, state, true);
-		if (incoming.types.includes('Poison')) party.conditions.toxicspikes = 0;
-		else if (party.conditions.toxicspikes && !incoming.status && !incoming.types.includes('Steel') &&
-			effectiveAbility(incoming, state.field) !== 'immunity') {
-			incoming.status = party.conditions.toxicspikes > 1 ? 'tox' : 'psn';
-		}
-	}
+	applyEntryEffects(incoming, party.conditions, state.field);
 
 	entryAbility(state, side);
 	const waiting = state[other(side)].active[0];
 	if (waiting && tracedAbility(waiting, state[side].active, state.field)) entryAbility(state, other(side));
 }
 
-function status(
+/** Apply entry mechanics once; callers own both the Pokemon and the side-condition copy. */
+export function applyEntryEffects(incoming: AIPokemon, conditions: BattleState['self']['conditions'],
+	field: BattleState['field']): void {
+	const dex = rulesDex(field);
+	const healing = conditions.healingWishes?.[incoming.slot];
+	const hazardsFirst = (healing && dex.moves.get(healing).condition?.onSwitchInPriority || 0) < 0;
+	const applyHazards = () => {
+		hp(incoming, incoming.hp - entryHazardDamage(incoming, conditions, field));
+		if (!incoming.fainted && grounded(incoming, field) && effectiveItem(incoming, field) !== 'heavydutyboots') {
+			if (conditions.stickyweb) boosts(incoming, { spe: -1 }, { field }, true);
+			if (incoming.types.includes('Poison')) conditions.toxicspikes = 0;
+			else if (conditions.toxicspikes && !incoming.status && !incoming.types.includes('Steel') &&
+				rulesDex(field).getImmunity('psn', incoming.types) && effectiveAbility(incoming, field) !== 'immunity') {
+				incoming.status = conditions.toxicspikes > 1 ? 'tox' : 'psn';
+			}
+		}
+	};
+	if (hazardsFirst) applyHazards();
+	const restorePP = healing === 'lunardance';
+	const pp = (incoming as ProjectedPokemon).projection?.pp;
+	const missingPP = restorePP && pp && Object.entries(pp).some(([id, remaining]) => {
+		const move = dex.moves.get(id);
+		return remaining < (move.noPPBoosts ? move.pp : Math.floor(move.pp * 8 / 5));
+	});
+	if (healing && !incoming.fainted && (dex.gen <= 7 || incoming.hp < incoming.maxHp || incoming.status || missingPP)) {
+		hp(incoming, incoming.maxHp); incoming.status = '';
+		incoming.sleepTurns = 0; incoming.toxicCounter = 0;
+		if (healing === 'lunardance') {
+			const p = incoming as ProjectedPokemon;
+			p.projection ||= {};
+			p.projection.pp = Object.fromEntries(knownMoves(p).map(id => {
+				const move = rulesDex(field).moves.get(id);
+				return [move.id, move.noPPBoosts ? move.pp : Math.floor(move.pp * 8 / 5)];
+			}));
+		}
+		delete conditions.healingWishes![incoming.slot];
+	}
+	if (!hazardsFirst) applyHazards();
+}
+
+/** Entry evaluation and search transitions use the same recovery/hazard order. */
+export function projectEntry(pokemon: AIPokemon, conditions: BattleState['self']['conditions'],
+	field: BattleState['field'], slot = 1): AIPokemon {
+	const incoming = clonePokemon(pokemon);
+	incoming.ident ||= identity(pokemon); incoming.slot = slot;
+	applyEntryEffects(incoming, { ...conditions, healingWishes: { ...conditions.healingWishes } }, field);
+	return incoming;
+}
+
+export function status(
 	state: BattleState, side: Side, actor: AIPokemon, target: AIPokemon, id: string, condition: string
 ): void {
 	const perspective = side === 'self' ? state : { ...state, self: state.opponent, opponent: state.self };
@@ -248,6 +308,19 @@ function status(
 	}
 }
 
+/** Shared recovery/status consequences, independent of move ordering and tactical scores. */
+export function applyRecovery(state: BattleState, side: Side, actor: AIPokemon,
+	move: ReturnType<typeof hardMove>): void {
+	const id = move.id, perspective = side === 'self' ? state : { ...state, self: state.opponent, opponent: state.self };
+	const healing = id === 'rest' && actor.status === 'slp' ? 0 : directRecoveryAmount(actor, move, state.field);
+	if (healing && actor.hp && !actor.volatiles.has('healblock')) {
+		if (id !== 'rest' || !statusFailure(perspective, actor, actor, move, 'slp')) {
+			if (id === 'rest') { actor.status = ''; status(state, side, actor, actor, id, 'slp'); }
+			hp(actor, actor.hp + healing);
+		}
+	}
+}
+
 export function transitionSupported(state: BattleState): string | undefined {
 	if (state.isDoubles) return 'two-turn search currently supports singles';
 	if (state.self.active.length !== 1 || state.opponent.active.length !== 1) return 'requires active placeholders';
@@ -256,7 +329,7 @@ export function transitionSupported(state: BattleState): string | undefined {
 		if (Object.entries(side.conditions.futureMoves).some(([slot, n]) => n > 0 &&
 			!side.conditions.futureAttacks?.[+slot])) return 'delayed attack source unavailable';
 		if (Object.values(side.conditions.wishes).some(n => n > 0) &&
-			!side.team.some(p => (p as ProjectedPokemon).projection?.wishHp) &&
+			!Object.values(side.conditions.wishAmounts || {}).length &&
 			!Object.values(side.conditions.wishSources || {}).length) return 'Wish source HP unavailable';
 	}
 	return undefined;
@@ -281,7 +354,7 @@ export type ChooseEntry = (state: BattleState, side: Side, cause: 'pivot' | 'pha
 interface PendingEntry { side: Side; cause: 'pivot' | 'phaze' }
 
 function execute(state: BattleState, side: Side, action: SearchAction, reply: SearchAction,
-	policy: DamagePolicy): PendingEntry | undefined {
+	policy: DamagePolicy, cache?: DamageCache): PendingEntry | undefined {
 	if (action.switchTo) { switchIn(state, side, action.switchTo); return; }
 	let party = state[side], foeParty = state[other(side)];
 	let actor = party.active[0] as ProjectedPokemon, target = foeParty.active[0] as ProjectedPokemon;
@@ -314,7 +387,8 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 	}
 	if (['healingwish', 'lunardance'].includes(id)) {
 		if (party.reserve.some(p => !p.fainted)) {
-			party.conditions.healingWish = id as 'healingwish' | 'lunardance'; hp(actor, 0);
+			party.conditions.healingWishes ||= {};
+			party.conditions.healingWishes[actor.slot] = id as 'healingwish' | 'lunardance'; hp(actor, 0);
 		}
 		return;
 	}
@@ -380,7 +454,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 			actor.projection?.damageCategory === (id === 'counter' ? 'Physical' : 'Special') ?
 			Math.floor((actor.projection?.damageTaken || 0) * (id === 'metalburst' ? 1.5 : 2)) : 0) :
 			Math.floor(selectDamage(calculateDamage(actionActor, target, move, state.field, undefined, {
-				attackerSideConditions: party.conditions, defenderSideConditions: foeParty.conditions,
+				cache, attackerSideConditions: party.conditions, defenderSideConditions: foeParty.conditions,
 				defenderSwitching: id === 'pursuit' && !!reply.switchTo,
 				activePokemon: [...party.active, ...foeParty.active] }), policy));
 		if (!dealt) return;
@@ -491,13 +565,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		if (secondary.status) status(state, side, actor, target, id, secondary.status);
 		if (secondary.boosts) boosts(target, secondary.boosts, state, true);
 	}
-	const healing = id === 'rest' && actor.status === 'slp' ? 0 : directRecoveryAmount(actor, move, state.field);
-	if (healing && actor.hp && !actor.volatiles.has('healblock')) {
-		if (id !== 'rest' || !statusFailure(perspective, actor, actor, move, 'slp')) {
-			if (id === 'rest') { actor.status = ''; status(state, side, actor, actor, id, 'slp'); }
-			hp(actor, actor.hp + healing);
-		}
-	}
+	applyRecovery(state, side, actor, move);
 	if (id === 'roost' && actor.types.includes('Flying')) {
 		actor.projection ||= {}; actor.projection.roostTypes = actor.types;
 		actor.types = actor.types.filter(type => type !== 'Flying');
@@ -516,10 +584,9 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		if (id === 'taunt') target.projection.tauntTurns = 3;
 		if (id === 'encore') target.projection.encoreTurns = 3;
 	}
-	if (id === 'wish' && !party.conditions.wishes[1]) {
-		for (const p of party.team as ProjectedPokemon[]) if (p.projection) delete p.projection.wishHp;
-		actor.projection ||= {};
-		actor.projection.wishHp = Math.floor(actor.maxHp / 2); party.conditions.wishes[actor.slot] = 2;
+	if (id === 'wish' && !party.conditions.wishes[actor.slot]) {
+		party.conditions.wishes[actor.slot] = 2;
+		party.conditions.wishAmounts ||= {}; party.conditions.wishAmounts[actor.slot] = Math.floor(actor.maxHp / 2);
 		party.conditions.wishSources ||= {}; party.conditions.wishSources[actor.slot] = identity(actor);
 	}
 	if (data.sideCondition) {
@@ -569,7 +636,9 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 /** Resolve due future attacks, or their pending liability at the search horizon.
  * The horizon estimate assumes the current occupant receives the hit; no extra action is invented.
  */
-export function settleFutureAttacks(state: BattleState, policy: DamagePolicy = 'mean', horizon = false): void {
+export function settleFutureAttacks(
+	state: BattleState, policy: DamagePolicy = 'mean', horizon = false, cache?: DamageCache
+): void {
 	for (const side of ['self', 'opponent'] as const) {
 		const party = state[side], sources = state[other(side)];
 		for (const [slot, turns] of Object.entries(party.conditions.futureMoves)) {
@@ -583,7 +652,7 @@ export function settleFutureAttacks(state: BattleState, policy: DamagePolicy = '
 				const damage = profiles.reduce((sum, model) => sum + model.weight * selectDamage(calculateDamage(
 					model.pokemon, target, hardMove(pending.move, 1, state.field.formatId || ''), state.field, undefined,
 					{ attackerSideConditions: sources.conditions, defenderSideConditions: party.conditions,
-						activePokemon: [...sources.active, ...party.active] }), policy), 0);
+						cache, activePokemon: [...sources.active, ...party.active] }), policy), 0);
 				const projected = target as ProjectedPokemon;
 				if (target.volatiles.has('substitute') && effectiveAbility(source, state.field) !== 'infiltrator') {
 					projected.projection ||= {};
@@ -621,8 +690,8 @@ export function actionOutcomes(state: BattleState, side: Side, action: SearchAct
 		[{ action, weight: 1 }];
 }
 
-export function endTurn(state: BattleState, policy: DamagePolicy = 'mean'): void {
-	settleFutureAttacks(state, policy);
+export function endTurn(state: BattleState, policy: DamagePolicy = 'mean', cache?: DamageCache): void {
+	settleFutureAttacks(state, policy, false, cache);
 	state.field = fieldWithActivePokemon(state.field, [...state.self.active, ...state.opponent.active]);
 	const active = [...state.self.active, ...state.opponent.active] as ProjectedPokemon[];
 	const trap = rulesDex(state.field).conditions.get('partiallytrapped') as PokemonConditionData;
@@ -630,7 +699,9 @@ export function endTurn(state: BattleState, policy: DamagePolicy = 'mean'): void
 	for (const source of active) {
 		if (!active.some(p => p.trapSource && toID(p.trapSource) === toID(identity(source)))) continue;
 		const foe = active.find(p => p !== source);
-		if (!getEffectiveHpAfterSecondary(source, state.field.weather, foe?.ability || '', state.field, trapOrder)) {
+		const party = state.self.active.includes(source) ? state.self : state.opponent;
+		if (!getEffectiveHpAfterSecondary(source, state.field.weather, foe?.ability || '', state.field, trapOrder,
+			pendingWishRecovery(state, party, source))) {
 			releaseTraps(state, source);
 		}
 	}
@@ -639,7 +710,9 @@ export function endTurn(state: BattleState, policy: DamagePolicy = 'mean'): void
 		const foe = active.find(q => q !== p)!;
 		const seeded = p.volatiles.has('leechseed') && effectiveAbility(p, state.field) !== 'magicguard';
 		const drained = seeded ? Math.min(p.hp, Math.floor(p.maxHp / 8)) : 0;
-		hp(p, getEffectiveHpAfterSecondary(p, state.field.weather, foe?.ability || '', state.field));
+		const party = state.self.active.includes(p) ? state.self : state.opponent;
+		hp(p, getEffectiveHpAfterSecondary(p, state.field.weather, foe?.ability || '', state.field, Infinity,
+			pendingWishRecovery(state, party, p)));
 		if (drained && foe?.hp) hp(foe, foe.hp + drained);
 		if (p.status === 'tox') p.toxicCounter++;
 		p.queuedSpeed = undefined; p.queuedPriorityAbility = undefined;
@@ -658,11 +731,9 @@ export function endTurn(state: BattleState, policy: DamagePolicy = 'mean'): void
 		for (const [slot, turns] of Object.entries(party.conditions.wishes)) {
 			if (turns <= 0) continue;
 			party.conditions.wishes[+slot]--;
-			if (turns === 1 && party.active[0]?.hp) {
-				const source = party.team.find(p => toID(identity(p)) === toID(party.conditions.wishSources?.[+slot]) ||
-					(p as ProjectedPokemon).projection?.wishHp);
-				const amount = (source as ProjectedPokemon)?.projection?.wishHp || (source?.maxHp || party.active[0].maxHp) / 2;
-				hp(party.active[0], party.active[0].hp + amount);
+			if (turns === 1) {
+				if (party.conditions.wishAmounts) delete party.conditions.wishAmounts[+slot];
+				if (party.conditions.wishSources) delete party.conditions.wishSources[+slot];
 			}
 		}
 		for (const id of ['reflect', 'lightscreen', 'auroraveil', 'tailwind', 'safeguard', 'mist'] as const) {
@@ -730,7 +801,9 @@ export function beginTurn(state: BattleState, own: SearchAction, foe: SearchActi
 }
 
 /** Mutates this checkpoint only; callers clone its state when branching at an entry. */
-export function continueTurn(turn: TurnCheckpoint, policy: DamagePolicy = 'mean'): BattleState | undefined {
+export function continueTurn(
+	turn: TurnCheckpoint, policy: DamagePolicy = 'mean', cache?: DamageCache
+): BattleState | undefined {
 	let next = turn.state;
 	while (turn.remaining.length) {
 		if (turn.megaPending && !turn.remaining.some(q => q.action.switchTo)) {
@@ -742,19 +815,19 @@ export function continueTurn(turn: TurnCheckpoint, policy: DamagePolicy = 'mean'
 		const { side, actor, action, reply } = turn.remaining.shift()!;
 		// Phazing/pivots must not give the replacement the outgoing Pokemon's queued attack.
 		if (!action.switchTo && identity(next[side].active[0]) !== actor) continue;
-		const pending = execute(next, side, action, reply, policy);
+		const pending = execute(next, side, action, reply, policy, cache);
 		if (pending && next[pending.side].reserve.some(p => !p.fainted && p.hp > 0)) {
 			turn.pending = pending; return undefined;
 		}
 	}
-	endTurn(next, policy);
+	endTurn(next, policy, cache);
 	return next;
 }
 
 export function advancePosition(state: BattleState, own: SearchAction, foe: SearchAction,
-	chooseEntry: ChooseEntry, policy: DamagePolicy = 'mean'): BattleState {
+	chooseEntry: ChooseEntry, policy: DamagePolicy = 'mean', cache?: DamageCache): BattleState {
 	const turn = beginTurn(state, own, foe);
-	while (!continueTurn(turn, policy)) {
+	while (!continueTurn(turn, policy, cache)) {
 		const { side, cause } = turn.pending!;
 		const entrant = chooseEntry(turn.state, side, cause);
 		if (entrant) switchIn(turn.state, side, entrant);

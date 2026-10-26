@@ -17,10 +17,11 @@ import {
 import { checkRecoverySurvival } from '../cfru/scoring/negatives';
 import { createCache } from '../cfru/util/cache';
 import { getSecondaryEffectDamage, getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
-import { calculateDamage } from './damage';
+import { calculateDamage, DamageCache } from './damage';
+import { projectEntry } from './projection';
 import { resolveMove } from '../cfru/util/type-calc';
 import {
-	protectionMoves, protectsPendingWish, recoveryCuresStatus, estimatedMoveAccuracy,
+	protectionMoves, protectsPendingWish, recoveryCuresStatus, estimatedMoveAccuracy, pendingWishRecovery,
 } from '../cfru/util/move-effects';
 import {
 	directRecoveryAmount, selfActionOutcome, needsResidualReset, entryHazardDamage, flinchesOnHit,
@@ -57,17 +58,20 @@ export class HardEvaluation {
 	readonly dex: ReturnType<typeof Dex.forFormat>;
 	readonly state: BattleState;
 	readonly formatId: string;
+	readonly damageCache: DamageCache;
 	private models = new Map<AIPokemon, OpponentHypothesis[]>();
 	readonly inferenceNotes = new Map<AIPokemon, string[]>();
 	private opposing = new Set<AIPokemon>();
-	constructor(state: BattleState, formatId: string, models?: ReadonlyMap<AIPokemon, OpponentHypothesis[]>) {
+	constructor(state: BattleState, formatId: string, models?: ReadonlyMap<AIPokemon, OpponentHypothesis[]>,
+		damageCache = new DamageCache()) {
+		this.damageCache = damageCache;
 		this.state = { ...state, field: { ...state.field, formatId } };
 		this.formatId = formatId;
 		this.dex = formatId ? Dex.forFormat(formatId) : Dex;
 		for (const foe of [...state.opponent.team, ...(state.opponent.preview || [])]) {
 			const supplied = models?.get(foe);
 			const { models: hypotheses, notes } = supplied ? { models: supplied, notes: [] } :
-				refineOpponentModels(foe, inferOpponent(foe, formatId), state.opponentEvidence);
+				refineOpponentModels(foe, inferOpponent(foe, formatId), state.opponentEvidence, damageCache);
 			this.inferenceNotes.set(foe, notes);
 			this.models.set(foe, hypotheses);
 			this.opposing.add(foe);
@@ -97,7 +101,9 @@ export class HardEvaluation {
 	): MoveScore[] {
 		// Each perspective/target gets its own cache; slot numbers overlap between sides.
 		const config = { ...DEFAULT_AI_CONFIG, formatId: this.formatId, isDoubles: state.isDoubles };
-		const engine = new ScoringEngine(config, createCache(state.turn));
+		const engine = new ScoringEngine(config, createCache(state.turn),
+			(attacker, defender, move, field, cache, context) =>
+				calculateDamage(attacker, defender, move, field, cache, { ...context, cache: this.damageCache }));
 		if (!prediction) engine.setScorers(allNegativeScorers.filter(fn => fn !== checkRecoverySurvival),
 			allPositiveScorers.filter(fn => !replacedRewards.has(fn)));
 		return engine.scoreMoves(state, actor, moves, target);
@@ -108,7 +114,7 @@ export class HardEvaluation {
 		return new Map(this.state.opponent.active.filter(p => !p.fainted).map(foe => [foe,
 			predictOpponent(this.calculationState(actor), foe, actor, this.formatId, (state, attacker, moves, target) =>
 				this.baseScores(state, attacker, moves, target, true), this.models.get(foe),
-			replacements && !replacements.length ? 0 : this.retreatConfidence(actor, foe, replacements)),
+			replacements && !replacements.length ? 0 : this.retreatConfidence(actor, foe, replacements), this.damageCache),
 		]));
 	}
 
@@ -152,7 +158,7 @@ export class HardEvaluation {
 		const targets = foes.filter(p => !p.fainted).length +
 			(move.target === 'allAdjacent' ? allies.filter(p => p !== actor && !p.fainted).length : 0);
 		const result = calculateDamage(actor, target, move, state.field, undefined,
-			{ isDoubles: state.isDoubles, numAliveTargets: spread ? targets : 1,
+			{ cache: this.damageCache, isDoubles: state.isDoubles, numAliveTargets: spread ? targets : 1,
 				attackerSideConditions: state[actorSide].conditions,
 				defenderSideConditions: state[targetSide].conditions,
 				defenderAllies: defenderAllies || state[targetSide].active,
@@ -329,6 +335,7 @@ export class HardEvaluation {
 		const role = fightingStyle(actor, this.formatId);
 		const switchProbability = (predictions.get(target) || []).reduce((n, a) => n + (a.switching ? a.weight : 0), 0);
 		const switchTargets = switchProbability ? replacements ?? this.switchTargets(actor, target) : [];
+		const incoming = this.incoming(actor, predictions);
 		for (const result of scores) {
 			if (result.flags.fixedScore !== undefined && !result.flags.hasNoEffect && !result.flags.isImmune) {
 				result.score = result.flags.fixedScore; result.breakdown.final = result.score;
@@ -360,7 +367,6 @@ export class HardEvaluation {
 			}
 			if (canHitReplacement) result.flags = { ...result.flags, hasNoEffect: false, isImmune: false };
 			const actions = predictions.get(target) || [];
-			const incoming = this.incoming(actor, predictions);
 			const fakeOut = move.id === 'fakeout';
 			const canFlinch = flinchesOnHit(actor, target, move, this.state.field);
 			let beforeDamage = 0;
@@ -558,25 +564,29 @@ export class HardEvaluation {
 		actor?: AIPokemon): SwitchEvaluation {
 		if (actor && this.state.self.active.includes(actor)) {
 			const state = replaceActivePokemon(this.state, actor, pokemon);
-			return new HardEvaluation(state, this.formatId).scoreSwitch(pokemon, predictions, forced, actor);
+			return new HardEvaluation(state, this.formatId, this.models, this.damageCache)
+				.scoreSwitch(pokemon, predictions, forced, actor);
 		}
 		const hazards = this.entryDamage(pokemon);
-		const entered = { ...pokemon, hp: Math.max(0, pokemon.hp - hazards) };
-		entered.hpPercent = 100 * entered.hp / entered.maxHp;
+		const entered = projectEntry(pokemon, this.state.self.conditions, this.state.field,
+			actor?.slot || this.state.self.active[0]?.slot || 1);
 		const allies = this.state.self.active.filter(p => p !== actor && p !== pokemon);
 		const incoming = forced ? 0 : this.incomingRisk(entered, predictions, allies, undefined, true);
 		const afterHit = { ...entered, hp: entered.hp - incoming };
+		const wish = pendingWishRecovery(this.state, this.state.self, entered);
+		const residualAbility = this.state.opponent.active.some(p =>
+			effectiveAbility(p, this.state.field) === 'baddreams') ? 'baddreams' : '';
 		const remaining = forced ? afterHit.hp : getEffectiveHpAfterSecondary(afterHit, this.state.field.weather,
-			this.state.opponent.active.some(p => effectiveAbility(p, this.state.field) === 'baddreams') ? 'baddreams' : '',
-			this.state.field);
+			residualAbility, this.state.field, Infinity, wish);
 		const reasons = [`Entry hazards ${hazards} HP; predicted switch-in damage ${incoming.toFixed(1)} HP`];
 		let score = -25 * hazards / pokemon.maxHp - 35 * incoming / Math.max(1, pokemon.hp);
 		if (remaining <= 0) {
 			return { pokemon, score: score - 100, safe: false,
 				reasons: [...reasons, 'Would faint on entry, to the predicted attack, or to residual damage'] };
 		}
-		if (!forced && actor && this.state.self.conditions.wishes?.[actor.slot] === 1) {
-			const healing = Math.min(pokemon.maxHp - remaining, actor.maxHp / 2);
+		if (!forced && wish) {
+			const healing = remaining - getEffectiveHpAfterSecondary(afterHit, this.state.field.weather,
+				residualAbility, this.state.field);
 			score += 40 * healing / pokemon.maxHp;
 			reasons.push(`Wish recipient can recover ${healing.toFixed(1)} HP after surviving entry`);
 		}

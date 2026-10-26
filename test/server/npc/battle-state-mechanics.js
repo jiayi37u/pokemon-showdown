@@ -2365,3 +2365,57 @@ describe('NPC persistent public hit identities', () => {
 		assert.equal(tracker.getRemainingOpponents(), 4);
 	});
 });
+
+describe('NPC public recovery across exits and field positions', () => {
+	for (const [format, multi, position] of [
+		['gen6customgame', false, 'p1a'], ['gen6doublescustomgame', false, 'p1b'],
+		['gen5pokemmomultirandombattle', true, 'p3b'],
+	]) {
+		it(`${format}: carries public Regenerator recovery into the reserve once`, () => {
+			const tracker = createBattleTracker('p2', multi); tracker.setFormat(format);
+			tracker.parseMessage(`|switch|${position}: Bird|Tornadus-Therian|3/100\n|switch|${position}: Fish|Magikarp|100/100`);
+			const bird = () => tracker.getOpponentTeam().find(p => p.species === 'Tornadus-Therian');
+			assert(Math.abs(bird().hpPercent - (3 + 100 / 3)) < 1e-8);
+			tracker.parseMessage('|turn|2\n|turn|3');
+			assert(Math.abs(bird().hpPercent - (3 + 100 / 3)) < 1e-8, 'A benched Pokemon cannot heal again each turn');
+			tracker.parseMessage(`|switch|${position}: Bird|Tornadus-Therian|36/100\n|-damage|${position}: Bird|11/100|[from] Stealth Rock`);
+			assert.equal(bird().hpPercent, 11, 'The next public health message replaces the estimate');
+			tracker.parseMessage(`|-start|${position}: Bird|Gastro Acid\n|switch|${position}: Fish|Magikarp|100/100`);
+			assert.equal(bird().hpPercent, 11, 'A suppressed Regenerator must not heal');
+		});
+	}
+	it('does not infer an unrevealed optional exit ability or heal a fainted holder', () => {
+		const tracker = createBattleTracker('p2'); tracker.setFormat('gen6customgame');
+		tracker.parseMessage('|switch|p1a: Slow|Slowbro|10/100\n|switch|p1a: Fish|Magikarp|100/100');
+		assert.equal(tracker.getOpponentTeam().find(p => p.species === 'Slowbro').hpPercent, 10);
+		tracker.parseMessage('|switch|p1a: Bird|Tornadus-Therian|3/100\n|faint|p1a: Bird\n|switch|p1a: Fish|Magikarp|100/100');
+		assert.equal(tracker.getOpponentTeam().find(p => p.species === 'Tornadus-Therian').hpPercent, 0);
+	});
+	for (const [format, multi, position, slot] of [
+		['gen6customgame', false, 'p2a', 1], ['gen6doublescustomgame', false, 'p2b', 2],
+		['gen5pokemmomultirandombattle', true, 'p4b', 2],
+	]) for (const [id, move] of [['healingwish', 'Healing Wish'], ['lunardance', 'Lunar Dance']]) {
+		it(`${format}: tracks successful ${move} on slot ${slot} until its public heal`, () => {
+			const tracker = createBattleTracker('p2', multi); tracker.setFormat(format);
+			tracker.parseMessage(`|switch|${position}: Mew|Mew|100/100\n|turn|1\n|move|${position}: Mew|${move}|${position}: Mew\n|-fail|${position}: Mew`);
+			assert.deepEqual(tracker.getDelayedSources().healingWishes, {});
+			tracker.parseMessage(`|move|${position}: Mew|${move}|${position}: Mew\n|faint|${position}: Mew`);
+			assert.deepEqual(tracker.getDelayedSources().healingWishes, { [slot]: id });
+			assert.deepEqual(tracker.getDelayedSources(false).healingWishes, {});
+			tracker.parseMessage(`|switch|${position}: Fish|Magikarp|1/100`);
+			assert.equal(tracker.getDelayedSources().healingWishes[slot], id);
+			tracker.parseMessage(`|-heal|${position}: Fish|100/100|[from] move: ${move}`);
+			assert.deepEqual(tracker.getDelayedSources().healingWishes, {});
+		});
+	}
+	it('preserves the estimated Wish amount when its public caster has fainted', () => {
+		const tracker = createBattleTracker('p2'); tracker.setFormat('gen6customgame');
+		tracker.parseMessage('|switch|p1a: Blissey|Blissey|100/100\n|turn|1\n|move|p1a: Blissey|Wish|p1a: Blissey\n|faint|p1a: Blissey\n|switch|p1a: Fish|Magikarp|10/100\n|turn|2');
+		const request = { side: { id: 'p2', pokemon: [{ ident: 'p2: Mew', details: 'Mew', condition: '300/300',
+			active: true, ability: 'Synchronize', item: '', moves: ['splash'], stats: { atk: 200, def: 200, spa: 200, spd: 200, spe: 200 } }] },
+		active: [{ moves: [{ id: 'splash', pp: 40, maxpp: 40 }] }] };
+		const state = buildBattleStateWithTracker(request, { turn: 2 }, tracker, { ...DEFAULT_AI_CONFIG, formatId: 'gen6customgame' });
+		assert(state.opponent.conditions.wishAmounts[1] > state.opponent.active[0].maxHp);
+		assert.equal(state.opponent.conditions.wishes[1], 1);
+	});
+});

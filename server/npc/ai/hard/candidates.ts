@@ -5,9 +5,9 @@ import { HardEvaluation } from './evaluation';
 import { actionDelay, type MatchupEvaluator } from './matchups';
 import { megaEvolutionState } from '../cfru/util/forms';
 import { effectiveAbility, effectiveItem, grounded, rulesDex } from '../cfru/util/mechanics';
-import { entryHazardDamage } from '../cfru/util/turn-outcome';
 import { selectMoveCandidates } from '../cfru/scoring';
-import { bindOpponent, clonePosition, identity, knownMoves, modelsFor, moveAction, positionKey, switchIn, usableMove,
+import { bindOpponent, clonePosition, identity, knownMoves, modelsFor, moveAction, positionKey, switchIn,
+	usableMove, projectEntry,
 	type SearchAction, type Side } from './projection';
 
 export function perspective(state: BattleState, side: Side): BattleState {
@@ -49,8 +49,7 @@ export class CandidateSelector {
 		return this.entryChoices(state, side, 'free').map(p => {
 			const index = state[side].team.indexOf(p);
 			const matchup = side === 'self' ? table[index]?.[foeIndex]?.self : table[ownIndex]?.[index]?.opponent;
-			const health = Math.max(0, (view.self.conditions.healingWish ? p.maxHp : p.hp) -
-				entryHazardDamage(p, view.self.conditions, state.field));
+			const health = projectEntry(p, view.self.conditions, state.field, view.self.active[0].slot).hp;
 			return { p, rank: [Number(health > 0), matchup?.check || 0,
 				matchup?.pressure || 0, matchup?.sustain || 0, health / p.maxHp] };
 		}).sort((a, b) => {
@@ -119,8 +118,7 @@ export class CandidateSelector {
 			const index = belief[side].team.findIndex(q => identity(q) === identity(p));
 			const pair = side === 'self' ? table[index]?.[foeIndex] : table[ownIndex]?.[index];
 			const own = pair?.[side], opposing = pair?.[other];
-			const health = (view.self.conditions.healingWish ? p.maxHp : p.hp) -
-				entryHazardDamage(p, view.self.conditions, state.field);
+			const health = projectEntry(p, view.self.conditions, state.field, actor.slot).hp;
 			return { p, own, margin: (exposed ? own?.counter : own?.check) || 0,
 				pressure: (exposed ? own?.entryPressure : own?.pressure) || 0,
 				sustain: (exposed ? own?.entrySustain : own?.sustain) || 0,
@@ -201,15 +199,22 @@ export class CandidateSelector {
 			const position = transform ? megaEvolutionState(view, view.self.active[0]) || view : view;
 			const actor = position.self.active[0], foe = position.opponent.active[0];
 			const evaluator = new HardEvaluation(position, format, new Map(
-				[...position.opponent.team, ...(position.opponent.preview || [])].map(p => [p, modelsFor(p)])));
+				[...position.opponent.team, ...(position.opponent.preview || [])].map(p => [p, modelsFor(p)])),
+			this.matchups.damageCache);
 			const replacements = evaluator.switchTargets(actor, foe, targets);
 			const predictions = evaluator.predictions(actor, replacements);
+			const groups = new Map<string, { actor: AIPokemon, actions: SearchAction[] }>();
 			for (const a of moves) {
-				const conditional = { ...actor,
-					moves: [...new Set([...(actor.moveKnowledge?.revealedMoves || actor.moves), a.move!])] };
-				const score = evaluator.scoreMoves(conditional, [hardMove(a.move!, 1, format)], foe,
-					predictions, replacements)[0];
-				a.prior = score.score; scores.set(a, score);
+				const conditional = [...new Set([...(actor.moveKnowledge?.revealedMoves || actor.moves), a.move!])];
+				const key = JSON.stringify(conditional);
+				let group = groups.get(key);
+				if (!group) groups.set(key, group = { actor: { ...actor, moves: conditional }, actions: [] });
+				group.actions.push(a);
+			}
+			for (const group of groups.values()) {
+				const results = evaluator.scoreMoves(group.actor, group.actions.map(a => hardMove(a.move!, 1, format)),
+					foe, predictions, replacements);
+				group.actions.forEach((a, i) => { a.prior = results[i].score; scores.set(a, results[i]); });
 			}
 		}
 		return scores;

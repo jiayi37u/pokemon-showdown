@@ -102,12 +102,13 @@ export class HardAI extends NPCBattleAI {
 		this.sacrificePlans.delete(actor.ident || actor.species);
 		const formatId = this.configCFRU.formatId;
 		const dex = Dex.forFormat(formatId);
-		const evaluator = new HardEvaluation(state, formatId);
+		const evaluator = new HardEvaluation(state, formatId, undefined, this.matchups.damageCache);
 		const predictions = evaluator.predictions(actor);
 		const megaState = flags.canMegaEvo ? megaEvolutionState(state, actor) : null;
 		// Staying in always evolves when authorized. Switching still uses the original state.
 		const moveActor = megaState?.self.active.find(p => p.slot === actor.slot) || actor;
-		const moveEvaluator = megaState ? new HardEvaluation(megaState, formatId) : evaluator;
+		const moveEvaluator = megaState ?
+			new HardEvaluation(megaState, formatId, undefined, this.matchups.damageCache) : evaluator;
 		const transform = flags.canMegaEvo ? 'mega' : undefined;
 		const candidates: { choice: MoveChoice, result: MoveScore, targetPos?: string, targetName: string }[] = [];
 		for (const choice of moves.filter(m => !m.disabled)) {
@@ -166,11 +167,7 @@ export class HardAI extends NPCBattleAI {
 			top = top.filter(c => c.result.move.category !== 'Status');
 		}
 		let best = this.prng.sample(top);
-		const replacements = switches.map(sw =>
-			evaluator.scoreSwitch(
-				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId), predictions, false, actor))
-			.sort((a, b) => b.score - a.score);
-		const replacement = replacements.find(p => p.safe && p.hasFollowUp);
+
 		// A status move may affect a replacement or recover after incoming damage. The
 		// search owns contextual pruning; a failure against the current occupant is not final.
 		// Preserve the existing tie preference when search values are exactly equal.
@@ -194,22 +191,30 @@ export class HardAI extends NPCBattleAI {
 				pokemon: buildPokemonFromRequest(switches.find(s => s.slot === Number(v.id.split(' ')[1]))!.pokemon,
 					Number(v.id.split(' ')[1]), false, formatId).species,
 				score: v.value,
-				reasons: [v.upperBound ? 'Two-turn value upper bound; dominated action' : 'Two-turn team-position value'],
+				reasons: [v.upperBound ? 'Two-turn value upper bound; dominated action' :
+				v.lowerBound ? 'Two-turn value lower bound; winning action proven' : 'Two-turn team-position value'],
 			})), search.reason, state);
 			return { type: 'switch', target };
 		}
 		if (search?.choice) best = candidates.find(c =>
 			`move ${c.choice.slot}${transform ? ' mega' : ''}` === search.choice)!;
-		if (!search?.choice && !active.trapped && replacement) {
-			const reason = moveEvaluator.switchReason(
-				moveActor, best.result, replacement, predictions,
-				state.turn - (this.lastSwitchTurn.get(slot) ?? -10) <= 2);
-			if (reason) {
-				this.lastSwitchTurn.set(slot, state.turn);
-				this.logger.logSwitchDecision(state.turn, actor, replacement.pokemon,
-					replacements.map(p => ({ pokemon: p.pokemon.species, score: p.score, reasons: p.reasons })),
-					search ? `${reason}; Search fallback: ${search.reason}` : reason, state);
-				return { type: 'switch', target: replacement.pokemon.slot };
+		if (!search?.choice && !active.trapped) {
+			const replacements = switches.map(sw =>
+				evaluator.scoreSwitch(
+					buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId), predictions, false, actor))
+				.sort((a, b) => b.score - a.score);
+			const replacement = replacements.find(p => p.safe && p.hasFollowUp);
+			if (replacement) {
+				const reason = moveEvaluator.switchReason(
+					moveActor, best.result, replacement, predictions,
+					state.turn - (this.lastSwitchTurn.get(slot) ?? -10) <= 2);
+				if (reason) {
+					this.lastSwitchTurn.set(slot, state.turn);
+					this.logger.logSwitchDecision(state.turn, actor, replacement.pokemon,
+						replacements.map(p => ({ pokemon: p.pokemon.species, score: p.score, reasons: p.reasons })),
+						search ? `${reason}; Search fallback: ${search.reason}` : reason, state);
+					return { type: 'switch', target: replacement.pokemon.slot };
+				}
 			}
 		}
 		const reasoning = [`Fighting style: ${fightingStyle(actor, this.configCFRU.formatId)}`];
@@ -258,7 +263,7 @@ export class HardAI extends NPCBattleAI {
 			if (fainted.fainted) state = { ...state, self: { ...state.self,
 				active: [fainted], team: [fainted, ...state.self.team] } };
 		}
-		const evaluator = new HardEvaluation(state, this.configCFRU.formatId);
+		const evaluator = new HardEvaluation(state, this.configCFRU.formatId, undefined, this.matchups.damageCache);
 		const candidates = switches.map(sw => {
 			const mon = state.self.reserve.find(p => p.slot === sw.slot) ||
 				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId);

@@ -17,7 +17,7 @@ import { effectiveAbility, defensiveAbility, effectiveItem, grounded, rulesDex }
 import {
 	delayedMoveFailure, fieldEffectFailure, inflictedStatus, statusFailure, volatileEffectFailure,
 	beneficialTargets, recoveryRecipients, recoveryCuresStatus, boostRecipients, boostChanges, boostsCanChange,
-	recoveryKind, painSplitRecovery, mustSkipMove,
+	recoveryKind, painSplitRecovery, mustSkipMove, conditionalAttackDiscouraged,
 } from '../util/move-effects';
 import { itemMoveFailure, itemRemovalFailure } from '../util/items';
 import { compareActionOrder, compareSpeedOrder } from '../util/speed';
@@ -27,7 +27,8 @@ import { canHaveOpponentMoves, getOpponentMoveKnowledge, getOpponentThreatMoves 
 
 /** Public attacks that can punish a status turn, with defensive boosts applied only after acting. */
 export function statusTurnIncomingDamage(
-	state: BattleState, attacker: AIPokemon, action: AIMove, beforeOnly = false, includeResidual = true
+	state: BattleState, attacker: AIPokemon, action: AIMove, beforeOnly = false, includeResidual = true,
+	damageCalculator = calculateDamage
 ): number {
 	const dex = rulesDex(state.field);
 	const after = { ...attacker, boosts: { ...attacker.boosts } };
@@ -55,7 +56,7 @@ export function statusTurnIncomingDamage(
 			const spread = ['allAdjacent', 'allAdjacentFoes'].includes(move.target);
 			const targets = state.self.active.filter(p => !p.fainted).length +
 				(move.target === 'allAdjacent' ? state.opponent.active.filter(p => !p.fainted && p !== foe).length : 0);
-			const damage = calculateDamage(foe, defender, move, state.field, undefined, {
+			const damage = damageCalculator(foe, defender, move, state.field, undefined, {
 				isDoubles: state.isDoubles, numAliveTargets: spread ? targets : 1,
 				attackerSideConditions: state.opponent.conditions, defenderSideConditions: state.self.conditions,
 				defenderAllies: state.self.active, activePokemon: [...state.self.active, ...state.opponent.active],
@@ -128,17 +129,8 @@ function discourageMove(ctx: ScoringContext, reason: string): number {
 
 /** Conservative opportunities for attacks that depend on the opponent's action. */
 export const checkConditionalAttack: NegativeScoringFunction = ctx => {
-	if (ctx.move.id === 'focuspunch') {
-		if (ctx.attacker.volatiles.has('substitute') || ctx.target.status === 'slp') return 0;
-		return discourageMove(ctx, 'Focus Punch needs our substitute or a sleeping target');
-	}
-	if (!['suckerpunch', 'thunderclap'].includes(ctx.move.id)) return 0;
-	const side = ctx.isTargetingPartner ? ctx.state.self : ctx.state.opponent;
-	const slower = compareSpeedOrder(ctx.attacker, ctx.target, ctx.state.field,
-		ctx.state.self.conditions, side.conditions) < 0;
-	const last = ctx.dex.moves.get(ctx.target.lastMove || '');
-	if (slower && last.exists && last.category !== 'Status') return 0;
-	return discourageMove(ctx, 'Conditional priority needs a faster target whose last move was an attack');
+	const reason = conditionalAttackDiscouraged(ctx.state, ctx.attacker, ctx.target, ctx.move);
+	return reason ? discourageMove(ctx, reason) : 0;
 };
 
 /** Conservative opportunities for setup and utility moves, separate from confirmed failures. */
@@ -153,7 +145,8 @@ export const checkStatusOpportunity: NegativeScoringFunction = ctx => {
 	if ((setup || nonGhostCurse) && ctx.attacker.hpPercent <= 40) {
 		return discourageMove(ctx, 'Setup discouraged at 40% HP or less');
 	}
-	if ((setup || nonGhostCurse) && statusTurnIncomingDamage(ctx.state, ctx.attacker, ctx.move) >= ctx.attacker.hp -
+	if ((setup || nonGhostCurse) &&
+		statusTurnIncomingDamage(ctx.state, ctx.attacker, ctx.move, false, true, ctx.calculateDamage) >= ctx.attacker.hp -
 		(data.id === 'bellydrum' ? Math.floor(ctx.attacker.maxHp / 2) : 0)) {
 		return discourageMove(ctx, 'Setup cannot survive the available opposing attacks');
 	}
@@ -235,7 +228,8 @@ export const checkUtilityOpportunity: NegativeScoringFunction = ctx => {
 		const patient = reserves.some(p => p.hpPercent < 75 || p.status &&
 			!['guts', 'poisonheal', 'quickfeet'].includes(effectiveAbility(p, state.field)));
 		if (!patient) return discourageMove(ctx, 'No reserve needs enough healing to justify the sacrifice');
-		if (attacker.hpPercent > 80 && !attacker.status && statusTurnIncomingDamage(state, attacker, move) < attacker.hp) {
+		if (attacker.hpPercent > 80 && !attacker.status &&
+			statusTurnIncomingDamage(state, attacker, move, false, true, ctx.calculateDamage) < attacker.hp) {
 			return discourageMove(ctx, 'Preserve a healthy supporter instead of sacrificing it');
 		}
 	}
@@ -245,7 +239,8 @@ export const checkUtilityOpportunity: NegativeScoringFunction = ctx => {
 		return discourageMove(ctx, 'No opposing reserve remains to hit entry hazards');
 	}
 	if (move.id === 'substitute' && !attacker.volatiles.has('substitute') &&
-		statusTurnIncomingDamage(state, attacker, move, true, false) + Math.floor(attacker.maxHp / 4) >= attacker.hp) {
+		statusTurnIncomingDamage(state, attacker, move, true, false, ctx.calculateDamage) +
+		Math.floor(attacker.maxHp / 4) >= attacker.hp) {
 		return discourageMove(ctx, 'Cannot survive to pay the HP cost before acting');
 	}
 	if (move.id === 'substitute' && !attacker.volatiles.has('substitute') &&
@@ -1340,8 +1335,8 @@ export const checkProtectOveruse: NegativeScoringFunction = (ctx) => {
 export const checkRecoverySurvival: NegativeScoringFunction = ctx => {
 	const recipients = recoveryRecipients(ctx.state, ctx.attacker, ctx.target, ctx.move);
 	if (directRecoveryAmount(ctx.attacker, ctx.move, ctx.state.field) && recipients.includes(ctx.attacker)) {
-		const before = statusTurnIncomingDamage(ctx.state, ctx.attacker, ctx.move, true, false);
-		const total = statusTurnIncomingDamage(ctx.state, ctx.attacker, ctx.move, false, false);
+		const before = statusTurnIncomingDamage(ctx.state, ctx.attacker, ctx.move, true, false, ctx.calculateDamage);
+		const total = statusTurnIncomingDamage(ctx.state, ctx.attacker, ctx.move, false, false, ctx.calculateDamage);
 		const outcome = selfActionOutcome(ctx.attacker, ctx.move, ctx.state.field, before,
 			Math.max(0, total - before), effectiveAbility(ctx.target, ctx.state.field));
 		if (!outcome.acted || outcome.endHp <= 0) {
@@ -1577,12 +1572,13 @@ export const checkSpreadMoveHitsPartner: NegativeScoringFunction = (ctx) => {
 
 	const numAliveOpponents = ctx.state.opponent.active.filter(p => !p.fainted).length;
 	const numAlivePartners = ctx.state.self.active.filter(p => p !== ctx.attacker && !p.fainted).length;
-	const partnerDamage = calculateDamage(ctx.attacker, ctx.partner, ctx.move, ctx.state.field, ctx.cache, {
-		isDoubles: true, numAliveTargets: numAliveOpponents + numAlivePartners,
-		isAllyTarget: true, defenderAllies: ctx.state.self.active,
-		activePokemon: [...ctx.state.self.active, ...ctx.state.opponent.active],
-		attackerSideConditions: ctx.state.self.conditions, defenderSideConditions: ctx.state.self.conditions,
-	});
+	const partnerDamage = (ctx.calculateDamage || calculateDamage)(
+		ctx.attacker, ctx.partner, ctx.move, ctx.state.field, ctx.cache, {
+			isDoubles: true, numAliveTargets: numAliveOpponents + numAlivePartners,
+			isAllyTarget: true, defenderAllies: ctx.state.self.active,
+			activePokemon: [...ctx.state.self.active, ...ctx.state.opponent.active],
+			attackerSideConditions: ctx.state.self.conditions, defenderSideConditions: ctx.state.self.conditions,
+		});
 
 	const damagePercent = partnerDamage.averagePercent;
 	let penalty = 0;

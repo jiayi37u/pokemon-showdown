@@ -262,15 +262,91 @@ describe('Hard singles matchup value', () => {
 		assert.equal(positionValue(projectedState(f.battle), f.evaluator), original);
 		assert.equal(JSON.stringify(f.battle.toJSON()), serialized);
 	});
+	it('reuses static pairs across field clocks and delayed healing, while retaining complete search state', () => {
+		const { clonePosition, positionKey } = require('../../../dist/server/npc/ai/hard/projection');
+		const f = fixture([mon('Mew', ['surf', 'recover']), mon('Garchomp', ['earthquake'])],
+			[mon('Machamp', ['closecombat']), mon('Skarmory', ['bravebird'])]);
+		Object.assign(f.state.field, { weather: 'rain', weatherId: 'raindance', weatherTurns: 5,
+			terrain: 'grassy', terrainTurns: 5, trickroom: true, trickroomTurns: 5 });
+		Object.assign(f.state.self.conditions, { reflect: 5, tailwind: 4, safeguard: 5 });
+		const initial = f.evaluator.assess(f.state), before = positionKey(clonePosition(f.state));
+		Object.assign(f.state.field, { weatherTurns: 4, terrainTurns: 4, trickroomTurns: 4 });
+		Object.assign(f.state.self.conditions, { reflect: 4, tailwind: 3, safeguard: 4,
+			wishes: { 1: 1 }, wishAmounts: { 1: 150 } });
+		const next = f.evaluator.assess(f.state);
+		assert.notEqual(positionKey(clonePosition(f.state)), before);
+		assert.deepEqual(next, initial);
+		assert.equal(f.evaluator.stats.misses, 4, 'No pair depends on these clocks or pending Wish');
+		assert.deepEqual(next, new MatchupEvaluator().assess(f.state));
+		f.state.self.conditions.reflect = 0;
+		const expired = f.evaluator.assess(f.state);
+		assert.equal(f.evaluator.stats.misses, 8, 'A screen expiring still invalidates the combat context');
+		assert.deepEqual(expired, new MatchupEvaluator().assess(f.state));
+		assert.notDeepEqual(expired.matrix, next.matrix);
+	});
+	it('keys hazards and sacrifice healing by their actual effects on each entrant', () => {
+		const f = fixture([mon('Mew', ['psychic']), mon('Clefable', ['moonblast'], { ability: 'Magic Guard' }),
+			mon('Talonflame', ['bravebird'])], [mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);
+		f.evaluator.assess(f.state);
+		assert.equal(f.evaluator.stats.misses, 6);
+		f.state.self.conditions.stealthrock = true;
+		const hazards = f.evaluator.assess(f.state);
+		assert.equal(f.evaluator.stats.misses, 8, 'Only Talonflame takes entry damage; the other two rows remain valid');
+		assert.deepEqual(hazards, new MatchupEvaluator().assess(f.state));
+		const recipient = f.state.self.team[2]; recipient.hp = 1; recipient.hpPercent = 100 / recipient.maxHp;
+		f.state.self.conditions.healingWishes = { 1: 'healingwish' };
+		const restored = f.evaluator.assess(f.state);
+		assert.equal(f.evaluator.stats.misses, 8, 'Healing before hazards reaches the same already-cached entrant state');
+		assert.deepEqual(restored, new MatchupEvaluator().assess(f.state));
+		assert(restored.matrix[2][0].self.pressure > 0);
+		delete f.state.self.conditions.healingWishes;
+		const fainted = f.evaluator.assess(f.state);
+		assert.equal(f.evaluator.stats.misses, 10);
+		assert.deepEqual(fainted, new MatchupEvaluator().assess(f.state));
+		assert.equal(fainted.matrix[2][0].self.pressure, 0);
+	});
+	it('shares attack estimates across irrelevant field records but refreshes expired defenses', () => {
+		const { hardMove } = require('../../../dist/server/npc/ai/hard/opponent-model');
+		const f = fixture([mon('Mew', ['psychic'])], [mon('Machamp', ['closecombat'])]);
+		const [actor, target] = [f.state.self.active[0], f.state.opponent.active[0]];
+		const move = hardMove('psychic', 1, f.state.field.formatId);
+		f.state.opponent.conditions.lightscreen = 5;
+		const before = f.evaluator.attack(f.state, actor, target, move);
+		Object.assign(f.state.opponent.conditions, { lightscreen: 4, stealthrock: true,
+			wishes: { 1: 1 }, wishAmounts: { 1: 150 } });
+		f.state.field.weatherTurns--;
+		assert.equal(f.evaluator.attack(f.state, actor, target, move), before);
+		f.state.opponent.conditions.lightscreen = 0;
+		const after = f.evaluator.attack(f.state, actor, target, move);
+		assert(after.damage > before.damage);
+		assert.deepEqual(after, new MatchupEvaluator().attack(f.state, actor, target, move));
+	});
+	it('derives suppression from each pair rather than the unrelated current active lineup', () => {
+		const f = fixture([mon('Golduck', ['surf'], { ability: 'Cloud Nine' }), mon('Mew', ['surf'])],
+			[mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);
+		Object.assign(f.state.field, { weather: '', weatherId: 'raindance', neutralizingGas: false });
+		const initial = f.evaluator.assess(f.state);
+		Object.assign(f.state.field, { weather: 'rain', neutralizingGas: true });
+		const next = f.evaluator.assess(f.state);
+		assert.deepEqual(next, initial);
+		assert.equal(f.evaluator.stats.misses, 4);
+		assert.deepEqual(next, new MatchupEvaluator().assess(f.state));
+		f.state.field.weatherId = '';
+		const cleared = f.evaluator.assess(f.state);
+		assert.deepEqual(cleared, new MatchupEvaluator().assess(f.state));
+		assert.notDeepEqual(cleared.matrix[1], next.matrix[1]);
+	});
 	it('invalidates other pairs when an ally sleep source changes clause eligibility', () => {
 		const f = fixture([mon('Mew', ['tackle']), mon('Slowbro', ['rest'])],
-			[mon('Breloom', ['spore', 'machpunch'])]);
+			[mon('Breloom', ['spore', 'machpunch']), mon('Machamp', ['closecombat'])]);
+		f.state.field.formatId = 'gen6ou';
 		const sleeper = f.state.self.team[1]; sleeper.status = 'slp'; sleeper.sleepSelfInflicted = true;
 		f.evaluator.assess(f.state);
-		assert.equal(f.evaluator.stats.misses, 2);
-		sleeper.sleepSelfInflicted = false;
-		f.evaluator.assess(f.state);
 		assert.equal(f.evaluator.stats.misses, 4);
+		sleeper.sleepSelfInflicted = false;
+		const next = f.evaluator.assess(f.state);
+		assert.equal(f.evaluator.stats.misses, 7, 'The changed sleeper row and sleep-capable foe column are affected');
+		assert.deepEqual(next, new MatchupEvaluator().assess(f.state));
 	});
 	it('is symmetric between perspectives and bounded below a terminal win', () => {
 		const f = fixture([mon('Skarmory', ['bravebird', 'roost']), mon('Chansey', ['seismictoss', 'softboiled'])],

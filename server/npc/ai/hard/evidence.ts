@@ -4,7 +4,7 @@ import type { AIPokemon, OpponentModel } from '../cfru/types';
 import type { BattleEvidence } from '../cfru/util/battle-evidence';
 import { buildAIMove } from '../cfru/state-builder';
 import { compareActionOrder, compareSpeedOrder } from '../cfru/util/speed';
-import { calculateDamage } from './damage';
+import { calculateDamage, type DamageCache } from './damage';
 import { fieldWithActivePokemon } from '../cfru/util/mechanics';
 import { computeStatsFromPreset } from '../cfru/util/opponent-presets';
 
@@ -22,7 +22,7 @@ function project(observed: AIPokemon, candidate: AIPokemon): AIPokemon {
 type Verdict = 'compatible' | 'unknown' | 'below' | 'above';
 
 /** Below/above refer to the opposing stat constrained by the observation, not to preset identity. */
-function assessEvidence(model: OpponentModel, evidence: BattleEvidence): Verdict {
+function assessEvidence(model: OpponentModel, evidence: BattleEvidence, cache?: DamageCache): Verdict {
 	if (evidence.kind === 'selection') return 'unknown';
 	const context = evidence.context;
 	const all = [...context.self, ...context.opponents]
@@ -63,7 +63,7 @@ function assessEvidence(model: OpponentModel, evidence: BattleEvidence): Verdict
 	// The calculator already supplies the full damage roll range; HP display rounding is handled above.
 	const results: Verdict[] = alternatives.map(id => {
 		const damage = calculateDamage(first, second, buildAIMove({ id }, 1, field.formatId), field, undefined, {
-			isDoubles: context.isDoubles, numAliveTargets, activePokemon: all, defenderAllies: allies,
+			cache, isDoubles: context.isDoubles, numAliveTargets, activePokemon: all, defenderAllies: allies,
 			attackerSideConditions: firstConditions, defenderSideConditions: secondConditions,
 		});
 		if (loss[0] <= damage.max && loss[1] >= damage.min) return 'compatible';
@@ -73,8 +73,8 @@ function assessEvidence(model: OpponentModel, evidence: BattleEvidence): Verdict
 		results.every(result => result === results[0]) ? results[0] : 'unknown';
 }
 
-function compatible(model: OpponentModel, evidence: BattleEvidence): boolean {
-	return ['compatible', 'unknown'].includes(assessEvidence(model, evidence));
+function compatible(model: OpponentModel, evidence: BattleEvidence, cache?: DamageCache): boolean {
+	return ['compatible', 'unknown'].includes(assessEvidence(model, evidence, cache));
 }
 
 type Stat = keyof AIPokemon['baseStats'];
@@ -92,8 +92,10 @@ function evidenceStat(e: BattleEvidence): Stat | undefined {
  * For each HP value, damage/order is monotone in the affected stat, so binary searches bound its EVs.
  * The shared 508-EV budget prevents combining six independent maximum stats.
  */
-function fitSpread(model: OpponentModel, history: readonly BattleEvidence[]): OpponentModel | undefined {
-	if (history.every(e => compatible(model, e))) return model;
+function fitSpread(
+	model: OpponentModel, history: readonly BattleEvidence[], cache?: DamageCache
+): OpponentModel | undefined {
+	if (history.every(e => compatible(model, e, cache))) return model;
 	if (!model.spread) return;
 	const dex = Dex.forFormat(history[0].context.field.formatId || '');
 	if (dex.gen < 3) return;
@@ -104,7 +106,7 @@ function fitSpread(model: OpponentModel, history: readonly BattleEvidence[]): Op
 	const groups = new Map<Stat, BattleEvidence[]>();
 	for (const e of history) {
 		const stat = evidenceStat(e);
-		if (!stat) { if (!compatible(model, e)) return; else continue; }
+		if (!stat) { if (!compatible(model, e, cache)) return; else continue; }
 		if (!groups.has(stat)) groups.set(stat, []);
 		groups.get(stat)!.push(e);
 	}
@@ -127,7 +129,7 @@ function fitSpread(model: OpponentModel, history: readonly BattleEvidence[]): Op
 			for (const e of groups.get(stat) || []) {
 				const verdicts = new Map<number, Verdict>();
 				const at = (value: number) => {
-					if (!verdicts.has(value)) verdicts.set(value, assessEvidence(make({ ...units, [stat]: value }), e));
+					if (!verdicts.has(value)) verdicts.set(value, assessEvidence(make({ ...units, [stat]: value }), e, cache));
 					return verdicts.get(value)!;
 				};
 				// Unknown observations do not narrow a range or lend support to a preset.
@@ -162,7 +164,7 @@ function fitSpread(model: OpponentModel, history: readonly BattleEvidence[]): Op
 		const squared = stats.reduce((sum, stat) => sum + (units[stat] - prior[stat]) ** 2, 0);
 		if (cost > bestCost || cost === bestCost && squared >= bestSquared) continue;
 		const fitted = make(units);
-		if (!history.every(e => compatible(fitted, e))) continue;
+		if (!history.every(e => compatible(fitted, e, cache))) continue;
 		fitted.statRanges = Object.fromEntries([...groups.keys()].map(stat => {
 			const available = 127 - stats.filter(s => s !== stat).reduce((sum, s) => sum + lows[s], 0);
 			return [stat, [make({ ...units, [stat]: lows[stat] }).pokemon.baseStats[stat],
@@ -175,7 +177,7 @@ function fitSpread(model: OpponentModel, history: readonly BattleEvidence[]): Op
 
 /** Only an observation beyond non-Choice stat ceilings permits a new Choice item. */
 function exceptionalChoiceModels(
-	pokemon: AIPokemon, models: OpponentModel[], history: readonly BattleEvidence[]
+	pokemon: AIPokemon, models: OpponentModel[], history: readonly BattleEvidence[], cache?: DamageCache
 ): OpponentModel[] {
 	const formatId = history[0]?.context.field.formatId || '';
 	if (!models.length || pokemon.presetModels || formatId.includes('randombattle') ||
@@ -196,16 +198,16 @@ function exceptionalChoiceModels(
 		if (models.every(model => assessEvidence({ ...model, pokemon: { ...model.pokemon,
 			item: ['choiceband', 'choicespecs', 'choicescarf'].includes(toID(model.pokemon.item)) ? '' : model.pokemon.item,
 			baseStats: { ...model.pokemon.baseStats, [stat]: maximum },
-		} }, e) === 'below')) inferred.add(item);
+		} }, e, cache) === 'below')) inferred.add(item);
 	}
 	return [...inferred].flatMap(item => models.map(model => fitSpread({ ...model,
 		name: `${model.name} (${item} inferred from exceptional evidence)`,
 		pokemon: { ...model.pokemon, item, itemAssumed: true },
-	}, history)).filter((model): model is OpponentModel => !!model));
+	}, history, cache)).filter((model): model is OpponentModel => !!model));
 }
 
 export function refineOpponentModels(
-	pokemon: AIPokemon, models: OpponentModel[], history: readonly BattleEvidence[] = []
+	pokemon: AIPokemon, models: OpponentModel[], history: readonly BattleEvidence[] = [], cache?: DamageCache
 ): { models: OpponentModel[], notes: string[] } {
 	const relevant = history.filter(e => e.opponent === pokemon.ident &&
 		e.context.opponents.some(p => p.ident === pokemon.ident && p.species === pokemon.species));
@@ -238,11 +240,11 @@ export function refineOpponentModels(
 	}
 	// Lack of a calculable move type must not give one preset an advantage over another.
 	const observations = relevant.filter(e => e.kind !== 'selection');
-	const usable = observations.filter(e => models.every(model => assessEvidence(model, e) !== 'unknown'));
+	const usable = observations.filter(e => models.every(model => assessEvidence(model, e, cache) !== 'unknown'));
 	if (usable.length < observations.length) notes.push('unresolved observations retained without filtering presets');
-	let remaining = models.map(model => closed ? (usable.every(e => compatible(model, e)) ? model : undefined) :
-		fitSpread(model, usable)).filter((model): model is OpponentModel => !!model);
-	if (!remaining.length && !closed) remaining = exceptionalChoiceModels(pokemon, models, usable);
+	let remaining = models.map(model => closed ? (usable.every(e => compatible(model, e, cache)) ? model : undefined) :
+		fitSpread(model, usable, cache)).filter((model): model is OpponentModel => !!model);
+	if (!remaining.length && !closed) remaining = exceptionalChoiceModels(pokemon, models, usable, cache);
 	if (!remaining.length) {
 		notes.push('battle evidence conflicts with all feasible preset spreads; retained uncertainty');
 		remaining = models;

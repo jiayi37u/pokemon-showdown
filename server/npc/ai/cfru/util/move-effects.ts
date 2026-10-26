@@ -3,12 +3,41 @@ import { Dex, toID } from '../../../../../sim/dex';
 import type { AIPokemon, AIMove, BattleState, FieldConditions } from '../types';
 import { effectiveAbility, defensiveAbility, effectiveItem, grounded, normalizeWeather, rulesDex } from './mechanics';
 import { getMoveInteraction } from './type-calc';
-import { actsBeforeTarget } from './speed';
+import { actsBeforeTarget, compareSpeedOrder } from './speed';
 import { getSandstormDamage, getHailDamage } from './damage-calc';
 
 export const protectionMoves = new Set([
 	'protect', 'detect', 'kingsshield', 'spikyshield', 'banefulbunker', 'obstruct', 'silktrap', 'burningbulwark',
 ]);
+
+/** Slot recovery uses the caster's HP in Gen 5+, the recipient's HP in older rules. */
+export function pendingWishRecovery(state: BattleState, party: BattleState['self'], recipient: AIPokemon): number {
+	if (party.conditions.wishes[recipient.slot] !== 1 || recipient.volatiles.has('healblock')) return 0;
+	if (rulesDex(state.field).gen <= 4) return Math.floor(recipient.maxHp / 2);
+	const amount = party.conditions.wishAmounts?.[recipient.slot];
+	if (amount !== undefined) return amount;
+	const source = party.team.find(p => toID(p.ident || `${p.ownerSide}:${p.slot}:${p.species}`) ===
+		toID(party.conditions.wishSources?.[recipient.slot]));
+	return source ? Math.floor(source.maxHp / 2) : 0;
+}
+
+/** Shared tactical opportunity; this is not a guaranteed move failure. */
+export function conditionalAttackDiscouraged(
+	state: BattleState, actor: AIPokemon, target: AIPokemon, move: AIMove
+): string | undefined {
+	if (move.id === 'focuspunch') {
+		if (!actor.volatiles.has('substitute') && target.status !== 'slp') {
+			return 'Focus Punch needs our substitute or a sleeping target';
+		}
+	} else if (['suckerpunch', 'thunderclap'].includes(move.id)) {
+		const side = state.self.active.includes(target) ? state.self : state.opponent;
+		const slower = compareSpeedOrder(actor, target, state.field, state.self.conditions, side.conditions) < 0;
+		const last = rulesDex(state.field).moves.get(target.lastMove || '');
+		if (!(slower && last.exists && last.category !== 'Status')) {
+			return 'Conditional priority needs a faster target whose last move was an attack';
+		}
+	}
+}
 
 /** Selection restrictions shared by prediction, matchup valuation and projected actions.
  * Called moves bypass these restrictions; the selected calling move is checked instead.
@@ -245,6 +274,16 @@ export function inflictedStatus(move: AIMove, state: BattleState, attacker?: AIP
 	return data.status || data.secondary?.status || data.secondaries?.find(s => s.status)?.status || '';
 }
 
+/** Whether this trainer's party already occupies the format's sleep-clause allowance. */
+export function sleepClauseOccupied(field: FieldConditions, team: readonly AIPokemon[], target: AIPokemon): boolean {
+	if (!field.formatId) return false;
+	const rules = Dex.formats.getRuleTable(Dex.formats.get(field.formatId));
+	const stadium = rules.has('stadiumsleepclause');
+	return (stadium || rules.has('sleepclausemod')) && team.some(p =>
+		!p.fainted && p.status === 'slp' && (!target.ownerSide || p.ownerSide === target.ownerSide) &&
+		(stadium || !p.sleepSelfInflicted));
+}
+
 export function statusFailure(
 	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove,
 	status = inflictedStatus(move, state, attacker)
@@ -304,12 +343,8 @@ export function statusFailure(
 	if (status === 'slp') {
 		if ([...state.self.active, ...state.opponent.active].some(p =>
 			!p.fainted && p.volatiles.has('uproar')) && ability !== 'soundproof') return 'Uproar prevents sleep';
-		if (field.formatId && !allied) {
-			const rules = Dex.formats.getRuleTable(Dex.formats.get(field.formatId));
-			const stadium = rules.has('stadiumsleepclause');
-			if ((stadium || rules.has('sleepclausemod')) && side.team.some(p =>
-				!p.fainted && p.status === 'slp' && (!target.ownerSide || p.ownerSide === target.ownerSide) &&
-				(stadium || !p.sleepSelfInflicted))) return 'Sleep Clause: opponent already has sleeping Pokemon';
+		if (!allied && sleepClauseOccupied(field, side.team, target)) {
+			return 'Sleep Clause: opponent already has sleeping Pokemon';
 		}
 	}
 	// A secondary status can be blocked while the damaging move remains useful.

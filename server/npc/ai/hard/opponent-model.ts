@@ -10,7 +10,7 @@ import {
 	type OpponentModel as OpponentHypothesis,
 } from '../cfru/types';
 export type { OpponentModel as OpponentHypothesis } from '../cfru/types';
-import { calculateDamage } from './damage';
+import { calculateDamage, type DamageCache } from './damage';
 import { compareActionOrder } from '../cfru/util/speed';
 import { replaceActivePokemon } from '../cfru/util/mechanics';
 import { inferRandomBattle } from '../cfru/util/random-presets';
@@ -197,7 +197,7 @@ export interface PredictedAction {
 export function predictOpponent(
 	state: BattleState, opponent: AIPokemon, target: AIPokemon, formatId: string,
 	score: (state: BattleState, actor: AIPokemon, moves: AIMove[], target: AIPokemon) => MoveScore[],
-	hypotheses = inferOpponent(opponent, formatId), switchConfidence = 0.6
+	hypotheses = inferOpponent(opponent, formatId), switchConfidence = 0.6, cache?: DamageCache
 ): PredictedAction[] {
 	const dex = formatId ? Dex.forFormat(formatId) : Dex;
 	const actions: PredictedAction[] = [];
@@ -241,7 +241,7 @@ export function predictOpponent(
 					compareActionOrder(target, user, attack, [result.move], projected.field,
 						projected.self.conditions, projected.opponent.conditions) <= 0) return false;
 				return calculateDamage(target, user, attack, projected.field, undefined, {
-					isDoubles: projected.isDoubles, numAliveTargets: projected.opponent.active.filter(p => !p.fainted).length,
+					cache, isDoubles: projected.isDoubles, numAliveTargets: projected.opponent.active.filter(p => !p.fainted).length,
 					attackerSideConditions: projected.self.conditions,
 					defenderSideConditions: projected.opponent.conditions,
 					activePokemon: [...projected.self.active, ...projected.opponent.active],
@@ -263,7 +263,7 @@ export function predictOpponent(
 				projected.opponent.conditions, projected.self.conditions) > 0));
 		const threatened = !userCanFinish && attacks.some(attack => {
 			const damage = calculateDamage(target, user, attack, projected.field, undefined, {
-				isDoubles: projected.isDoubles, numAliveTargets: projected.opponent.active.filter(p => !p.fainted).length,
+				cache, isDoubles: projected.isDoubles, numAliveTargets: projected.opponent.active.filter(p => !p.fainted).length,
 				attackerSideConditions: projected.self.conditions, defenderSideConditions: projected.opponent.conditions,
 				activePokemon: [...projected.self.active, ...projected.opponent.active], defenderAllies: projected.opponent.active,
 			});

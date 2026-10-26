@@ -59,6 +59,8 @@ export interface ScoringContext {
 
 	/** Calculation cache */
 	cache: AICache;
+	/** Injected damage semantics, including the caller-owned calculation cache. */
+	calculateDamage?: typeof calculateDamage;
 
 	/** A discouraged action remains selectable but receives no positive rewards. */
 	skipPositiveScoring?: boolean;
@@ -112,10 +114,12 @@ export function selectMoveCandidates(scores: readonly MoveScore[], gap: number):
 export class ScoringEngine {
 	private config: CFRUAIConfig;
 	private cache: AICache;
+	private calculateDamage: typeof calculateDamage;
 	private negativeScorers: NegativeScoringFunction[] = [];
 	private positiveScorers: PositiveScoringFunction[] = [];
 
-	constructor(config: CFRUAIConfig, cache: AICache) {
+	constructor(config: CFRUAIConfig, cache: AICache, damage = calculateDamage) {
+		this.calculateDamage = damage;
 		this.config = config;
 		this.cache = cache;
 
@@ -216,7 +220,7 @@ export class ScoringEngine {
 					spreadInfo = { isDoubles: true, numAliveTargets: numAliveOpponents + numAlivePartners };
 				}
 			}
-			damageResult = calculateDamage(attacker, target, move, state.field, this.cache, {
+			damageResult = this.calculateDamage(attacker, target, move, state.field, this.cache, {
 				isDoubles: state.isDoubles, numAliveTargets: 1, ...spreadInfo,
 				attackerSideConditions: state.self.conditions,
 				defenderSideConditions: (isTargetingPartner ? state.self : state.opponent).conditions,
@@ -257,6 +261,7 @@ export class ScoringEngine {
 			move,
 			config: this.config,
 			cache: this.cache,
+			calculateDamage: this.calculateDamage,
 			score: BASE_SCORE,
 			adjustments: [],
 			damageResult,

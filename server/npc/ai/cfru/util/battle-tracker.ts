@@ -169,9 +169,11 @@ export class BattleTracker {
 	private acted = new Set<string>();
 	private actedThisTurn = new Set<string>();
 	private slotEffects = new Map<string, { wish?: number, futuremove?: number, wishSource?: string,
-		futureAttack?: { source: string, move: string }, }>();
+		futureAttack?: { source: string, move: string },
+		healingWish?: { move: 'healingwish' | 'lunardance', expires: number }, }>();
 	private pendingFutureMove?: { source: string, target: string };
 	private pendingWishPosition = '';
+	private pendingHealingWish?: { position: string, move: 'healingwish' | 'lunardance' };
 	private teamSizes = new Map<string, number>();
 	private faintCounts = new Map<string, number>();
 	private formatId = '';
@@ -448,6 +450,12 @@ export class BattleTracker {
 		case '-damage':
 		case '-heal':
 			this.handleHPChange(parts);
+			if (parts[0] === '-heal') {
+				const effects = this.slotEffects.get(parts[1].split(':')[0].trim());
+				const source = toID(parts.find(p => p.startsWith('[from] move: '))?.slice(13));
+				if (effects && ['healingwish', 'lunardance'].includes(source)) delete effects.healingWish;
+				if (effects && source === 'wish') { effects.wish = 0; delete effects.wishSource; }
+			}
 			const item = parts.find(p => p.startsWith('[from] item: '));
 			if (item) {
 				const holder = parts.find(p => p.startsWith('[of] '))?.slice('[of] '.length) || parts[1];
@@ -495,6 +503,9 @@ export class BattleTracker {
 			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
 			this.pendingWishPosition = '';
+			const healingMove = toID(parts[2]);
+			this.pendingHealingWish = healingMove === 'healingwish' || healingMove === 'lunardance' ?
+				{ position: parts[1].split(':')[0].trim(), move: healingMove as 'healingwish' | 'lunardance' } : undefined;
 			this.pendingFutureMove = ['futuresight', 'doomdesire'].includes(toID(parts[2])) ? {
 				source: parts[1].split(':')[0].trim(), target: parts[3]?.split(':')[0].trim(),
 			} : undefined;
@@ -512,6 +523,7 @@ export class BattleTracker {
 			const position = parts[1]?.split(':')[0].trim();
 			// A repeated Wish must not extend an existing timer; a failed new Wish creates none.
 			if (position === this.pendingWishPosition) this.setSlotEffect(position, 'wish', 0);
+			if (position === this.pendingHealingWish?.position) this.pendingHealingWish = undefined;
 			break;
 		}
 		case '-weather':
@@ -578,6 +590,13 @@ export class BattleTracker {
 		const side = position.slice(0, 2); // "p1"
 		const slot = position.slice(2); // "a" or "b"
 		const transfer = this.getSwitchTransfer(parts, position);
+		// Resolve public exit effects before clearing the outgoing ability/volatile state.
+		const outgoingAbility = this.getEffectiveAbility(position);
+		const leaving = this.opponentPokemon.get(position);
+		if (leaving?.active && leaving.hpPercent > 0) {
+			if (outgoingAbility === 'regenerator') leaving.hpPercent = Math.min(100, leaving.hpPercent + 100 / 3);
+			if (outgoingAbility === 'naturalcure') leaving.status = '';
+		}
 
 		const sleepIdent = this.publicIdentity(positionPart);
 		const outgoingIdent = this.activeIdentities.get(position);
@@ -942,6 +961,15 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
 		this.faintCounts.set(side, (this.faintCounts.get(side) || 0) + 1);
+		if (this.pendingHealingWish?.position === position) {
+			const effects = this.slotEffects.get(position) || {};
+			const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
+			const move = this.pendingHealingWish.move;
+			const duration = dex.moves.get(move).condition?.duration;
+			effects.healingWish = { move, expires: duration ? this.turn + duration : Infinity };
+			this.slotEffects.set(position, effects);
+			this.pendingHealingWish = undefined;
+		}
 		this.activeAbilities.delete(position);
 		this.ourPokemon.delete(position);
 
@@ -2122,14 +2150,16 @@ export class BattleTracker {
 
 	getDelayedSources(ours = true) {
 		const wishSources: Record<number, string> = {};
+		const healingWishes: Record<number, 'healingwish' | 'lunardance'> = {};
 		const futureAttacks: Record<number, { source: string, move: string }> = {};
 		for (const [position, effects] of this.slotEffects) {
 			if (ours ? !this.isOurTeamSide(position.slice(0, 2)) : !this.isOpponentSide(position.slice(0, 2))) continue;
 			const slot = this.getFieldSlot(position);
 			if ((effects.wish || 0) > this.turn && effects.wishSource) wishSources[slot] = effects.wishSource;
+			if (effects.healingWish && effects.healingWish.expires > this.turn) healingWishes[slot] = effects.healingWish.move;
 			if ((effects.futuremove || 0) > this.turn && effects.futureAttack) futureAttacks[slot] = { ...effects.futureAttack };
 		}
-		return { wishSources, futureAttacks };
+		return { wishSources, futureAttacks, healingWishes };
 	}
 
 	getTurn(): number {
@@ -2335,6 +2365,7 @@ export class BattleTracker {
 		this.slotEffects.clear();
 		this.pendingFutureMove = undefined;
 		this.pendingWishPosition = '';
+		this.pendingHealingWish = undefined;
 		this.teamSizes.clear();
 		this.faintCounts.clear();
 		this.currentAttack = undefined;

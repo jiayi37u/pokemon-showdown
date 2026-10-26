@@ -556,7 +556,7 @@ describe('Hard gen7 OU inference and tactics', () => {
 		game.ai.getLogger().logMoveDecision = (...args) => { reasoning = args[5]; };
 		assert(/ mega$/.test(game.decide()));
 		const search = reasoning.find(r => r.startsWith('Two-turn search'));
-		assert(search.includes('move 1 mega='), search);
+		assert(/move 1 mega(?:>=|=|;)/.test(search), search);
 		assert(!search.includes('move 1='), 'Do not search staying without Mega');
 		battle.destroy(); battle = undefined;
 		const z = setup([mon('Mew', ['psychic'])], [mon('Garchomp', ['earthquake'], {

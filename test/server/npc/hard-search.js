@@ -2,8 +2,8 @@
 const assert = require('assert').strict;
 const { Battle } = require('../../../dist/sim');
 const { projectedState } = require('./helpers/hard-state');
-const { advancePosition, beginTurn, continueTurn, bindOpponent, clonePosition, switchIn, modelsFor, knownMoves, hp, usableMove, actionOutcomes, supportsMove } = require('../../../dist/server/npc/ai/hard/projection');
-const { searchPosition, Search, optimisticValue } = require('../../../dist/server/npc/ai/hard/search');
+const { advancePosition, beginTurn, continueTurn, bindOpponent, clonePosition, switchIn, modelsFor, knownMoves, hp, usableMove, actionOutcomes, supportsMove, applyEntryEffects, applyRecovery, boosts } = require('../../../dist/server/npc/ai/hard/projection');
+const { searchPosition, Search, optimisticValue, pessimisticValue } = require('../../../dist/server/npc/ai/hard/search');
 const { calculateDamage, selectDamage } = require('../../../dist/server/npc/ai/hard/damage');
 const { hardMove, hardMoveId } = require('../../../dist/server/npc/ai/hard/opponent-model');
 const { selectMoveCandidates } = require('../../../dist/server/npc/ai/cfru/scoring');
@@ -36,11 +36,13 @@ describe('Hard damage-based state search', () => {
 		const full = run(false), bounded = run(true);
 		assert(full.choice, full.reason);
 		assert.equal(bounded.choice, full.choice, `${full.reason}\n${bounded.reason}`);
-		assert(Math.abs(bounded.values[0].value - full.values[0].value) < 1e-8, 'Winning value remains exact');
 		for (const value of bounded.values) {
 			const expected = full.values.find(v => v.id === value.id).value;
 			if (value.upperBound) assert(value.value >= expected - 1e-8, `Invalid upper bound for ${value.id}`);
-			else assert(Math.abs(value.value - expected) < 1e-8, `Changed exact value for ${value.id}`);
+			else if (value.lowerBound) {
+				assert(value.value <= expected + 1e-8, `Invalid lower bound for ${value.id}`);
+				assert(value.upperValue >= expected - 1e-8, `Invalid winning upper bound for ${value.id}`);
+			} else assert(Math.abs(value.value - expected) < 1e-8, `Changed exact value for ${value.id}`);
 		}
 		assert(bounded.nodes <= full.nodes, 'The optimized search expands a subset of the reference tree');
 		return { full, bounded };
@@ -65,6 +67,21 @@ describe('Hard damage-based state search', () => {
 			moves: foe.moves.map(id => ({ id, availability: 1 })) }));
 		f.evaluator.models.set(foe, foe.presetModels);
 		compareBounded(f, ['voltswitch', 'thunderbolt'].map(action));
+	});
+	it('matches full search through consecutive pivots and hazard KOs with uncertain recipients', () => {
+		for (const health of [1, 30, 80]) {
+			const f = fixture([mon('Zapdos', ['voltswitch', 'heatwave']), mon('Metagross', ['bulletpunch'])],
+				[mon('Rotom-Wash', ['voltswitch', 'hydropump'], { ability: 'Levitate' }),
+					mon('Tornadus-Therian', ['uturn', 'hurricane'], { ability: 'Regenerator' }), mon('Serperior', ['leafstorm'])]);
+			f.state.opponent.conditions.stealthrock = true;
+			hp(f.state.opponent.active[0], 60); hp(f.state.opponent.reserve[0], health);
+			const recipient = f.state.opponent.reserve[1];
+			recipient.presetModels = [0.2, 0.8].map((weight, i) => ({ name: `spread ${i}`, weight, matched: true,
+				pokemon: { ...recipient, baseStats: { ...recipient.baseStats, spd: i ? 250 : 120 } },
+				moves: recipient.moves.map(id => ({ id, availability: 1 })) }));
+			f.evaluator.models.set(recipient, recipient.presetModels);
+			compareBounded(f, ['voltswitch', 'heatwave'].map(action));
+		}
 	});
 	it('preserves replacement decisions and stable ties after work reordering', () => {
 		const f = fixture([mon('Magikarp', ['splash']), mon('Mew', ['tackle'], { name: 'First' }),
@@ -102,6 +119,71 @@ describe('Hard damage-based state search', () => {
 		const nodes = search.nodes;
 		assert.equal(search.continuationValue(f.state, action('icebeam')), exact);
 		assert.equal(search.nodes, nodes);
+	});
+	it('stops once the root choice is certain without requiring an exact reported value', () => {
+		const f = fixture([mon('Mew', ['psychic', 'calmmind', 'recover'])], [mon('Pikachu', ['splash'])]);
+		const { bounded, full } = compareBounded(f, [action('recover')]);
+		assert.equal(bounded.nodes, 0, bounded.reason);
+		assert.deepEqual(bounded.values, [], 'No invented value is needed for the only candidate');
+		assert(bounded.nodes < full.nodes, `${bounded.reason}\n${full.reason}`);
+	});
+	it('isolates preset recipients and their mutable state across entry branches', () => {
+		const f = fixture([mon('Mew', ['roar'])], [mon('Mew', ['splash']), mon('Machamp', ['closecombat'])]);
+		f.state.opponent.conditions.stickyweb = true;
+		const p = f.state.opponent.reserve[0]; p.itemKnown = false;
+		p.presetModels = ['leftovers', 'lifeorb'].map(item => ({ name: item, pokemon: { ...p, item },
+			moves: [{ id: 'closecombat', availability: 1 }], weight: 0.5, matched: true }));
+		const search = new Search(new MatchupEvaluator(), f.state);
+		const run = () => search.transitions(f.state, action('roar'), action('splash'), false);
+		const leaves = run();
+		assert.equal(leaves.length, 2);
+		assert.deepEqual(leaves.map(b => b.state.opponent.active[0].boosts.spe), [-1, -1]);
+		assert.notEqual(leaves[0].state.opponent.active[0].boosts, leaves[1].state.opponent.active[0].boosts);
+		assert.equal(p.boosts.spe, 0);
+		f.state.opponent.reserve[0].presetModels.reverse();
+		assert.deepEqual(run().map(b => b.state.opponent.active[0].boosts.spe), [-1, -1]);
+		const before = structuredClone(leaves[1].state);
+		switchIn(leaves[0].state, 'opponent', leaves[0].state.opponent.reserve[0]);
+		assert.deepEqual(leaves[1].state, before, 'Leaving one branch must not reset another branch');
+	});
+	it('shares entry, boosts and recovery effects without changing the evaluated snapshot', () => {
+		const f = fixture([mon('Metagross', ['rest'], { ability: 'Clear Body' }), mon('Mew', ['splash'])],
+			[mon('Mew', ['splash'])]);
+		const actor = f.state.self.active[0], copy = clonePosition(f.state).self.active[0];
+		const side = { ...f.state.self.conditions, stickyweb: true };
+		applyEntryEffects(copy, side, f.state.field);
+		assert.equal(copy.boosts.spe, 0, 'Clear Body blocks the entry stat drop in shared mechanics');
+		copy.ability = 'Contrary'; applyEntryEffects(copy, side, f.state.field);
+		assert.equal(copy.boosts.spe, 1);
+		copy.ability = 'Simple'; boosts(copy, { atk: 2 }, f.state);
+		assert.equal(copy.boosts.atk, 4);
+		copy.ability = 'Insomnia'; hp(copy, 1);
+		applyRecovery(f.state, 'self', copy, hardMove('rest', 1, f.state.field.formatId));
+		assert.equal(copy.hp, 1, 'Rest cannot recover through a sleep immunity');
+		copy.ability = 'Clear Body'; copy.item = 'Chesto Berry'; copy.itemKnown = true;
+		applyRecovery(f.state, 'self', copy, hardMove('rest', 1, f.state.field.formatId));
+		assert.equal(copy.hp, copy.maxHp); assert.equal(copy.status, ''); assert.equal(copy.item, '');
+		assert.equal(actor.boosts.atk, 0); assert.equal(actor.boosts.spe, 0); assert.equal(actor.item, '');
+	});
+	it('stops expanding first-turn responses once a root is provably dominated', () => {
+		const f = fixture([mon('Landorus-Therian', ['earthquake', 'explosion'])],
+			[mon('Magikarp', ['tackle', 'flail', 'bounce'], { level: 1 })]);
+		const { full, bounded } = compareBounded(f, ['earthquake', 'explosion'].map(action));
+		assert.equal(bounded.choice, 'move earthquake');
+		assert.equal(full.nodes, 6, 'All three responses are evaluated for both attacks');
+		assert.equal(bounded.nodes, 4, 'One drawing response already bounds Explosion below the guaranteed win');
+	});
+	it('reuses opposing responses across own actions without mutating their bound snapshots', () => {
+		const f = fixture([mon('Mew', ['psychic', 'icebeam'])], [mon('Machamp', ['closecombat', 'knockoff'])]);
+		const search = new Search(new MatchupEvaluator());
+		const first = search.continuation(f.state, action('psychic'));
+		const second = search.continuation(f.state, action('icebeam'));
+		assert.equal(first.responses, second.responses);
+		const before = first.responses.map(r => clonePosition(r.state));
+		search.continuationBranches(f.state, action('psychic'));
+		assert.deepEqual(second.responses.map(r => r.state), before);
+		search.continuationBranches(f.state, action('icebeam'));
+		assert(search.reused.responses > 0);
 	});
 	it('keeps unresolved rare profiles in the bound instead of extrapolating the evaluated majority', () => {
 		const f = fixture([mon('Mew', ['splash'])], [mon('Mew', ['splash'])]);
@@ -177,9 +259,66 @@ describe('Hard damage-based state search', () => {
 			search.continuationBranches = () => leaves;
 			const exact = search.continuationValue();
 			assert(optimisticValue(leaves) >= exact - 1e-9, `Complete bound, seed ${seed}`);
+			assert(pessimisticValue(leaves) <= exact + 1e-9, `Complete lower bound, seed ${seed}`);
 			const partial = leaves.map(b => ({ ...b, value: random() < 0.3 ? Infinity : b.value + random() * 50 }));
 			assert(optimisticValue(partial) >= exact - 1e-9, `Partial bound, seed ${seed}`);
+			const lower = leaves.map(b => ({ ...b, value: random() < 0.3 ? -Infinity : b.value - random() * 50 }));
+			assert(pessimisticValue(lower) <= exact + 1e-9, `Partial lower bound, seed ${seed}`);
 		}
+	});
+	it('bounds nested shared entries with chance weights without flattening them to leaf extrema', () => {
+		const search = new Search(new MatchupEvaluator());
+		for (let seed = 1; seed <= 64; seed++) {
+			let rng = seed;
+			const random = () => ((rng = Math.imul(rng, 1664525) + 1013904223 >>> 0) / 2 ** 32);
+			const leaves = [0, 1].flatMap(config => ['attack', 'pivot'].flatMap(reply =>
+				['A', 'B'].flatMap(first => ['C', 'D'].flatMap(second => [0.2, 0.8].map(weight => ({
+					config, reply, configWeight: config ? 0.3 : 0.7, weight, value: random() * 200 - 100,
+					entries: [
+						{ key: seed % 2 ? 'shared' : `first/${config}/${reply}`, side: seed % 3 ? 'self' : 'opponent', choice: first, depth: 0 },
+						{ key: seed % 2 ? `second/${first}` : `second/${config}/${reply}/${first}`,
+							side: seed % 3 ? 'opponent' : 'self', choice: second, depth: 1 },
+					],
+				}))))));
+			search.continuationBranches = () => leaves;
+			const exact = search.continuationValue();
+			assert(optimisticValue(leaves) >= exact - 1e-9, `upper ${seed}`);
+			assert(pessimisticValue(leaves) <= exact + 1e-9, `lower ${seed}`);
+			assert(optimisticValue(leaves.map(b => ({ ...b, value: random() < 0.3 ? Infinity : b.value + 10 }))) >= exact - 1e-9);
+			assert(pessimisticValue(leaves.map(b => ({ ...b, value: random() < 0.3 ? -Infinity : b.value - 10 }))) <= exact + 1e-9);
+		}
+		const leaves = ['A', 'B'].flatMap(first => ['C', 'D'].flatMap(second => [0.1, 0.9].map(weight => ({
+			config: 0, configWeight: 1, reply: 'pivot', weight,
+			value: first === 'A' ? (second === 'C' ? (weight === 0.1 ? 100 : -100) : 30) : 20,
+			entries: [{ key: 'first', side: 'self', choice: first, depth: 0 },
+				{ key: `second/${first}`, side: 'opponent', choice: second, depth: 1 }],
+		}))));
+		assert.equal(optimisticValue(leaves), 20, 'max(min(-80,30),min(20,20)) = 20, not the best leaf 100');
+	});
+	it('can pause inside a pivot response and resume without replaying completed recipients', () => {
+		const f = fixture([mon('Mew', ['splash'])], [mon('Mew', ['uturn']), mon('Pikachu', ['splash']), mon('Garchomp', ['splash'])]);
+		const search = new Search(new MatchupEvaluator());
+		let entrySelections = 0;
+		search.entryChoices = (state, side) => { entrySelections++; return state[side].reserve.filter(p => !p.fainted); };
+		const responses = search.responses(f.state).filter(r => r.action.move === 'uturn');
+		assert.equal(responses.length, 1);
+		search.responses = () => responses;
+		entrySelections = 0;
+		const visited = [];
+		search.value = state => { visited.push(state.opponent.active[0].species); return visited.at(-1) === 'Pikachu' ? -100 : 100; };
+		const work = search.continuation(f.state, action('splash'));
+		search.prepareContinuation(work);
+		assert.equal(search.nodes, 0, 'Checkpoint discovery does not visit the replacement states');
+		assert.equal(entrySelections, 0, 'Entry candidates are evaluated only when the checkpoint is visited');
+		const independent = new Set([...work.expansions.values()].flatMap(e => e.frontier.flatMap(({ node }) =>
+			[...node.entries, ...(node.checkpoint ? [node.checkpoint] : [])].map(d => d.key))));
+		search.advanceContinuation(work, independent);
+		assert.deepEqual(visited, ['Pikachu']);
+		assert.equal(search.continuationUpper(work, independent), -100);
+		assert.equal(work.leaves, undefined, 'The other recipient remains unexpanded');
+		assert.equal(search.continuationValue(f.state, action('splash')), -100);
+		assert.deepEqual(visited, ['Pikachu', 'Garchomp']);
+		assert.equal(entrySelections, 1, 'Resuming a checkpoint reuses its candidates');
 	});
 	it('projects damage from absorption-ability attackers without redirecting it back to themselves', () => {
 		for (const [species, ability, move] of [['Gastrodon', 'Storm Drain', 'scald'], ['Raichu', 'Lightning Rod', 'thunderbolt']]) {
@@ -661,7 +800,7 @@ describe('Hard damage-based state search', () => {
 		const pivots = search.transitions(f.state, action('uturn'), action('uturn'), false);
 		assert.equal(pivots.length, 2);
 		assert(pivots.every(b => b.entries.length === 2));
-		assert.equal(new Set(pivots.map(b => `${b.state.self.active[0].slot}/${b.state.opponent.active[0].slot}`)).size, 2);
+		assert.equal(new Set(pivots.map(b => `${b.state.self.active[0].ident}/${b.state.opponent.active[0].ident}`)).size, 2);
 		hp(f.state.self.active[0], 1);
 		const entries = search.transitions(f.state, action('splash'), action('seismictoss'), false);
 		assert.deepEqual(entries.map(b => b.state.self.active[0].species).sort(), ['Garchomp']);
@@ -802,11 +941,11 @@ describe('Hard damage-based state search', () => {
 			f.state.self.conditions.stealthrock = true;
 			let next = step(f.state, move, 'splash');
 			assert(next.self.active[0].fainted);
-			assert.equal(next.self.conditions.healingWish, move);
+			assert.equal(next.self.conditions.healingWishes[1], move);
 			switchIn(next, 'self', next.self.reserve[0]);
 			assert.equal(next.self.active[0].hp, recipient.maxHp - Math.floor(recipient.maxHp / 8));
 			assert.equal(next.self.active[0].status, '');
-			assert(!next.self.conditions.healingWish);
+			assert(!next.self.conditions.healingWishes[1]);
 			if (move === 'lunardance') assert.equal(next.self.active[0].projection.pp.psychic, 16);
 			const result = searchPosition(f.state, f.evaluator, [action(move)], new Map());
 			assert.equal(result.choice, `move ${move}`, result.reason);
@@ -876,7 +1015,8 @@ describe('Hard damage-based state search', () => {
 				weight: mass, matched: true, moves: [{ id: 'splash', availability: 1 }],
 			})).filter(m => m.weight > 0);
 			f.evaluator.models = new Map([[p, models]]);
-			return searchPosition(f.state, f.evaluator, [action('protect')], new Map()).values[0].value;
+			return searchPosition(f.state, f.evaluator, [action('protect')], new Map(),
+				new MatchupEvaluator(), false, { prune: false }).values[0].value;
 		};
 		// At 1% Sap Sipper, the strong Energy Ball continuation remains worthwhile.
 		// A worst-profile minimum instead chooses the weak Tackle in both distributions.
@@ -1022,9 +1162,112 @@ describe('Hard damage-based state search', () => {
 		next = advancePosition(next, { id: 'switch 2', switchTo: next.self.reserve[0], prior: 0 }, action('splash'), () => undefined);
 		assert.equal(next.self.active[0].hp, Math.min(next.self.active[0].maxHp, 10 + Math.floor(f.state.self.active[0].maxHp / 2)));
 	});
+	it('receives Wish before poison but cannot recover after a weather KO or through Heal Block', () => {
+		for (const mode of ['poison', 'sand', 'healblock']) {
+			const f = fixture([mon('Blissey', ['wish', 'splash'])], [mon('Magikarp', ['splash'])]);
+			let next = step(f.state, 'wish', 'splash');
+			const actor = next.self.active[0]; hp(actor, 1); actor.status = 'psn';
+			if (mode === 'sand') Object.assign(next.field, { weather: 'sand', weatherId: 'sandstorm', weatherTurns: 4 });
+			if (mode === 'healblock') actor.volatiles.add('healblock');
+			next = step(next, 'splash', 'splash');
+			assert.equal(next.self.active[0].hp, mode === 'poison' ?
+				1 + Math.floor(actor.maxHp / 2) - Math.floor(actor.maxHp / 8) : 0, mode);
+			assert.equal(next.self.conditions.wishes[1], 0);
+			assert(!next.self.conditions.wishSources[1]);
+		}
+	});
+	it('keeps Wish on the vacated field slot across a pivot, including a fainted caster', () => {
+		const f = fixture([mon('Blissey', ['wish', 'uturn']), mon('Mew', ['splash'])], [mon('Magikarp', ['splash'])]);
+		hp(f.state.self.reserve[0], 10);
+		const pending = step(f.state, 'wish', 'splash');
+		const pivoted = step(pending, 'uturn', 'splash');
+		assert.equal(pivoted.self.active[0].species, 'Mew');
+		assert.equal(pivoted.self.active[0].slot, 1);
+		assert.equal(pivoted.self.active[0].hp, Math.min(pivoted.self.active[0].maxHp,
+			10 + Math.floor(f.state.self.active[0].maxHp / 2)));
+		assert.equal(pending.self.active[0].species, 'Blissey', 'Branching must not mutate the original position');
+		hp(pending.self.active[0], 0);
+		switchIn(pending, 'self', pending.self.reserve[0]);
+		const healed = step(pending, 'splash', 'splash');
+		assert.equal(healed.self.active[0].hp, pivoted.self.active[0].hp);
+	});
+	it('uses recipient HP for Gen 4 Wish and source HP for Gen 6 Wish', () => {
+		for (const gen of [4, 6]) {
+			const f = fixture([mon('Magikarp', ['wish']), mon('Blissey', ['splash'])], [mon('Magikarp', ['splash'])]);
+			f.state.field.formatId = `gen${gen}customgame`; hp(f.state.self.reserve[0], 10);
+			let next = step(f.state, 'wish', 'splash');
+			next = advancePosition(next, { id: 'switch 2', switchTo: next.self.reserve[0], prior: 0 }, action('splash'), () => undefined);
+			const source = gen === 4 ? next.self.active[0] : f.state.self.active[0];
+			assert.equal(next.self.active[0].hp, 10 + Math.floor(source.maxHp / 2));
+		}
+	});
+	it('restores Regenerator once on a projected exit and applies hazards on the later entry', () => {
+		const f = fixture([mon('Tornadus-Therian', ['uturn'], { ability: 'Regenerator' }), mon('Mew', ['splash'])],
+			[mon('Blissey', ['splash'])]);
+		const bird = f.state.self.active[0]; hp(bird, 10); f.state.self.conditions.stealthrock = true;
+		const next = step(f.state, 'uturn', 'splash');
+		const rested = next.self.reserve.find(p => p.species === bird.species);
+		assert.equal(rested.hp, 10 + Math.floor(bird.maxHp / 3));
+		switchIn(next, 'self', rested);
+		assert.equal(next.self.active[0].hp, 10 + Math.floor(bird.maxHp / 3) - Math.floor(bird.maxHp / 4));
+		assert(!next.self.active[0].fainted);
+		assert.equal(bird.hp, 10);
+	});
+	it('keeps stored sacrifice healing per field slot and consumes it according to the generation', () => {
+		for (const gen of [6, 9]) for (const move of ['healingwish', 'lunardance']) {
+			const f = fixture([mon('Mew', ['psychic'])], [mon('Magikarp', ['splash'])]);
+			f.state.field.formatId = `gen${gen}customgame`;
+			const p = f.state.self.active[0], c = f.state.self.conditions;
+			c.healingWishes = { 1: move, 2: move };
+			applyEntryEffects(p, c, f.state.field);
+			assert.equal(c.healingWishes[1], gen === 6 ? undefined : move);
+			assert.equal(c.healingWishes[2], move);
+			c.healingWishes[1] = move; c.stealthrock = true;
+			hp(p, 1); p.status = 'tox';
+			p.sleepTurns = 2; p.toxicCounter = 8;
+			p.projection = { pp: { psychic: 0 } };
+			applyEntryEffects(p, c, f.state.field);
+			assert.equal(p.hp, p.maxHp - Math.floor(p.maxHp / 8));
+			assert.equal(p.status, ''); assert.equal(p.toxicCounter, 0); assert.equal(p.sleepTurns, 0);
+			assert.equal(p.projection.pp.psychic, move === 'lunardance' ? 16 : 0);
+			assert(!c.healingWishes[1]);
+			hp(p, 1); applyEntryEffects(p, c, f.state.field);
+			assert(p.fainted, 'A consumed effect cannot heal the next entry');
+		}
+	});
+	it('uses Gen 4 hazard order before sacrifice healing, including Toxic Spikes', () => {
+		const f = fixture([mon('Mew', ['psychic'])], [mon('Magikarp', ['splash'])]);
+		f.state.field.formatId = 'gen4customgame';
+		const p = f.state.self.active[0], c = f.state.self.conditions;
+		c.healingWishes = { 1: 'healingwish' }; c.stealthrock = true; c.toxicspikes = 2;
+		hp(p, 100); applyEntryEffects(p, c, f.state.field);
+		assert.equal(p.hp, p.maxHp); assert.equal(p.status, '');
+		c.healingWishes[1] = 'healingwish'; hp(p, 1);
+		applyEntryEffects(p, c, f.state.field);
+		assert(p.fainted, 'Healing cannot revive a recipient that faints to the earlier hazard');
+	});
+	it('includes stored sacrifice healing when evaluating a forced replacement', () => {
+		const f = fixture([mon('Latias', ['healingwish']), mon('Mew', ['psychic'])], [mon('Magikarp', ['splash'])]);
+		hp(f.state.self.active[0], 0); hp(f.state.self.reserve[0], 1);
+		f.state.self.conditions.stealthrock = true;
+		f.state.self.conditions.healingWishes = { 1: 'healingwish' };
+		const result = f.evaluator.scoreSwitch(f.state.self.reserve[0], new Map(), true);
+		assert(result.safe, result.reasons.join('; '));
+		assert.equal(f.state.self.conditions.healingWishes[1], 'healingwish', 'Evaluation cannot consume the live effect');
+	});
+	it('includes pending Wish in switch survival using the caster rather than the outgoing Pokemon', () => {
+		const f = fixture([mon('Magikarp', ['splash']), mon('Blissey', ['wish']), mon('Mew', ['splash'])],
+			[mon('Magikarp', ['splash'])]);
+		const recipient = f.state.self.reserve[1]; hp(recipient, 1); recipient.status = 'psn';
+		f.state.self.conditions.wishes[1] = 1;
+		f.state.self.conditions.wishSources = { 1: f.state.self.reserve[0].ident };
+		const result = f.evaluator.scoreSwitch(recipient, new Map(), false, f.state.self.active[0]);
+		assert(result.safe, result.reasons.join('; '));
+		assert(result.reasons.some(reason => reason.startsWith('Wish recipient')));
+	});
 	it('does not discard an unsupported opponent response while returning a confident search result', () => {
-		const f = fixture([mon('Mew', ['psychic'])], [mon('Mew', ['batonpass', 'splash']), mon('Magikarp', ['splash'])]);
-		const result = searchPosition(f.state, f.evaluator, [action('psychic')], new Map());
+		const f = fixture([mon('Mew', ['psychic', 'psyshock'])], [mon('Mew', ['batonpass', 'splash']), mon('Magikarp', ['splash'])]);
+		const result = searchPosition(f.state, f.evaluator, [action('psychic'), action('psyshock')], new Map());
 		assert(!result.choice); assert(result.reason.includes('batonpass'));
 	});
 	it('keeps reactive damage separate from ordinary damage and fails Counter against special attacks', () => {

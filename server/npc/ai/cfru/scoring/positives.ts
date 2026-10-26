@@ -15,7 +15,7 @@ import { buildAIMove } from '../state-builder';
 import { itemRemovalFailure } from '../util/items';
 import { toID } from '../../../../../sim/dex';
 import type { ScoringContext, PositiveScoringFunction } from './index';
-import { calculateDamage, canKnockOut, can2HKO, findStrongestMove } from '../util/damage-calc';
+import { calculateDamage } from '../util/damage-calc';
 import { actsBeforeTarget, attacksFirst, compareSpeedOrder } from '../util/speed';
 import {
 	recoveryRecipients, recoveryCuresStatus, secondaryEffectFailure, statusFailure, canRestoreUserHp, recoveryKind,
@@ -1538,7 +1538,7 @@ export const rewardSpreadMove: PositiveScoringFunction = (ctx) => {
 	// Calculate damage and KO potential for other opponents
 	for (const otherTarget of otherOpponents) {
 		try {
-			const damageResult = calculateDamage(
+			const damageResult = (ctx.calculateDamage || calculateDamage)(
 				ctx.attacker,
 				otherTarget,
 				ctx.move,

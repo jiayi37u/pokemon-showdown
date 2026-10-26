@@ -231,6 +231,16 @@ export function buildBattleStateFromRequests(
 			team: [...opponentActive, ...opponentReserve], conditions: buildOpponentConditionsFromTracker(tracker) },
 		field,
 	};
+	// A fainted opponent is absent from the living team, but its Wish still has a source HP.
+	for (const [slot, source] of Object.entries(state.opponent.conditions.wishSources || {})) {
+		if (state.opponent.team.some(p => p.ident === source)) continue;
+		const tracked = tracker.getOpponentTeam().find(p => p.ident === source);
+		if (tracked) {
+			state.opponent.conditions.wishAmounts ||= {};
+			state.opponent.conditions.wishAmounts[+slot] = Math.floor(
+				trackedPokemonToAIPokemon(tracked, +slot, false, formatId).maxHp / 2);
+		}
+	}
 	tracker.evidence.begin(state);
 	state.opponentEvidence = tracker.evidence.getHistory();
 	state.actedThisTurn = tracker.getTurnActions();

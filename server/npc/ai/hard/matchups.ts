@@ -6,10 +6,11 @@ import type { AIPokemon, AIMove, BattleState, FieldConditions, SideConditions } 
 import { hardMove, hardMoveId } from './opponent-model';
 import { getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { calculateDamage, selectDamage, DamageCache, type DamagePolicy } from './damage';
-import { modelsFor, knownMoves, clonePosition, settleFutureAttacks, bindOpponent, beginTurn, continueTurn,
-	moveAction, positionKey, supportsMove, usableMove, clonePokemon, projectEntry, boosts, status,
+import { modelsFor, clonePosition, settleFutureAttacks, bindOpponent,
+	positionKey, usableMove, clonePokemon, projectEntry, boosts, status,
 	applyRecovery, type Side } from './projection';
-import { compareActionOrder } from '../cfru/util/speed';
+import { compareActionOrder, compareSpeedOrder } from '../cfru/util/speed';
+import { getMoveInteraction } from '../cfru/util/type-calc';
 import { directRecoveryAmount } from '../cfru/util/turn-outcome';
 import {
 	effectiveAbility, effectiveItem, fieldWithActivePokemon, rulesDex, tracedAbility,
@@ -314,9 +315,8 @@ export class MatchupEvaluator {
 		this.damagePolicy = damagePolicy; this.damageCache = damageCache;
 	}
 
-	/** A winning stationary race alone cannot exclude switching when the foe can pivot away.
-	 * Verify one common winning attack against every compatible pivot, stopping at the
-	 * existing entry checkpoint. No recipient trees or additional positional scores are needed.
+	/** A faster winning matchup can act before a pivot. A slower one cannot enforce
+	 * its stationary advantage when the opponent can pivot to a living reserve.
 	 */
 	holdsAdvantage(state: BattleState, side: Side, assessment = this.assess(state)): boolean {
 		if (state.self.active[0]?.fainted || state.opponent.active[0]?.fainted) return false;
@@ -328,30 +328,17 @@ export class MatchupEvaluator {
 		const key = `${side}:${positionKey(state)}`, cached = this.advantages.get(key);
 		if (cached !== undefined) return cached;
 		const dex = rulesDex(state.field), actor = view.self.active[0], target = view.opponent.active[0];
-		const worlds = modelsFor(target).flatMap(foe => modelsFor(actor).map(own => {
-			const bound = clonePosition(view);
-			bindOpponent(bound, target, foe); bindOpponent(reverse(bound), actor, own);
-			bound.self.active[0].moves = own.moves.map(m => m.id);
-			bound.opponent.active[0].moves = foe.moves.map(m => m.id);
-			const pivots = bound.opponent.active[0].moves.filter(id =>
-				dex.moves.get(id).selfSwitch && usableMove(bound, 'opponent', id));
-			return { bound, pivots };
-		})).filter(world => world.pivots.length);
-		const result = !worlds.length || knownMoves(actor).some(id => {
-			const move = hardMove(id, 1, state.field.formatId || '');
-			if (move.category === 'Status' || !supportsMove(view, id)) return false;
-			return worlds.every(({ bound, pivots }) => {
-				if (!bound.self.active[0].moves.includes(id) || !usableMove(bound, 'self', id)) return false;
-				const pairState: PairState = { ...bound, evaluator: this, damageMemo: new Map(), keys: new WeakMap() };
-				if (outlook(bound.self.active[0], bound.opponent.active[0], pairState, [move]).check < 1) return false;
-				return pivots.every(reply => {
-					if (!supportsMove(bound, reply)) return false;
-					const turn = beginTurn(bound, moveAction(bound, 'self', id), moveAction(bound, 'opponent', reply));
-					continueTurn(turn, this.damagePolicy, this.damageCache);
-					return !turn.pending && !turn.state.self.active[0].fainted;
-				});
+		const result = modelsFor(actor).every(own => modelsFor(target).every(foe => {
+			if (compareSpeedOrder(own.pokemon, foe.pokemon, state.field,
+				view.self.conditions, view.opponent.conditions) > 0) return true;
+			const bound = clonePosition(view); bindOpponent(bound, target, foe);
+			return !foe.moves.some(({ id }) => {
+				if (!dex.moves.get(id).selfSwitch || !usableMove(bound, 'opponent', id) ||
+					mustSkipMove(foe.pokemon, [id], state.field)) return false;
+				const move = hardMove(id, 1, state.field.formatId || '');
+				return move.target === 'self' || getMoveInteraction(foe.pokemon, own.pokemon, move, state.field).effectiveness > 0;
 			});
-		});
+		}));
 		this.advantages.set(key, result); return result;
 	}
 
@@ -391,17 +378,18 @@ export class MatchupEvaluator {
 		const context = JSON.stringify([state.field, state.self.conditions, state.opponent.conditions,
 			// Sleep-clause eligibility is the one team-wide status dependency of pair evaluation.
 			sleepers(own), sleepers(foes)]);
-		const actors = own.map(p => ({ ...p, moves: knownMoves(p) }));
-		const ownKeys = actors.map(p => this.inputKey(p, () => fingerprint(p), keys));
-		const profiles = foes.map(target => modelsFor(target).map(model => {
+		// A perspective change does not turn estimated profiles into known configurations.
+		const profilesFor = (party: AIPokemon[]) => party.map(target => modelsFor(target).map(model => {
 			const pokemon = { ...model.pokemon, moves: model.moves.map(m => m.id) };
 			return { pokemon, weight: model.weight, key: this.inputKey(pokemon, () => fingerprint(pokemon), keys) };
 		}));
+		const actors = profilesFor(own), profiles = profilesFor(foes);
 		const prefix = this.token(context + JSON.stringify(this.damagePolicy));
 		// Cache evaluation inputs, not search history. PP, pending choices and reveal
 		// bookkeeping still distinguish search states but do not alter this value function.
-		const position = JSON.stringify([prefix, ownKeys, foes.map(p => this.inputKey(p, () => fingerprint(p), keys)),
-			profiles.map(pool => pool.map(p => [p.key, p.weight]))]);
+		const position = JSON.stringify([prefix,
+			...[own, foes].map(party => party.map(p => this.inputKey(p, () => fingerprint(p), keys))),
+			...[actors, profiles].map(pools => pools.map(pool => pool.map(p => [p.key, p.weight])))]);
 		const cached = this.positions.get(position);
 		if (cached) { this.stats.positions++; return cached; }
 		const sides = [state.self.conditions, state.opponent.conditions]
@@ -410,45 +398,79 @@ export class MatchupEvaluator {
 			[side.stealthrock, side.spikes, side.toxicspikes, side.stickyweb, side.healingWishes]);
 		const inputs = this.token(JSON.stringify([combatFieldKey(state.field), sides, entryInputs,
 			sleepers(own), sleepers(foes)]));
-		const matrix = actors.map((actor, i) => foes.map((target, j): Pair => {
-			if (!actor.hp || !target.hp || actor.fainted || target.fainted) return { self: zero(), opponent: zero() };
-			const sum: Pair = { self: zero(), opponent: zero() };
-			for (const model of profiles[j]) {
-				const input = `${inputs}:${ownKeys[i]}:${model.key}`;
-				let result = this.pairInputs.get(input);
+		// Resolve each concrete pair through one cache path, including the current pair
+		// used to determine whether a boost can contribute to other team matchups.
+		type Profile = typeof actors[number][number];
+		const pair = (actorModel: Profile, foeModel: Profile): Pair => {
+			const actor = actorModel.pokemon;
+			const input = `${inputs}:${actorModel.key}:${foeModel.key}`;
+			let result = this.pairInputs.get(input);
+			if (result) this.stats.hits++;
+			else {
+				const foe = foeModel.pokemon;
+				let field = fieldWithActivePokemon(state.field, [actor, foe]);
+				let a = entered(actor, state.self.conditions, field), b = entered(foe, state.opponent.conditions, field);
+				const ownCopy = tracedAbility(a, [b], field), foeCopy = tracedAbility(b, [a], field);
+				if (ownCopy) a = { ...a, ability: ownCopy };
+				if (foeCopy) b = { ...b, ability: foeCopy };
+				if (ownCopy || foeCopy) field = fieldWithActivePokemon(field, [a, b]);
+				// Team-wide sleep eligibility matters only to pairs that can inflict sleep.
+				// Use the shared clause primitive, including owner and self-sleep rules.
+				const sleep = [[a, b, state.opponent.team], [b, a, state.self.team]] as const;
+				const clauses = sleep.map(([source, recipient, team]) =>
+					moves(source, field).some(move => move.status === 'slp') && sleepClauseOccupied(field, team, recipient));
+				const key = `${this.inputKey(field, () => combatFieldKey(field), keys)}:${sides}:` +
+					`${this.inputKey(a, () => fingerprint(a), keys)}:${this.inputKey(b, () => fingerprint(b), keys)}:${clauses}`;
+				result = this.cache.get(key);
 				if (result) this.stats.hits++;
 				else {
-					const foe = model.pokemon;
-					let field = fieldWithActivePokemon(state.field, [actor, foe]);
-					let a = entered(actor, state.self.conditions, field), b = entered(foe, state.opponent.conditions, field);
-					const ownCopy = tracedAbility(a, [b], field), foeCopy = tracedAbility(b, [a], field);
-					if (ownCopy) a = { ...a, ability: ownCopy };
-					if (foeCopy) b = { ...b, ability: foeCopy };
-					if (ownCopy || foeCopy) field = fieldWithActivePokemon(field, [a, b]);
-					// Team-wide sleep eligibility matters only to pairs that can inflict sleep.
-					// Use the shared clause primitive, including owner and self-sleep rules.
-					const sleep = [[a, b, state.opponent.team], [b, a, state.self.team]] as const;
-					const clauses = sleep.map(([source, recipient, team]) =>
-						moves(source, field).some(move => move.status === 'slp') && sleepClauseOccupied(field, team, recipient));
-					const key = `${this.inputKey(field, () => combatFieldKey(field), keys)}:${sides}:` +
-						`${this.inputKey(a, () => fingerprint(a), keys)}:${this.inputKey(b, () => fingerprint(b), keys)}:${clauses}`;
-					result = this.cache.get(key);
-					if (result) this.stats.hits++;
-					else {
-						this.stats.misses++;
-						const pairState: PairState = { ...state, field, evaluator: this, damageMemo: new Map(), keys,
-							self: { ...state.self, active: [a] }, opponent: { ...state.opponent, active: [b] } };
-						result = { self: directional(a, b, pairState), opponent: directional(b, a, reverse(pairState)) };
-						this.cache.set(key, result);
-					}
-					this.pairInputs.set(input, result);
+					this.stats.misses++;
+					const pairState: PairState = { ...state, field, evaluator: this, damageMemo: new Map(), keys,
+						self: { ...state.self, active: [a] }, opponent: { ...state.opponent, active: [b] } };
+					result = { self: directional(a, b, pairState), opponent: directional(b, a, reverse(pairState)) };
+					this.cache.set(key, result);
 				}
+				this.pairInputs.set(input, result);
+			}
+			return result;
+		};
+		const ownActive = own.findIndex(p => p.active && p.hp > 0 && !p.fainted);
+		const foeActive = foes.findIndex(p => p.active && p.hp > 0 && !p.fainted);
+		const withoutStrandedBoosts = (pool: Profile[], opponents: Profile[], side: Side): Profile[] =>
+			pool.map(model => {
+				if (!Object.values(model.pokemon.boosts).some(n => n > 0) || !opponents.length) return model;
+				const stranded = opponents.every(other => {
+					const current = side === 'self' ? pair(model, other) : pair(other, model);
+					const theirs = side === 'self' ? 'opponent' : 'self';
+					return current[side].check === 0 && current[side].pressure === 0 && current[theirs].check === 1;
+				});
+				if (!stranded) return model;
+				// The current opponent can win without conceding offensive progress. Leaving
+				// loses the boost, so it cannot also provide coverage against the bench.
+				// Keep the real active pair intact; this is a value constraint, not a switch.
+				const pokemon = { ...model.pokemon, boosts: { ...model.pokemon.boosts } };
+				for (const stat of Object.keys(pokemon.boosts) as (keyof AIPokemon['boosts'])[]) {
+					pokemon.boosts[stat] = Math.min(0, pokemon.boosts[stat]);
+				}
+				return { ...model, pokemon, key: this.inputKey(pokemon, () => fingerprint(pokemon), keys) };
+			});
+		const ownPotential = ownActive >= 0 && foeActive >= 0 ?
+			withoutStrandedBoosts(actors[ownActive], profiles[foeActive], 'self') : [];
+		const foePotential = ownActive >= 0 && foeActive >= 0 ?
+			withoutStrandedBoosts(profiles[foeActive], actors[ownActive], 'opponent') : [];
+		const matrix = own.map((original, i) => foes.map((target, j): Pair => {
+			if (!original.hp || !target.hp || original.fainted || target.fainted) return { self: zero(), opponent: zero() };
+			const sum: Pair = { self: zero(), opponent: zero() };
+			const ownPool = i === ownActive && foeActive >= 0 && j !== foeActive ? ownPotential : actors[i];
+			const foePool = j === foeActive && ownActive >= 0 && i !== ownActive ? foePotential : profiles[j];
+			for (const ownModel of ownPool) for (const model of foePool) {
+				const weight = ownModel.weight * model.weight, result = pair(ownModel, model);
 				for (const side of ['self', 'opponent'] as const) {
 					for (const metric of ['check', 'counter', 'pressure', 'sustain', 'entryPressure', 'entrySustain'] as const) {
-						sum[side][metric] += model.weight * result[side][metric];
+						sum[side][metric] += weight * result[side][metric];
 					}
 					for (const [move, value] of Object.entries(result[side].switchPressure)) {
-						sum[side].switchPressure[move] = (sum[side].switchPressure[move] || 0) + model.weight * value;
+						sum[side].switchPressure[move] = (sum[side].switchPressure[move] || 0) + weight * value;
 					}
 				}
 			}

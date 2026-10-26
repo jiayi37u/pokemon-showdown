@@ -16,6 +16,52 @@ function fixture(own, foe) {
 
 describe('Hard singles matchup value', () => {
 	afterEach(() => { battles.splice(0).forEach(b => b.destroy()); });
+	it('does not carry stranded boosts into bench matchups, while keeping the real active pair', () => {
+		const { hp, clonePosition } = require('../../../dist/server/npc/ai/hard/projection');
+		const f = fixture([mon('Manaphy', ['psychic', 'scald'], { nature: 'Modest',
+			evs: { hp: 252, spa: 240, spe: 16 } }), mon('Volcarona', ['flamethrower'])],
+		[mon('Serperior', ['leafstorm'], { ability: 'Contrary', nature: 'Timid',
+			evs: { hp: 120, spa: 136, spe: 252 } }), mon('Volcanion', ['steameruption'], { ability: 'Water Absorb' })]);
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		hp(actor, 146); actor.boosts.spa = 3;
+		hp(foe, 160); foe.boosts.spa = 2;
+		const before = clonePosition(f.state), boosted = f.evaluator.assess(f.state);
+		const neutral = clonePosition(f.state); neutral.self.active[0].boosts.spa = 0;
+		const without = f.evaluator.assess(neutral);
+		assert.equal(boosted.matrix[0][0].self.check, 0);
+		assert.equal(boosted.matrix[0][0].self.pressure, 0);
+		assert.equal(boosted.matrix[0][0].opponent.check, 1);
+		assert.deepEqual(boosted.matrix[0][1], without.matrix[0][1], 'Unusable boosts cannot cover a different foe');
+		assert(boosted.matrix[0][0].self.switchPressure.psychic > without.matrix[0][0].self.switchPressure.psychic,
+			'The actual attack into the active target retains its real damage');
+		assert.deepEqual(clonePosition(f.state), before, 'Valuation must not change the search state');
+		const misses = f.evaluator.stats.misses;
+		assert.equal(f.evaluator.assess(f.state), boosted);
+		assert.equal(f.evaluator.stats.misses, misses, 'Repeated values reuse the pair and position caches');
+		const reversed = { ...f.state, self: f.state.opponent, opponent: f.state.self };
+		assert(Math.abs(f.evaluator.assess(reversed).value + boosted.value) < 1e-9);
+		actor.baseStats.spe = 1000;
+		const faster = f.evaluator.assess(f.state);
+		assert(faster.matrix[0][0].self.pressure > 0);
+		const fasterNeutral = clonePosition(f.state); fasterNeutral.self.active[0].boosts.spa = 0;
+		assert(faster.matrix[0][1].self.switchPressure.psychic >
+			f.evaluator.assess(fasterNeutral).matrix[0][1].self.switchPressure.psychic,
+		'A changed speed that enables attacking restores the boost contribution');
+	});
+	it('retains boost potential when compatible active profiles do not all prevent progress', () => {
+		const { hp } = require('../../../dist/server/npc/ai/hard/projection');
+		const f = fixture([mon('Manaphy', ['psychic'])],
+			[mon('Serperior', ['leafstorm']), mon('Volcanion', ['steameruption'])]);
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		hp(actor, 80); actor.boosts.spa = 3;
+		foe.presetModels = [1, 1000].map(spe => ({ name: String(spe), weight: 0.5, matched: true,
+			pokemon: { ...foe, baseStats: { ...foe.baseStats, spe } }, moves: [{ id: 'leafstorm', availability: 1 }],
+		}));
+		const uncertain = f.evaluator.assess(f.state);
+		foe.presetModels = [foe.presetModels[1]];
+		const blocked = f.evaluator.assess(f.state);
+		assert(uncertain.matrix[0][1].self.switchPressure.psychic > blocked.matrix[0][1].self.switchPressure.psychic);
+	});
 	it('keeps the stationary check but cannot enforce it against a faster successful pivot', () => {
 		const { hp, clonePosition } = require('../../../dist/server/npc/ai/hard/projection');
 		const f = fixture([mon('Volcanion', ['flamethrower', 'steameruption'], { ability: 'Water Absorb' }),
@@ -34,7 +80,7 @@ describe('Hard singles matchup value', () => {
 		f.state.self.active[0].baseStats.spe = 1000;
 		assert(f.evaluator.holdsAdvantage(f.state, 'self'), 'A first-strike KO prevents the pivot');
 	});
-	it('uses resolved pivot success and keeps uncertain effects from proving a forced stay', () => {
+	it('only treats a usable pivot with a living recipient as an escape', () => {
 		const { hp } = require('../../../dist/server/npc/ai/hard/projection');
 		for (const [species, ability, attack, pivot, blocked] of [
 			['Excadrill', 'Mold Breaker', 'earthquake', 'voltswitch', true],
@@ -74,6 +120,63 @@ describe('Hard singles matchup value', () => {
 		f.state.opponent.active[0].baseStats.spe = 1000;
 		assert.equal(f.evaluator.assess(f.state).matrix[0][0].self.check, 1);
 		assert(!f.evaluator.holdsAdvantage(f.state, 'self'));
+	});
+	it('uses speed alone to enforce a winning matchup without projecting an exchange', () => {
+		const f = fixture([mon('Rotom-Wash', ['hydropump'], { ability: 'Levitate', item: 'Leftovers',
+			nature: 'Bold', evs: { hp: 252, def: 252 } }), mon('Tornadus-Therian', ['hurricane'])],
+		[mon('Landorus-Therian', ['uturn'], { nature: 'Impish', evs: { hp: 252, def: 252 } }),
+			mon('Serperior', ['leafstorm'])]);
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		actor.baseStats.spe = 266;
+		const assessment = f.evaluator.assess(f.state), stats = { ...f.evaluator.stats };
+		assert.equal(assessment.matrix[0][0].self.check, 1);
+		assert(f.evaluator.attack(f.state, actor, foe,
+			require('../../../dist/server/npc/ai/hard/opponent-model').hardMove('hydropump', 1, 'gen6customgame')).damage < foe.hp);
+		assert(f.evaluator.holdsAdvantage(f.state, 'self', assessment), 'The faster attacker need not KO before the pivot');
+		assert.deepEqual(f.evaluator.stats, stats, 'The speed gate does not reevaluate any projected position');
+		actor.baseStats.spe = foe.baseStats.spe;
+		assert(!f.evaluator.holdsAdvantage(f.state, 'self'), 'A tie does not establish a speed advantage');
+		actor.baseStats.spe = 210;
+		assert(!f.evaluator.holdsAdvantage(f.state, 'self'));
+		f.state.self.conditions.tailwind = 2;
+		assert(f.evaluator.holdsAdvantage(f.state, 'self'));
+		f.state.self.conditions.tailwind = 0; actor.item = 'choicescarf';
+		assert(f.evaluator.holdsAdvantage(f.state, 'self'));
+		actor.item = 'leftovers'; f.state.field.trickroom = true;
+		assert(f.evaluator.holdsAdvantage(f.state, 'self'));
+	});
+	it('keeps both sides profile weights and switch candidates when reversing perspective', () => {
+		const { Search } = require('../../../dist/server/npc/ai/hard/search');
+		const f = fixture([mon('Mew', ['psychic']), mon('Skarmory', ['bravebird'])],
+			[mon('Machamp', ['closecombat']), mon('Rotom-Wash', ['hydropump'], { ability: 'Levitate' })]);
+		for (const party of [f.state.self, f.state.opponent]) {
+			for (const p of party.team) p.presetModels = [0, 1].map(i => ({ name: String(i), weight: i ? 0.75 : 0.25,
+				matched: true, pokemon: { ...p, baseStats: { ...p.baseStats, def: i ? 350 : 100, spd: i ? 100 : 350 } },
+				moves: p.moves.map(id => ({ id, availability: 1 })),
+			}));
+		}
+		f.state.self.conditions.reflect = 3;
+		const reversed = { ...f.state, self: f.state.opponent, opponent: f.state.self };
+		const forward = f.evaluator.assess(f.state), backward = f.evaluator.assess(reversed);
+		assert(Math.abs(forward.value + backward.value) < 1e-9);
+		for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+			for (const side of ['self', 'opponent']) {
+				const a = forward.matrix[i][j][side], b = backward.matrix[j][i][side === 'self' ? 'opponent' : 'self'];
+				for (const key of ['check', 'counter', 'pressure', 'sustain', 'entryPressure', 'entrySustain']) {
+					assert(Math.abs(a[key] - b[key]) < 1e-9, `${side} ${i}/${j} ${key}`);
+				}
+			}
+		}
+		const search = new Search(f.evaluator);
+		for (const context of ['free', 'exposed', 'switch']) {
+			assert.deepEqual(search.entryChoices(f.state, 'opponent', context).map(p => p.ident),
+				search.entryChoices(reversed, 'self', context).map(p => p.ident), context);
+		}
+		const p = f.state.self.active[0];
+		p.presetModels = p.presetModels.map((model, i) => ({ ...model, weight: i ? 0.25 : 0.75 }));
+		const changed = f.evaluator.assess(f.state);
+		assert.notDeepEqual(changed.matrix, forward.matrix, 'Own profile weights participate in the cache key and evaluation');
+		assert(Math.abs(changed.value + f.evaluator.assess(reversed).value) < 1e-9);
 	});
 	it('reuses an evaluation across search histories without merging their action states', () => {
 		const { clonePosition, positionKey } = require('../../../dist/server/npc/ai/hard/projection');

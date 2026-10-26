@@ -96,6 +96,81 @@ function strategyData(formatId: string): Record<string, StrategySet[]> {
 	return strategies.get(source)!;
 }
 
+/** Legal stone-based forms, shared by catalogue lookup and the user-authorized team priors. */
+function megaPresetForms(speciesName: string, formatId: string) {
+	const dex = Dex.forFormat(formatId);
+	const species = dex.species.get(speciesName);
+	const rules = dex.formats.getRuleTable(dex.formats.get(formatId));
+	return (species.isMega ? [species.name] : species.otherFormes || []).map(name => dex.species.get(name))
+		.filter(forme => {
+			const item = dex.items.get(forme.requiredItem || '');
+			return forme.isMega && forme.gen <= dex.gen && !rules.isBannedSpecies(forme) &&
+				item.megaStone?.[species.baseSpecies] === forme.name && !rules.isBanned(`item:${item.id}`);
+		});
+}
+
+/** User-authorized team priors (2026-10-26), rules 1–3; see HardAI/logic.md.
+ * Apply after individual public evidence, rebuild from the original pools every decision,
+ * and never write these assumptions into tracker or reapply them to search projections.
+ */
+export function applyTeamPresetRules(
+	state: BattleState, pools: Map<AIPokemon, OpponentHypothesis[]>, notes: Map<AIPokemon, string[]>
+): void {
+	const format = state.field.formatId || '';
+	// User scope: only the two imported OU catalogues; National Dex is deferred.
+	if (!['gen6ou', 'gen7ou'].includes(toID(format))) return;
+	const dex = Dex.forFormat(format);
+	const roster = state.opponent.roster || [...state.opponent.team, ...(state.opponent.preview || [])];
+	const record = (p: AIPokemon, message: string) => notes.set(p, [...(notes.get(p) || []), message]);
+	const retain = (p: AIPokemon, predicate: (model: OpponentHypothesis) => boolean, reason: string) => {
+		const before = pools.get(p)!, selected = before.filter(predicate);
+		if (!selected.length) {
+			record(p, `${reason}: no compatible preset; retained evidence-based models`);
+			return;
+		}
+		if (selected.length === before.length) return;
+		const total = selected.reduce((n, model) => n + model.weight, 0);
+		pools.set(p, selected.map(model => ({ ...model, weight: model.weight / total })));
+		record(p, `${reason}: ${before.length} -> ${selected.length} presets`);
+	};
+	// Rule 1: Tyranitar/Hippowdon teammates imply the Sand Rush archetype; absence excludes it.
+	// Match by ability rather than array position, so reordering the catalogue cannot change the rule.
+	const sandTeam = roster.some(p => ['Tyranitar', 'Hippowdon'].includes(dex.species.get(p.species).baseSpecies));
+	for (const p of pools.keys()) if (dex.species.get(p.species).baseSpecies === 'Excadrill') {
+		retain(p, model => (toID(model.pokemon.observedAbility || model.pokemon.ability) === 'sandrush') === sandTeam,
+			`Team prior 1: ${sandTeam ? 'sand teammate, retain' : 'no sand teammate, exclude'} Sand Rush`);
+	}
+	type Member = typeof roster[number];
+	const originalItem = (p: Member) => toID(p.originalItem ||
+		(p.itemKnown && !p.itemChanged && !p.itemLost ? p.item : ''));
+	const stones = (p: Member) => megaPresetForms(p.species, format).map(forme => toID(forme.requiredItem));
+	// Mega slots belong to trainers: Multi partners must not consume each other's inferred slot.
+	for (const owner of new Set(roster.map(p => p.ownerSide))) {
+		const party = roster.filter(p => p.ownerSide === owner);
+		const eligible = party.filter(p => {
+			const items = stones(p), known = originalItem(p);
+			return items.length && (!known || items.includes(known));
+		});
+		// Rule 3: Garchomp yields the inferred Mega role to other candidates, unless public evidence says otherwise.
+		const preferred = eligible.filter(p => dex.species.get(p.species).baseSpecies !== 'Garchomp' ||
+			dex.species.get(p.species).isMega || stones(p).includes(originalItem(p)));
+		const candidates = preferred.length ? preferred : eligible;
+		for (const p of pools.keys()) {
+			if (p.ownerSide !== owner || originalItem(p) || dex.species.get(p.species).isMega) continue;
+			const items = stones(p);
+			if (!items.length) continue;
+			const base = dex.species.get(p.species).baseSpecies;
+			if (base === 'Garchomp' && preferred.length && !candidates.some(q =>
+				dex.species.get(q.species).baseSpecies === base)) {
+				retain(p, model => !items.includes(toID(model.pokemon.item)), 'Team prior 3: Garchomp yields Mega role');
+			} else if (candidates.length === 1 && dex.species.get(candidates[0].species).baseSpecies === base) {
+				// Rule 2: only one remaining eligible species means only its Mega Stone presets.
+				retain(p, model => items.includes(toID(model.pokemon.item)), 'Team prior 2: sole Mega candidate');
+			}
+		}
+	}
+}
+
 /** Recomputed from tracker evidence: an inference never becomes a public observation. */
 export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHypothesis[] {
 	if (opponent.volatiles.has('transform')) {
@@ -111,7 +186,13 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	const revealed: string[] = [...new Set(opponent.moves.map(toID))];
 	const data = strategyData(formatId);
 	// Forme identity comes from public protocol, never from a guessed Mega Stone.
-	const sets = data[species.id] || data[presetSpeciesId(opponent.species, formatId)] || [];
+	const nativeSets = data[species.id] || data[presetSpeciesId(opponent.species, formatId)] || [];
+	// Gen 7 stores Mega sets under separate forme keys. They describe possible loadouts
+	// before evolution too; still compute current stats/types/ability from the public base forme.
+	const megaSets = !species.isMega && ['gen6ou', 'gen7ou'].includes(toID(formatId)) ?
+		megaPresetForms(opponent.species, formatId).flatMap(forme =>
+			nativeSets.some(set => set.items.includes(toID(forme.requiredItem))) ? [] : data[forme.id] || []) : [];
+	const sets = [...nativeSets, ...megaSets];
 	const hypotheses: OpponentHypothesis[] = [];
 	const originalItem = toID(opponent.originalItem ||
 		(opponent.itemKnown && !opponent.itemChanged && !opponent.itemLost ? opponent.item : ''));

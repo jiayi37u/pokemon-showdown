@@ -31,7 +31,8 @@ import {
 	effectiveAbility, effectiveItem, replaceActivePokemon,
 } from '../cfru/util/mechanics';
 import {
-	fightingStyle, hardMove, inferOpponent, predictOpponent, type OpponentHypothesis, type PredictedAction,
+	applyTeamPresetRules, fightingStyle, hardMove, inferOpponent, predictOpponent,
+	type OpponentHypothesis, type PredictedAction,
 } from './opponent-model';
 
 const replacedRewards = new Set([
@@ -75,8 +76,10 @@ export class HardEvaluation {
 			this.inferenceNotes.set(foe, notes);
 			this.models.set(foe, hypotheses);
 			this.opposing.add(foe);
-			for (const model of hypotheses) this.opposing.add(model.pokemon);
 		}
+		// Search supplies its already inferred pools; hypothetical branches are not new public evidence.
+		if (!models) applyTeamPresetRules(this.state, this.models, this.inferenceNotes);
+		for (const hypotheses of this.models.values()) for (const model of hypotheses) this.opposing.add(model.pokemon);
 	}
 
 	private sideOf(pokemon: AIPokemon): 'self' | 'opponent' {

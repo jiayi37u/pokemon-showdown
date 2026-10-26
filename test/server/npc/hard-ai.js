@@ -33,6 +33,104 @@ function setup(foes, team, { doubles = false, AI = HardAI, format = '' } = {}) {
 	return { ai, reveal, decide() { ai.receiveRequest(battle.p2.activeRequest); return choice; } };
 }
 
+describe('Hard user-authorized team preset rules', () => {
+	function evaluate(game, format = 'gen6ou') {
+		const state = buildBattleStateWithTracker(battle.p2.activeRequest, null, game.ai.getTracker(), { formatId: format });
+		const evaluator = new HardEvaluation(state, format);
+		const models = species => evaluator.opponentModels([...state.opponent.team, ...(state.opponent.preview || [])]
+			.find(p => p.species === species));
+		return { state, evaluator, models };
+	}
+	function start(species, format = 'gen6ou') {
+		return setup(species.map(s => mon(s, ['splash'])), [mon('Mew', ['splash'])], { format });
+	}
+	for (const teammate of ['Tyranitar', 'Hippowdon', 'Mew']) {
+		it(`uses the sand-team prior with ${teammate} in public preview`, () => {
+			const game = start(['Excadrill', teammate]);
+			const { models } = evaluate(game);
+			assert(models('Excadrill').length);
+			assert(models('Excadrill').every(m => (m.name === 'Sand Rush') === (teammate !== 'Mew')));
+			assert(Math.abs(models('Excadrill').reduce((n, m) => n + m.weight, 0) - 1) < 1e-9);
+			if (teammate !== 'Mew') {
+				game.ai.getTracker().parseMessage(`|switch|p1a: ${teammate}|${teammate}, M|100/100\n|faint|p1a: ${teammate}`);
+				game.ai.getTracker().parseMessage('|switch|p1a: Excadrill|Excadrill, M|100/100');
+				assert(evaluate(game).models('Excadrill').every(m => m.name === 'Sand Rush'), 'Fainting does not change team composition');
+			}
+		});
+	}
+	it('lets public ability evidence override the sand-team prior', () => {
+		const game = start(['Excadrill', 'Tyranitar']);
+		game.ai.getTracker().parseMessage('|-ability|p1a: Excadrill|Mold Breaker');
+		assert(evaluate(game).models('Excadrill').every(m => m.pokemon.ability === 'Mold Breaker'));
+	});
+	for (const format of ['gen6ou', 'gen7ou']) {
+		it(`uses only Mega Stone presets for a sole candidate in ${format}`, () => {
+			const game = start(['Latias', 'Mew'], format);
+			const { state, models } = evaluate(game, format);
+			assert(models('Latias').length);
+			assert(models('Latias').every(m => m.pokemon.item === 'latiasite' && m.pokemon.species === 'Latias'));
+			assert(!state.opponent.active[0].itemKnown, 'A team prior is not a public item observation');
+		});
+	}
+	it('reassigns the Mega role to Garchomp after the alternative reveals a non-Mega item', () => {
+		const game = start(['Latias', 'Garchomp']);
+		let result = evaluate(game);
+		assert(result.models('Latias').every(m => m.pokemon.item === 'latiasite'));
+		assert(result.models('Garchomp').every(m => m.pokemon.item !== 'garchompite'));
+		game.ai.getTracker().parseMessage('|-item|p1a: Latias|Life Orb');
+		result = evaluate(game);
+		assert(result.models('Latias').every(m => Dex.toID(m.pokemon.item) === 'lifeorb'));
+		assert(result.models('Garchomp').every(m => m.pokemon.item === 'garchompite'));
+		assert(result.models('Garchomp').length > 0);
+	});
+	it('does not mistake an acquired item for the original Mega role', () => {
+		const game = start(['Latias', 'Garchomp']);
+		game.ai.getTracker().parseMessage('|-item|p1a: Latias|Life Orb|[from] move: Trick');
+		const { models } = evaluate(game);
+		assert(models('Garchomp').every(m => m.pokemon.item !== 'garchompite'));
+	});
+	it('keeps other Mega candidates ambiguous while excluding Garchomp with three candidates', () => {
+		const game = start(['Latias', 'Garchomp', 'Tyranitar']);
+		const { models } = evaluate(game);
+		assert(models('Garchomp').every(m => m.pokemon.item !== 'garchompite'));
+		assert(models('Latias').some(m => m.pokemon.item === 'latiasite'));
+		assert(models('Latias').some(m => m.pokemon.item !== 'latiasite'));
+	});
+	it('keeps a publicly revealed Garchompite despite the Garchomp preference', () => {
+		const game = start(['Garchomp', 'Latias']);
+		game.ai.getTracker().parseMessage('|-item|p1a: Garchomp|Garchompite');
+		const { models } = evaluate(game);
+		assert(models('Garchomp').every(m => Dex.toID(m.pokemon.item) === 'garchompite'));
+		assert(models('Latias').some(m => m.pokemon.item !== 'latiasite'));
+	});
+	it('does not count a tier-banned Mega as an alternative', () => {
+		const game = start(['Garchomp', 'Metagross'], 'gen7ou');
+		assert(evaluate(game, 'gen7ou').models('Garchomp').every(m => m.pokemon.item === 'garchompite'));
+	});
+	it('keeps both legal Mega formes when Charizard is the only eligible species', () => {
+		const game = start(['Charizard', 'Mew']);
+		const { models } = evaluate(game);
+		assert.deepEqual(new Set(models('Charizard').map(m => m.pokemon.item)), new Set(['charizarditex', 'charizarditey']));
+		assert(models('Charizard').every(m => m.pokemon.species === 'Charizard'));
+	});
+	it('does not apply constructed-team priors outside gen6ou and gen7ou', () => {
+		const game = start(['Latias', 'Mew'], 'gen9nationaldex');
+		const { models } = evaluate(game, 'gen9nationaldex');
+		assert(models('Latias').every(m => m.pokemon.item !== 'latiasite'));
+	});
+	it('does not share a Mega slot between Multi trainers', () => {
+		const game = start(['Garchomp', 'Latias']);
+		const { state } = evaluate(game);
+		state.isDoubles = true;
+		for (const p of [...state.opponent.preview, ...state.opponent.roster]) {
+			if (p.species === 'Latias') p.ownerSide = 'p3';
+		}
+		const evaluator = new HardEvaluation(state, 'gen6ou');
+		assert(evaluator.opponentModels(state.opponent.active[0]).every(m => m.pokemon.item === 'garchompite'));
+		assert(evaluator.opponentModels(state.opponent.preview[0]).every(m => m.pokemon.item === 'latiasite'));
+	});
+});
+
 describe('Hard CFRU tactical decisions', () => {
 	it('does not admit an ineffective status move merely because the opponent may switch', () => {
 		const game = setup([mon('Skarmory', ['splash', 'tackle', 'growl', 'leer']), mon('Blissey', ['splash'])],
@@ -761,10 +859,12 @@ describe('Hard generic opponent presets', () => {
 			const game = setup([mon('Venusaur', ['gigadrain'], { item: 'Venusaurite' })], [mon('Blissey', ['icebeam'])], { format });
 			let state = snapshot(game, format);
 			let models = inferOpponent(state.opponent.active[0], format);
-			const base = computeStatsFromPreset(Dex.species.get('Venusaur').baseStats, 100, getOpponentPreset('Venusaur'));
+			const base = computeStatsFromPreset(Dex.species.get('Venusaur').baseStats, 100, models[0].spread);
 			assert(models.every(h => h.pokemon.species === 'Venusaur' && h.pokemon.ability !== 'thickfat'));
-			assert.deepEqual(models[0].pokemon.baseStats, base);
-			assert.equal(models[0].pokemon.item, getOpponentPreset('Venusaur').item);
+			for (const model of models) assert.deepEqual(model.pokemon.baseStats,
+				computeStatsFromPreset(Dex.species.get('Venusaur').baseStats, 100, model.spread));
+			assert.equal(Dex.toID(models[0].pokemon.item),
+				format === 'gen7ou' ? 'venusaurite' : Dex.toID(getOpponentPreset('Venusaur').item));
 			game.ai.getTracker().parseMessage('|detailschange|p1a: Venusaur|Venusaur-Mega, M');
 			state = snapshot(game, format);
 			models = inferOpponent(state.opponent.active[0], format);

@@ -318,6 +318,9 @@ export interface BattleState {
 
 	/** Opponent's side */
 	opponent: {
+		/** Public roster, including fainted members; team-building priors must survive a KO. */
+		roster?: Pick<AIPokemon,
+			'species' | 'ownerSide' | 'item' | 'itemKnown' | 'originalItem' | 'itemChanged' | 'itemLost'>[],
 		megaUsedByOwner?: Record<string, boolean>,
 		/** Public team size minus observed fainted members. */
 		remaining?: number;

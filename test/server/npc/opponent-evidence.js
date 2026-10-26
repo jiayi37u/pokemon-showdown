@@ -190,6 +190,81 @@ describe('Hard inference from observed battle outcomes', () => {
 		assert(Object.values(result.models[0].spread.evs).reduce((a, b) => a + b, 0) <= 508);
 	});
 
+	for (const [item, stat, move, nature, defense] of [
+		['Choice Band', 'atk', 'earthquake', 'Adamant', 'def'],
+		['Choice Specs', 'spa', 'flamethrower', 'Modest', 'spd'],
+	]) {
+		it(`excludes ${item} below its 252-EV damage interval instead of reducing offensive EVs`, () => {
+			const g = game({ species: 'Registeel', moves: ['splash'], evs: { hp: 252, [defense]: 252 } },
+				{ species: 'Mew', nature, evs: { [stat]: 252 }, moves: [move] });
+			const state = g.play(), foe = state.opponent.active[0];
+			const original = candidates(foe, [
+				{ name: 'choice', item, nature, evs: { [stat]: 252, spe: 252 } },
+				{ name: 'ordinary', nature, evs: { [stat]: 252, spe: 252 } },
+			]);
+			const result = refineOpponentModels(foe, original, state.opponentEvidence);
+			assert.deepEqual(result.models.map(m => m.name), ['ordinary']);
+			assert(result.notes.some(n => n.includes('Choice minimum investment')));
+			const onlyChoice = refineOpponentModels(foe, original.slice(0, 1), state.opponentEvidence);
+			assert(onlyChoice.models.length);
+			assert(onlyChoice.models.every(m => !m.pokemon.item), 'All-conflicting fallback must not restore the rejected item');
+		});
+		it(`retains legitimate ${item} damage and its full offensive investment`, () => {
+			const g = game({ species: 'Registeel', moves: ['splash'], evs: { hp: 252, [defense]: 252 } },
+				{ species: 'Mew', item, nature, evs: { [stat]: 252 }, moves: [move] });
+			const result = refine(g.play(), [{ name: 'choice', item, nature, evs: { [stat]: 252 } }]);
+			assert.equal(result.models[0].pokemon.item, item);
+			assert.equal(result.models[0].spread.evs[stat], 252);
+		});
+	}
+	it('excludes Scarf below the 176-Speed-EV floor instead of inventing a zero-Speed Scarf', () => {
+		const g = game({ species: 'Aerodactyl', nature: 'Jolly', evs: { spe: 252 }, moves: ['splash'] },
+			{ species: 'Mew', nature: 'Hardy', item: 'Choice Scarf', evs: { hp: 252 }, moves: ['splash'] });
+		const result = refine(g.play(), [
+			{ name: 'scarf', item: 'Choice Scarf', nature: 'Hardy', evs: { spe: 252 } },
+			{ name: 'ordinary', nature: 'Hardy', evs: { spe: 252 } },
+		]);
+		assert.deepEqual(result.models.map(m => m.name), ['ordinary']);
+	});
+	it('still adjusts Scarf Speed within 176 to 252 EVs', () => {
+		const g = game({ species: 'Electrode', nature: 'Timid', evs: { spe: 252 }, moves: ['splash'] },
+			{ species: 'Mew', nature: 'Hardy', item: 'Choice Scarf', evs: { spe: 176 }, moves: ['splash'] });
+		const result = refine(g.play(), [{ item: 'Choice Scarf', nature: 'Hardy', evs: { spe: 252 } }]);
+		assert.equal(result.models[0].pokemon.item, 'Choice Scarf');
+		assert(result.models[0].spread.evs.spe >= 176 && result.models[0].spread.evs.spe < 252);
+	});
+	it('keeps an observed original item within its catalogue presets during subsequent fitting', () => {
+		const g = game({ species: 'Registeel', moves: ['splash'], evs: { hp: 252, def: 252 } },
+			{ species: 'Scizor', item: 'Choice Band', nature: 'Adamant', ability: 'Technician',
+				evs: { atk: 252, hp: 252 }, moves: ['bulletpunch'] }, 'singles', 'gen6ou');
+		g.tracker.parseMessage('|-item|p1a: Scizor|Choice Band');
+		const state = g.play(), foe = state.opponent.active[0];
+		const original = inferOpponent(foe, 'gen6ou');
+		const result = refineOpponentModels(foe, original, state.opponentEvidence);
+		assert(original.length && result.models.length);
+		assert(result.models.every(m => Dex.toID(m.pokemon.item) === 'choiceband'));
+		assert(result.models.every(m => original.some(p => p.name === m.name)));
+	});
+	for (const evs of [
+		{ hp: 252, atk: 252, def: 4 }, { hp: 252, spa: 252, spd: 4 },
+		{ spe: 252, atk: 252, def: 4 }, { spe: 252, spa: 252, spd: 4 },
+		{ hp: 252, atk: 128, spa: 128 }, { spe: 252, def: 128, spd: 128 },
+		{ hp: 84, atk: 84, def: 84, spa: 84, spd: 84, spe: 84 },
+	]) {
+		it(`fits speed evidence without creating forbidden investment shapes from ${JSON.stringify(evs)}`, () => {
+			const g = game({ species: 'Mew', nature: 'Hardy', evs: { spe: 128 }, moves: ['splash'] },
+				{ species: 'Mew', nature: 'Hardy', evs: { spe: evs.spe >= 128 ? 0 : 252 }, moves: ['splash'] });
+			const result = refine(g.play(), [{ nature: 'Hardy', evs }]);
+			const model = result.models[0], fitted = model.spread.evs;
+			assert(model.statRanges, JSON.stringify(result.notes));
+			assert(Object.values(fitted).filter(ev => ev > 0).length <= 3);
+			assert(!((fitted.hp || fitted.spe) && (fitted.atk || fitted.spa) && (fitted.def || fitted.spd)));
+			assert(!(fitted.hp && fitted.atk && fitted.spa));
+			assert(!(fitted.spe && fitted.def && fitted.spd));
+			assert(Object.values(fitted).reduce((a, b) => a + b, 0) <= 508);
+		});
+	}
+
 	it('fits the original spread after exceptional speed evidence supports an unlisted Scarf', () => {
 		const g = game({ species: 'Garchomp', nature: 'Jolly', evs: { hp: 252, spe: 252 }, moves: ['tackle'] },
 			{ species: 'Hydreigon', ability: 'Levitate', item: 'Choice Scarf', nature: 'Timid',
@@ -271,6 +346,11 @@ describe('Hard inference from observed battle outcomes', () => {
 			assert(model.moves.some(m => m.id === 'hiddenpowerice'));
 			assert(Object.values(model.spread.evs).reduce((a, b) => a + b, 0) <= 508);
 			assert(Object.values(model.spread.evs).every(ev => ev >= 0 && ev <= 252));
+			const evs = model.spread.evs;
+			assert(Object.values(evs).filter(ev => ev > 0).length <= 3);
+			assert(!((evs.hp || evs.spe) && (evs.atk || evs.spa) && (evs.def || evs.spd)));
+			assert(!(evs.hp && evs.atk && evs.spa));
+			assert(!(evs.spe && evs.def && evs.spd));
 			assert(model.statRanges.spa[0] <= model.pokemon.baseStats.spa);
 			assert(model.statRanges.spa[1] >= model.pokemon.baseStats.spa);
 		}

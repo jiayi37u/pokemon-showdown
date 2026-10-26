@@ -80,6 +80,40 @@ function compatible(model: OpponentModel, evidence: BattleEvidence, cache?: Dama
 type Stat = keyof AIPokemon['baseStats'];
 const stats: Stat[] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 
+/** User rules (2026-10-26): Choice offense stays at 252 EVs; Scarf Speed cannot fall below 176. */
+function choiceMinimum(model: OpponentModel): { stat: Stat, units: number } | undefined {
+	const item = toID(model.pokemon.item);
+	if (item === 'choiceband') return { stat: 'atk', units: 63 };
+	if (item === 'choicespecs') return { stat: 'spa', units: 63 };
+	if (item === 'choicescarf') return { stat: 'spe', units: 44 };
+}
+
+/** User-authorized fitting shapes, including 4-EV investments as nonzero.
+ * Catalogue spreads are not rewritten; these constrain newly fitted allocations only.
+ */
+const fittingShapes = Array.from({ length: 1 << stats.length }, (_, mask) =>
+	new Set(stats.filter((stat, i) => mask & (1 << i)))).filter(shape => {
+	const hp = shape.has('hp'), speed = shape.has('spe');
+	const attack = shape.has('atk') || shape.has('spa'), defense = shape.has('def') || shape.has('spd');
+	return shape.size <= 3 && !((hp || speed) && attack && defense) &&
+		!(hp && shape.has('atk') && shape.has('spa')) && !(speed && shape.has('def') && shape.has('spd'));
+});
+
+/** A low roll is still compatible. Reject only when the full interval/order cannot reach the Choice floor. */
+function belowChoiceMinimum(model: OpponentModel, history: readonly BattleEvidence[], cache?: DamageCache): boolean {
+	const minimum = choiceMinimum(model);
+	if (!minimum || !model.spread) return false;
+	return history.some(e => {
+		if (evidenceStat(e) !== minimum.stat) return false;
+		const dex = Dex.forFormat(e.context.field.formatId || '');
+		const value = computeStatsFromPreset(dex.species.get(model.pokemon.species).baseStats, model.pokemon.level,
+			{ ...model.spread, evs: { ...model.spread!.evs, [minimum.stat]: minimum.units * 4 } })[minimum.stat];
+		const bound = { ...model, pokemon: { ...model.pokemon,
+			baseStats: { ...model.pokemon.baseStats, [minimum.stat]: value } } };
+		return assessEvidence(bound, e, cache) === 'above';
+	});
+}
+
 function evidenceStat(e: BattleEvidence): Stat | undefined {
 	if (e.kind === 'speed') return 'spe';
 	const move = Dex.forFormat(e.context.field.formatId || '').moves.get(e.move);
@@ -95,8 +129,11 @@ function evidenceStat(e: BattleEvidence): Stat | undefined {
 function fitSpread(
 	model: OpponentModel, history: readonly BattleEvidence[], cache?: DamageCache
 ): OpponentModel | undefined {
-	if (history.every(e => compatible(model, e, cache))) return model;
+	const minimum = choiceMinimum(model);
+	if (history.every(e => compatible(model, e, cache)) &&
+		(!minimum || (model.spread?.evs?.[minimum.stat] ?? 85) >= minimum.units * 4)) return model;
 	if (!model.spread) return;
+	if (!history.length) return model;
 	const dex = Dex.forFormat(history[0].context.field.formatId || '');
 	if (dex.gen < 3) return;
 	const base = dex.species.get(model.pokemon.species).baseStats;
@@ -125,7 +162,7 @@ function fitSpread(
 		const units = { ...prior, hp }, lows = { ...prior, hp }, highs = { ...prior, hp };
 		let feasible = true;
 		for (const stat of stats.filter(s => s !== 'hp')) {
-			let lower = 0, upper = 63;
+			let lower = minimum?.stat === stat ? minimum.units : 0, upper = 63;
 			for (const e of groups.get(stat) || []) {
 				const verdicts = new Map<number, Verdict>();
 				const at = (value: number) => {
@@ -153,24 +190,30 @@ function fitSpread(
 			units[stat] = Math.max(lower, Math.min(upper, prior[stat]));
 		}
 		if (!feasible || stats.reduce((sum, stat) => sum + lows[stat], 0) > 127) continue;
-		let total = stats.reduce((sum, stat) => sum + units[stat], 0);
-		while (total > 127) {
-			// Minimize displacement from the prior; squared displacement breaks equal-cost ties.
-			const donors = stats.filter(stat => stat !== 'hp' && units[stat] > lows[stat]);
-			donors.sort((a, b) => (prior[a] - units[a]) - (prior[b] - units[b]));
-			units[donors[0]]--; total--;
+		// Bound damage/order once per HP value, then choose a permitted investment shape.
+		// Shapes do not create additional opponent hypotheses or search branches.
+		for (const shape of fittingShapes) {
+			if (stats.some(stat => !shape.has(stat) && lows[stat] > 0)) continue;
+			const shaped = { ...units };
+			for (const stat of stats) if (!shape.has(stat)) shaped[stat] = 0;
+			let total = stats.reduce((sum, stat) => sum + shaped[stat], 0);
+			while (total > 127) {
+				const donors = stats.filter(stat => stat !== 'hp' && shaped[stat] > lows[stat]);
+				donors.sort((a, b) => (prior[a] - shaped[a]) - (prior[b] - shaped[b]));
+				shaped[donors[0]]--; total--;
+			}
+			const cost = stats.reduce((sum, stat) => sum + Math.abs(shaped[stat] - prior[stat]), 0);
+			const squared = stats.reduce((sum, stat) => sum + (shaped[stat] - prior[stat]) ** 2, 0);
+			if (cost > bestCost || cost === bestCost && squared >= bestSquared) continue;
+			const fitted = make(shaped);
+			if (!history.every(e => compatible(fitted, e, cache))) continue;
+			fitted.statRanges = Object.fromEntries([...groups.keys()].map(stat => {
+				const available = 127 - stats.filter(s => s !== stat).reduce((sum, s) => sum + lows[s], 0);
+				return [stat, [make({ ...shaped, [stat]: lows[stat] }).pokemon.baseStats[stat],
+					make({ ...shaped, [stat]: shape.has(stat) ? Math.min(highs[stat], available) : 0 }).pokemon.baseStats[stat]]];
+			}));
+			best = fitted; bestCost = cost; bestSquared = squared;
 		}
-		const cost = stats.reduce((sum, stat) => sum + Math.abs(units[stat] - prior[stat]), 0);
-		const squared = stats.reduce((sum, stat) => sum + (units[stat] - prior[stat]) ** 2, 0);
-		if (cost > bestCost || cost === bestCost && squared >= bestSquared) continue;
-		const fitted = make(units);
-		if (!history.every(e => compatible(fitted, e, cache))) continue;
-		fitted.statRanges = Object.fromEntries([...groups.keys()].map(stat => {
-			const available = 127 - stats.filter(s => s !== stat).reduce((sum, s) => sum + lows[s], 0);
-			return [stat, [make({ ...units, [stat]: lows[stat] }).pokemon.baseStats[stat],
-				make({ ...units, [stat]: Math.min(highs[stat], available) }).pokemon.baseStats[stat]]];
-		}));
-		best = fitted; bestCost = cost; bestSquared = squared;
 	}
 	return best;
 }
@@ -242,6 +285,18 @@ export function refineOpponentModels(
 	const observations = relevant.filter(e => e.kind !== 'selection');
 	const usable = observations.filter(e => models.every(model => assessEvidence(model, e, cache) !== 'unknown'));
 	if (usable.length < observations.length) notes.push('unresolved observations retained without filtering presets');
+	// Reject unknown Choice items before fitting or the all-conflicting fallback. Otherwise
+	// lowering EVs (or restoring the original pool) would undo the user's minimum-investment rule.
+	// An explicitly observed original item is a fact, not a hypothesis to replace with another item.
+	if (!closed && !pokemon.originalItem && !pokemon.itemKnown) {
+		const allowed = models.filter(model => !belowChoiceMinimum(model, usable, cache));
+		if (allowed.length < models.length) {
+			notes.push(`Choice minimum investment: ${models.length} -> ${allowed.length} presets`);
+			models = allowed.length ? allowed : models.map(model => ({ ...model,
+				pokemon: { ...model.pokemon, item: '', itemAssumed: false } }));
+			if (!allowed.length) notes.push('Choice evidence excludes all preset items; item remains unknown');
+		}
+	}
 	let remaining = models.map(model => closed ? (usable.every(e => compatible(model, e, cache)) ? model : undefined) :
 		fitSpread(model, usable, cache)).filter((model): model is OpponentModel => !!model);
 	if (!remaining.length && !closed) remaining = exceptionalChoiceModels(pokemon, models, usable, cache);

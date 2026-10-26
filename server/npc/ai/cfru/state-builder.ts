@@ -221,6 +221,11 @@ export function buildBattleStateFromRequests(
 			conditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(),
 				futureMoves: tracker.getFutureMoves(), ...tracker.getDelayedSources() } },
 		opponent: { remaining: tracker.getRemainingOpponents(),
+			roster: [...tracker.getOpponentTeam(), ...tracker.getUnseenOpponentPreview()].map(p => ({
+				species: p.species, ownerSide: (p.ident || p.position).slice(0, 2),
+				item: p.item, itemKnown: !!p.item || p.itemLost, originalItem: p.originalItem,
+				itemChanged: p.itemChanged, itemLost: p.itemLost,
+			})),
 			megaUsedByOwner: Object.fromEntries(tracker.getOpponentTeam().filter(p =>
 				(formatId ? Dex.forFormat(formatId) : Dex).species.get(p.species).isMega)
 				.map(p => [(p.ident || p.position).slice(0, 2), true])),

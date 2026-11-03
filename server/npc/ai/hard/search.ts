@@ -95,7 +95,9 @@ export class Search extends CandidateSelector {
 	private responseCache = new Map<string, Response[]>();
 	readonly cutoffs = { actions: 0, roots: 0 };
 
-	value(state: BattleState): number {
+	value(state: BattleState, retainPosition = true): number {
+		// Endpoints reuse matchup caching without retaining full search-position keys.
+		if (!retainPosition) return positionValue(state, this.matchups);
 		const key = positionKey(state);
 		const found = this.values.get(key); if (found !== undefined) return found;
 		const value = terminalValue(state) ?? this.assess(state).value;
@@ -171,7 +173,7 @@ export class Search extends CandidateSelector {
 					.some(entry => entry.side === 'opponent' && independent.has(entry.key)));
 			const before = interruptible ? this.continuationUpper(work, independent) : Infinity;
 			do {
-				this.advanceResponse(expansion);
+				this.advanceResponse(expansion, false);
 				// Yield only useful bound progress, not each hidden-profile leaf.
 				if (interruptible && this.continuationUpper(work, independent) < before - 1e-9) break;
 			} while (!expansion.branches);
@@ -316,7 +318,7 @@ export class Search extends CandidateSelector {
 			reply: action.id, weight: node.weight, entries: node.entries, value: Infinity });
 	}
 
-	private advanceResponse(work: ResponseWork): void {
+	private advanceResponse(work: ResponseWork, retainPosition: boolean): void {
 		work.upper = undefined;
 		const index = work.cursor;
 		while (index < work.frontier.length) {
@@ -328,7 +330,7 @@ export class Search extends CandidateSelector {
 			const { config, profile, action } = work.response;
 			this.nodes++;
 			work.frontier[index].branch = { state: node.state!, config, configWeight: profile.weight,
-				reply: action.id, weight: node.weight, entries: node.entries, value: this.value(node.state!) };
+				reply: action.id, weight: node.weight, entries: node.entries, value: this.value(node.state!, retainPosition) };
 			work.cursor++;
 			break;
 		}
@@ -338,7 +340,7 @@ export class Search extends CandidateSelector {
 	/** Full reference and first-ply expansion drain the same resumable checkpoint tree. */
 	expandResponse(response: Response, own: SearchAction, replacing = false): Branch[] {
 		const work = this.responseWork(response, own, replacing);
-		while (!work.branches) this.advanceResponse(work);
+		while (!work.branches) this.advanceResponse(work, true);
 		return work.branches;
 	}
 

@@ -131,6 +131,18 @@ describe('Hard damage-based state search', () => {
 		assert.equal(search.continuationValue(f.state, action('icebeam')), exact);
 		assert.equal(search.nodes, nodes);
 	});
+	it('retains first-ply assessments without retaining complete endpoint keys', () => {
+		const f = fixture([mon('Mew', ['psychic'])], [mon('Mew', ['pound'])]);
+		const search = new Search(new MatchupEvaluator());
+		const first = search.branches(f.state, action('psychic'));
+		const values = search.values.size, assessments = search.assessments.size;
+		assert(values > 0 && assessments > 0, 'The first ply still supports subsequent candidate evaluation');
+		const leaves = search.continuationBranches(first[0].state, action('psychic'));
+		const reference = new Search(new MatchupEvaluator()).branches(first[0].state, action('psychic'));
+		assert.deepEqual(leaves.map(b => b.value), reference.map(b => b.value));
+		assert.equal(search.values.size, values, 'Endpoints do not retain complete position keys');
+		assert.equal(search.assessments.size, assessments, 'Endpoints do not duplicate the matchup cache');
+	});
 	it('stops once the root choice is certain without requiring an exact reported value', () => {
 		const f = fixture([mon('Mew', ['psychic', 'calmmind', 'recover'])], [mon('Pikachu', ['splash'])]);
 		const { bounded, full } = compareBounded(f, [action('recover')]);

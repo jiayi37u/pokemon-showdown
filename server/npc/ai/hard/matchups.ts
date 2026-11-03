@@ -7,7 +7,7 @@ import { hardMove, hardMoveId } from './opponent-model';
 import { getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { calculateDamage, selectDamage, DamageCache, type DamagePolicy } from './damage';
 import { modelsFor, clonePosition, settleFutureAttacks, bindOpponent,
-	positionKey, usableMove, clonePokemon, projectEntry, boosts, status,
+	positionKey, usableMove, hasMovePP, clonePokemon, projectEntry, boosts, status,
 	applyRecovery, type Side } from './projection';
 import { compareActionOrder, compareSpeedOrder } from '../cfru/util/speed';
 import { getMoveInteraction } from '../cfru/util/type-calc';
@@ -399,13 +399,14 @@ export class MatchupEvaluator {
 			sleepers(own), sleepers(foes)]);
 		// A perspective change does not turn estimated profiles into known configurations.
 		const profilesFor = (party: AIPokemon[]) => party.map(target => modelsFor(target).map(model => {
-			const pokemon = { ...model.pokemon, moves: model.moves.map(m => m.id) };
+			const pokemon = { ...model.pokemon, moves: model.moves.filter(m =>
+				hasMovePP(model.pokemon, rulesDex(state.field).moves.get(m.id).id)).map(m => m.id) };
 			return { pokemon, weight: model.weight, key: this.inputKey(pokemon, () => fingerprint(pokemon), keys) };
 		}));
 		const actors = profilesFor(own), profiles = profilesFor(foes);
 		const prefix = this.token(context + JSON.stringify(this.damagePolicy));
-		// Cache evaluation inputs, not search history. PP, pending choices and reveal
-		// bookkeeping still distinguish search states but do not alter this value function.
+		// Cache evaluation inputs, not search history. Exhausted moves alter profiles;
+		// positive PP counts, pending choices and reveal bookkeeping do not alter this value.
 		const position = JSON.stringify([prefix,
 			...[own, foes].map(party => party.map(p => this.inputKey(p, () => fingerprint(p), keys))),
 			...[actors, profiles].map(pools => pools.map(pool => pool.map(p => [p.key, p.weight])))]);

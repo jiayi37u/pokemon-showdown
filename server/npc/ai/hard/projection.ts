@@ -153,6 +153,11 @@ export function knownMoves(p: AIPokemon): string[] {
 		!p.moveKnowledge || canHaveOpponentMoves(p.moveKnowledge, [id]));
 }
 
+/** Canonical move IDs use current known PP; an absent entry remains unknown. */
+export function hasMovePP(p: AIPokemon, id: string): boolean {
+	return (p as ProjectedPokemon).projection?.pp?.[id] !== 0;
+}
+
 export function usableMove(state: BattleState, side: Side, id: string): boolean {
 	const p = state[side].active[0] as ProjectedPokemon;
 	if (!p || p.fainted) return false;
@@ -160,7 +165,7 @@ export function usableMove(state: BattleState, side: Side, id: string): boolean 
 	if (p.projection?.chargingMove && p.projection.chargingMove !== data.id) return false;
 	if (state[other(side)].active[0]?.volatiles.has('imprison') &&
 		knownMoves(state[other(side)].active[0]).includes(data.id)) return false;
-	if (p.projection?.pp?.[data.id] === 0) return false;
+	if (!hasMovePP(p, data.id)) return false;
 	if (moveSelectionFailure(p, id, state.field)) return false;
 	return !p.moveKnowledge || canHaveOpponentMoves(p.moveKnowledge, [id]);
 }

@@ -254,6 +254,40 @@ describe('Hard singles matchup value', () => {
 		assert.equal(f.evaluator.assess(next), initial);
 		assert.equal(f.evaluator.stats.positions, 1);
 	});
+	it('removes exhausted attacks from cached matchup value without inferring unknown PP', () => {
+		const f = fixture([mon('Mew', ['psychic'])], [mon('Machamp', ['closecombat'])]);
+		const actor = f.state.self.active[0];
+		actor.projection = { pp: {} };
+		const unknown = f.evaluator.assess(f.state);
+		actor.projection.pp.psychic = 1;
+		assert.deepEqual(f.evaluator.assess(f.state), unknown);
+		actor.projection.pp.psychic = 0;
+		const exhausted = f.evaluator.assess(f.state);
+		assert(exhausted.value < unknown.value);
+		assert.equal(exhausted.matrix[0][0].self.pressure, 0);
+		actor.projection.pp.psychic = 5;
+		assert.deepEqual(f.evaluator.assess(f.state), unknown);
+	});
+	it('does not count exhausted recovery as sustainable defense', () => {
+		const f = fixture([mon('Chansey', ['seismictoss', 'softboiled'])],
+			[mon('Mew', ['psychic'])]);
+		const actor = f.state.self.active[0];
+		actor.projection = { pp: { softboiled: 0 } };
+		const exhausted = f.evaluator.assess(f.state);
+		actor.moves = ['seismictoss'];
+		assert.deepEqual(f.evaluator.assess(f.state).matrix, exhausted.matrix);
+	});
+	it('uses canonical Hidden Power PP and current copied PP rather than native PP', () => {
+		const f = fixture([mon('Mew', ['hiddenpowerice'])], [mon('Garchomp', ['earthquake'])]);
+		const actor = f.state.self.active[0];
+		actor.projection = { pp: { hiddenpower: 5 }, nativePP: { hiddenpower: 0 } };
+		const available = f.evaluator.assess(f.state);
+		actor.projection.pp.hiddenpower = 0;
+		actor.projection.nativePP.hiddenpower = 5;
+		const exhausted = f.evaluator.assess(f.state);
+		assert(exhausted.value < available.value);
+		assert.equal(exhausted.matrix[0][0].self.pressure, 0);
+	});
 	it('invalidates cached values for state changes and hidden-profile weights', () => {
 		const f = fixture([mon('Mew', ['psychic', 'recover']), mon('Skarmory', ['bravebird'])],
 			[mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);

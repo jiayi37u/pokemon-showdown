@@ -98,7 +98,7 @@ export class Search extends CandidateSelector {
 	value(state: BattleState): number {
 		const key = positionKey(state);
 		const found = this.values.get(key); if (found !== undefined) return found;
-		const value = terminalValue(state) ?? (this.assessments.get(key) || this.matchups.assess(state)).value;
+		const value = terminalValue(state) ?? this.assess(state).value;
 		this.values.set(key, value); return value;
 	}
 
@@ -610,8 +610,19 @@ function runSearch(
 			if (!groups.has(key)) groups.set(key, []);
 			groups.get(key)!.push(branch);
 		}
-		const pending = [...groups.values()];
-		if (pruning) pending.sort((a, b) => aggregate(a) - aggregate(b));
+		let pending = [...groups.values()];
+		if (pruning) {
+			pending.sort((a, b) => aggregate(a) - aggregate(b));
+			// An unvisited positive-weight configuration keeps the upper bound infinite.
+			// Cover each configuration early without splitting shared observations;
+			// chance outcomes may still require further groups to obtain a finite bound.
+			const seen = new Set<number>(), first: Branch[][] = [], rest: Branch[][] = [];
+			for (const group of pending) {
+				(group.some(b => !seen.has(b.config)) ? first : rest).push(group);
+				for (const branch of group) seen.add(branch.config);
+			}
+			pending = first.concat(rest);
+		}
 		candidate.pending = pending.map(group => ({ group, work: resolveContinuations(search, group, pruning) }));
 	};
 	const refresh = (candidate: typeof roots[number]) => {

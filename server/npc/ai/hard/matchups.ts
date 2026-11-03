@@ -318,10 +318,12 @@ export class MatchupEvaluator {
 	/** A faster winning matchup can act before a pivot. A slower one cannot enforce
 	 * its stationary advantage when the opponent can pivot to a living reserve.
 	 */
-	holdsAdvantage(state: BattleState, side: Side, assessment = this.assess(state)): boolean {
+	holdsAdvantage(state: BattleState, side: Side, assessment?: Assessment): boolean {
 		if (state.self.active[0]?.fainted || state.opponent.active[0]?.fainted) return false;
 		const i = state.self.team.indexOf(state.self.active[0]), j = state.opponent.team.indexOf(state.opponent.active[0]);
-		const other = side === 'self' ? 'opponent' : 'self', pair = assessment.matrix[i]?.[j];
+		if (i < 0 || j < 0) return false;
+		const other = side === 'self' ? 'opponent' : 'self';
+		const pair = assessment ? assessment.matrix[i]?.[j] : this.pairs(state, [[i, j]])[0];
 		if (!pair || pair[side].check < 1 || pair[other].check !== 0) return false;
 		const view = side === 'self' ? state : reverse(state);
 		if (!view.opponent.reserve.some(p => p.hp > 0 && !p.fainted)) return true;
@@ -366,8 +368,19 @@ export class MatchupEvaluator {
 		estimates.set(id, facts); return facts;
 	}
 
+	/** Candidate membership needs particular matchups, not a complete team valuation. */
+	pairs(state: BattleState, coordinates: [number, number][]): Pair[] {
+		return coordinates.length ? this.evaluate(state, coordinates) : [];
+	}
+
 	/** At most 36 cells per concrete singles world. Content keys also survive switches/turns. */
-	assess(state: BattleState) {
+	assess(state: BattleState): Assessment {
+		return this.evaluate(state);
+	}
+
+	private evaluate(state: BattleState): Assessment;
+	private evaluate(state: BattleState, coordinates: [number, number][]): Pair[];
+	private evaluate(state: BattleState, coordinates?: [number, number][]): Assessment | Pair[] {
 		if ([state.self, state.opponent].some(s => Object.values(s.conditions.futureMoves).some(n => n > 0))) {
 			state = clonePosition(state); settleFutureAttacks(state, this.damagePolicy, true, this.damageCache);
 		}
@@ -391,7 +404,10 @@ export class MatchupEvaluator {
 			...[own, foes].map(party => party.map(p => this.inputKey(p, () => fingerprint(p), keys))),
 			...[actors, profiles].map(pools => pools.map(pool => pool.map(p => [p.key, p.weight])))]);
 		const cached = this.positions.get(position);
-		if (cached) { this.stats.positions++; return cached; }
+		if (cached) {
+			this.stats.positions++;
+			return coordinates ? coordinates.map(([i, j]) => cached.matrix[i][j]) : cached;
+		}
 		const sides = [state.self.conditions, state.opponent.conditions]
 			.map(value => this.inputKey(value, () => combatSideKey(value), keys)).join(':');
 		const entryInputs = [state.self.conditions, state.opponent.conditions].map(side =>
@@ -458,7 +474,8 @@ export class MatchupEvaluator {
 			withoutStrandedBoosts(actors[ownActive], profiles[foeActive], 'self') : [];
 		const foePotential = ownActive >= 0 && foeActive >= 0 ?
 			withoutStrandedBoosts(profiles[foeActive], actors[ownActive], 'opponent') : [];
-		const matrix = own.map((original, i) => foes.map((target, j): Pair => {
+		const cell = (i: number, j: number): Pair => {
+			const original = own[i], target = foes[j];
 			if (!original.hp || !target.hp || original.fainted || target.fainted) return { self: zero(), opponent: zero() };
 			const sum: Pair = { self: zero(), opponent: zero() };
 			const ownPool = i === ownActive && foeActive >= 0 && j !== foeActive ? ownPotential : actors[i];
@@ -475,7 +492,9 @@ export class MatchupEvaluator {
 				}
 			}
 			return sum;
-		}));
+		};
+		if (coordinates) return coordinates.map(([i, j]) => cell(i, j));
+		const matrix = own.map((original, i) => foes.map((target, j) => cell(i, j)));
 		const selfRows = matrix.map(row => row.map(p => p.self));
 		const opponentRows = foes.map((foe, j) => own.map((actor, i) => matrix[i][j].opponent));
 		const self = teamValue(own, foes, selfRows, state);

@@ -40,15 +40,21 @@ export class CandidateSelector {
 		if (cached) return cached;
 		const result = this.matchups.assess(state); this.assessments.set(key, result); return result;
 	}
+	private pairs(state: BattleState, coordinates: [number, number][]) {
+		const cached = this.assessments.get(positionKey(state));
+		return cached ? coordinates.map(([i, j]) => cached.matrix[i][j]) : this.matchups.pairs(state, coordinates);
+	}
 
 	/** Required entries share the same matchup policy as voluntary switches. */
 	rankEntries(state: BattleState, side: Side): AIPokemon[] {
-		const table = this.assess(state).matrix, view = perspective(state, side);
+		const view = perspective(state, side);
 		const ownIndex = state.self.team.findIndex(p => p.active);
 		const foeIndex = state.opponent.team.findIndex(p => p.active);
-		return this.entryChoices(state, side, 'free').map(p => {
-			const index = state[side].team.indexOf(p);
-			const matchup = side === 'self' ? table[index]?.[foeIndex]?.self : table[ownIndex]?.[index]?.opponent;
+		const entries = this.entryChoices(state, side, 'free');
+		const pairs = this.pairs(state, entries.map(p => side === 'self' ?
+			[state.self.team.indexOf(p), foeIndex] : [ownIndex, state.opponent.team.indexOf(p)]));
+		return entries.map((p, n) => {
+			const matchup = pairs[n]?.[side];
 			const health = projectEntry(p, view.self.conditions, state.field, view.self.active[0].slot).hp;
 			return { p, rank: [Number(health > 0), matchup?.check || 0,
 				matchup?.pressure || 0, matchup?.sustain || 0, health / p.maxHp] };
@@ -60,7 +66,7 @@ export class CandidateSelector {
 
 	/** Consume the cached matchup verdict. Partial/uncertain advantages do not suppress switching. */
 	favorableStay(state: BattleState, side: Side): boolean {
-		return this.matchups.holdsAdvantage(state, side, this.assess(state));
+		return this.matchups.holdsAdvantage(state, side, this.assessments.get(positionKey(state)));
 	}
 
 	/** Destinations share entry selection; possible pivot timing retains either entry context. */
@@ -111,12 +117,14 @@ export class CandidateSelector {
 		// Simultaneous faints do not yet reveal the opponent's next occupant.
 		if (!foe || foe.fainted) return legal;
 		const other = side === 'self' ? 'opponent' : 'self';
-		const table = this.assess(belief).matrix;
 		const ownIndex = belief.self.team.indexOf(belief.self.active[0]);
 		const foeIndex = belief.opponent.team.indexOf(belief.opponent.active[0]);
-		const entries = legal.map(p => {
+		const pairs = this.pairs(belief, legal.map(p => {
 			const index = belief[side].team.findIndex(q => identity(q) === identity(p));
-			const pair = side === 'self' ? table[index]?.[foeIndex] : table[ownIndex]?.[index];
+			return side === 'self' ? [index, foeIndex] : [ownIndex, index];
+		}));
+		const entries = legal.map((p, n) => {
+			const pair = pairs[n];
 			const own = pair?.[side], opposing = pair?.[other];
 			const health = projectEntry(p, view.self.conditions, state.field, actor.slot).hp;
 			return { p, own, margin: (exposed ? own?.counter : own?.check) || 0,

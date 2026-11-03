@@ -16,6 +16,49 @@ function fixture(own, foe) {
 
 describe('Hard singles matchup value', () => {
 	afterEach(() => { battles.splice(0).forEach(b => b.destroy()); });
+	function compareRequestedPairs(state) {
+		const expected = new MatchupEvaluator().assess(state), evaluator = new MatchupEvaluator();
+		const before = structuredClone(state);
+		const coordinates = state.self.team.flatMap((p, i) => state.opponent.team.map((q, j) => [i, j]));
+		for (const [i, j] of [...coordinates].reverse()) {
+			assert.deepEqual(evaluator.pairs(state, [[i, j]]), [expected.matrix[i][j]]);
+		}
+		assert.deepEqual(evaluator.assess(state), expected, 'Partial queries cannot become an incomplete team value');
+		assert.deepEqual(evaluator.pairs(state, coordinates), coordinates.map(([i, j]) => expected.matrix[i][j]));
+		assert.deepEqual(state, before);
+	}
+	it('computes only the requested concrete pair before a complete valuation is needed', () => {
+		const f = fixture([mon('Mew', ['psychic']), mon('Skarmory', ['bravebird'])],
+			[mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);
+		const expected = new MatchupEvaluator().assess(f.state);
+		assert.deepEqual(f.evaluator.pairs(f.state, [[0, 0]]), [expected.matrix[0][0]]);
+		assert.equal(f.evaluator.stats.misses, 1);
+		assert.deepEqual(f.evaluator.assess(f.state), expected);
+		assert.equal(f.evaluator.stats.misses, 4);
+	});
+	it('matches every complete-table cell with stranded boosts and weighted model pools', () => {
+		const { hp } = require('../../../dist/server/npc/ai/hard/projection');
+		const f = fixture([mon('Manaphy', ['psychic', 'scald']), mon('Volcarona', ['flamethrower'])],
+			[mon('Serperior', ['leafstorm'], { ability: 'Contrary' }),
+				mon('Volcanion', ['steameruption'], { ability: 'Water Absorb' })]);
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		hp(actor, 80); actor.boosts.spa = 3; foe.boosts.spa = 2;
+		compareRequestedPairs(f.state);
+		foe.presetModels = [1, 1000].map((spe, i) => ({ name: String(spe), weight: i ? 0.75 : 0.25,
+			matched: true, pokemon: { ...foe, baseStats: { ...foe.baseStats, spe } },
+			moves: [{ id: 'leafstorm', availability: 1 }] }));
+		compareRequestedPairs(f.state);
+		compareRequestedPairs({ ...f.state, self: f.state.opponent, opponent: f.state.self });
+	});
+	it('settles delayed attacks identically for requested pairs and complete tables', () => {
+		const { advancePosition } = require('../../../dist/server/npc/ai/hard/projection');
+		const f = fixture([mon('Mew', ['futuresight']), mon('Skarmory', ['bravebird'])],
+			[mon('Machamp', ['splash']), mon('Tyranitar', ['crunch'])]);
+		const action = move => ({ id: `move ${move}`, move, prior: 100 });
+		const state = advancePosition(f.state, action('futuresight'), action('splash'), () => undefined);
+		assert(state.opponent.conditions.futureMoves[1] > 0);
+		compareRequestedPairs(state);
+	});
 	it('does not carry stranded boosts into bench matchups, while keeping the real active pair', () => {
 		const { hp, clonePosition } = require('../../../dist/server/npc/ai/hard/projection');
 		const f = fixture([mon('Manaphy', ['psychic', 'scald'], { nature: 'Modest',

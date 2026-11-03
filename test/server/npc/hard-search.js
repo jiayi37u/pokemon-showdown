@@ -104,6 +104,17 @@ describe('Hard damage-based state search', () => {
 		const { bounded } = compareBounded(f, ['scratch', 'pound'].map(action));
 		assert.equal(bounded.choice, 'move scratch');
 	});
+	it('matches full search across unequal hidden profiles when continuation groups are reordered', () => {
+		const f = fixture([mon('Mew', ['calmmind', 'icebeam', 'recover'])],
+			[mon('Garchomp', ['earthquake', 'dragonclaw', 'swordsdance'])]);
+		const foe = f.state.opponent.active[0];
+		f.evaluator.models.set(foe, [0.6, 0.3, 0.1].map((weight, i) => ({
+			name: `spread ${i}`, weight, matched: true,
+			pokemon: { ...foe, baseStats: { ...foe.baseStats, atk: foe.baseStats.atk + i * 40 } },
+			moves: foe.moves.map(id => ({ id, availability: 1 })),
+		})));
+		compareBounded(f, ['calmmind', 'icebeam', 'recover'].map(action));
+	});
 	it('resumes a partial continuation without treating its upper bound as an exact cached value', () => {
 		const f = fixture([mon('Mew', ['icebeam'])], [mon('Garchomp', ['earthquake', 'dragonclaw']),
 			mon('Blissey', ['seismictoss'])]);

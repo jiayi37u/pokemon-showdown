@@ -73,3 +73,21 @@ Search 独占对象分别约 1936、1429 MiB；AI 保留对象分别约 1076、8
 八个快照串行对照中，005a T18 从 `switch 2` 玛狃拉改选 `switch 6` 凯路迪欧；另外七例行动一致。004a T4、005a T23 的中途接应计入承伤但不改变选择；005a T3、007a T18 双方、005a T4 慢速中转和 T5 正常击倒补位的换人评分完全一致。完整 reasoning 均一致，因为搜索回退类别没有变化，修复体现在 switchScores。结果位于 `/tmp/npc-pivot-check-guVmXj/comparison.json`。
 
 生产机制测试分别提交 High Jump Kick 和 Frustration，AI 都只接收 Volt Switch 后相同的公开信息并选择凯路迪欧；测试同时检查先制回应排除、权重归一化和对手已行动的对照。完整 NPC 回归 1637 passing、1 pending；TypeScript、相关 ESLint 与 diff 空白检查通过。
+
+## 完成分支的内存释放
+
+`Search.advanceContinuation` 将第二回合分支的 value 和 entries 保存为叶子后，`ResponseWork.frontier` 与 `branches` 仍引用完整终局状态。它们不再参与状态转移，只用于补位信息集合识别和价值边界计算。完成回应保留叶子及 entry 元数据，释放完整状态；首回合落点及未完成检查点继续保留状态。所有候选、配置、权重、搜索深度、节点数和缓存条目均保持原口径，不引入数量上限或缓存淘汰。
+
+两个 OOM 快照各做优化前后独立冷进程对照，12 GiB 堆，串行、无超时。第一例顺序为 baseline→optimized，第二例为 optimized→baseline。baseline 通过本地模块加载钩子加载优化前编译的 `search.js`，其余代码相同。每个模式每例仅测一次。
+
+| 指标 | 004a T4 优化前→后 | 008a T3 优化前→后 |
+| --- | ---: | ---: |
+| 决策耗时/秒 | 165.852→153.982（-7.16%） | 105.161→99.825（-5.07%） |
+| GC 后总保留堆/MiB | 3092.93→1896.57（-38.68%） | 2396.51→1619.51（-32.42%） |
+| Search 独占保留/MiB | 1936.26→760.62（-60.72%） | 1428.69→668.49（-53.21%） |
+| AI 缓存保留/MiB | 1075.56→1075.68 | 886.30→886.31 |
+| 最大 RSS/MiB | 3365.98→2219.06 | 2689.00→2027.93 |
+
+两例 choice、完整 reasoning 及 MatchupEvaluator、DamageCache、Search 的全部受测 Map 条目数前后完全一致，也与原批次记录一致。总保留堆分别减少 1196.36 MiB 和 777.00 MiB；Search 独占量使用分阶段 GC 的差值，避免将模块或弱缓存残留差异算入收益。结果和测量脚本位于 `/tmp/npc-memory-ab-kOZ5NP/`。耗时差异是这次单轮观测，不外推为稳定的整场提速比例。
+
+回归覆盖完成分支释放后重新计算补位上界、复用已完成 continuation，以及有界搜索和完整搜索的一致性。完整 NPC 回归 1637 passing、1 pending；TypeScript、相关 ESLint 与 diff 空白检查通过。跨回合 AI 缓存仍占较大内存；本轮没有以完整对局复跑证明默认堆 OOM 全部消失。

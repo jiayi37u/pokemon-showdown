@@ -319,6 +319,15 @@ describe('Hard damage-based state search', () => {
 		assert.equal(search.continuationValue(f.state, action('splash')), -100);
 		assert.deepEqual(visited, ['Pikachu', 'Garchomp']);
 		assert.equal(entrySelections, 1, 'Resuming a checkpoint reuses its candidates');
+		for (const expansion of work.expansions.values()) {
+			assert.equal(expansion.branches, undefined, 'Completed continuations release terminal states');
+			assert(expansion.frontier.every(({ node, branch }) => !node.state && !node.expand && !branch));
+			assert(expansion.frontier.some(({ node }) => node.entries.length), 'Shared entry identities remain available');
+		}
+		assert.equal(search.continuationUpper(work, new Set(independent)), -100,
+			'Recomputing bounds after release preserves entry decisions');
+		assert.equal(search.continuationValue(f.state, action('splash')), -100);
+		assert.deepEqual(visited, ['Pikachu', 'Garchomp'], 'Cached continuations do not replay released states');
 	});
 	it('projects damage from absorption-ability attackers without redirecting it back to themselves', () => {
 		for (const [species, ability, move] of [['Gastrodon', 'Storm Drain', 'scald'], ['Raichu', 'Lightning Rod', 'thunderbolt']]) {

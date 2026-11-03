@@ -51,6 +51,8 @@ interface ResponseWork {
 	frontier: { node: TransitionNode, branch?: Branch }[];
 	cursor: number;
 	branches?: Branch[];
+	/** Completed second-ply work needs values and entry identities, not terminal positions. */
+	leaves?: Leaf[];
 	upper?: { independent: ReadonlySet<string>, value: number };
 }
 interface Continuation {
@@ -177,6 +179,9 @@ export class Search extends CandidateSelector {
 				work.pending.shift();
 				const leaves = expansion.branches.map(({ state: _state, ...leaf }) => leaf);
 				work.completed.set(response, leaves);
+				expansion.leaves = leaves;
+				expansion.frontier = leaves.map(leaf => ({ node: { weight: leaf.weight, entries: leaf.entries } }));
+				delete expansion.branches;
 				if (leaves.length) {
 					const config = work.configs.get(response.config)!;
 					config.upper = Math.min(config.upper, optimisticValue(leaves, false));
@@ -304,6 +309,7 @@ export class Search extends CandidateSelector {
 	}
 
 	private responseBounds(work: ResponseWork): Leaf[] {
+		if (work.leaves) return work.leaves;
 		const { config, profile, action } = work.response;
 		return work.frontier.map(({ node, branch }) => branch || { config, configWeight: profile.weight,
 			reply: action.id, weight: node.weight, entries: node.entries, value: Infinity });

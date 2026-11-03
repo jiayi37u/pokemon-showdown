@@ -76,8 +76,17 @@ export function replaceActivePokemon(state: BattleState, outgoing: AIPokemon, in
 		field: fieldWithActivePokemon(state.field, [...self.active, ...opponent.active]) };
 }
 
+// Formats resolve to immutable loaded Dex instances. Search snapshots repeatedly use
+// the same format; avoid parsing its name/custom rules for every mechanic lookup.
+const formatDexes = new Map<string, ReturnType<typeof Dex.forFormat>>();
 export function rulesDex(field: Pick<FieldConditions, 'formatId'>) {
-	return field.formatId ? Dex.forFormat(field.formatId) : Dex;
+	if (!field.formatId) return Dex;
+	let dex = formatDexes.get(field.formatId);
+	if (!dex) {
+		dex = Dex.forFormat(field.formatId);
+		formatDexes.set(field.formatId, dex);
+	}
+	return dex;
 }
 
 /** These public battle formes replace the native ability, rather than inheriting the original set's ability. */

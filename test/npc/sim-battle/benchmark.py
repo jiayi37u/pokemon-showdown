@@ -1,4 +1,4 @@
-"""Paired Hard/Normal matches from a local NPC team pool; swap teams in every pair."""
+"""Paired AI matches from a local NPC team pool; swap teams in every pair."""
 import argparse
 import concurrent.futures
 import json
@@ -12,6 +12,7 @@ import tempfile
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pool', default='npc1')
+    parser.add_argument('--self-play', action='store_true', help='Run Hard against Hard')
     parser.add_argument('--replay-manifest', type=Path, help='Replay the exact cases, teams, sides and seeds in a saved manifest')
     parser.add_argument('--pairs', type=int, default=5)
     parser.add_argument('--offset', type=int, default=0, help='Skip pairs reserved for previous tuning')
@@ -43,20 +44,27 @@ def main():
             for reverse in (False, True):
                 cases.append(dict(id=f'{i + 1:03d}{"b" if reverse else "a"}',
                                   teams=[b, a] if reverse else [a, b],
-                                  p1='normal' if i % 2 == 0 else 'hard', seed=f'{i + 101},21,10,26'))
+                                  p1='hard' if args.self_play or i % 2 else 'normal',
+                                  p2='hard' if args.self_play or not i % 2 else 'normal',
+                                  seed=f'{i + 101},21,10,26'))
         metadata = dict(pool=args.pool, format=args.format, shuffleSeed=args.seed,
                         offset=args.offset, pairs=args.pairs, timeout=args.timeout, cases=cases)
     output = args.output or Path(tempfile.mkdtemp(prefix='npc-benchmark-'))
     if args.output:
         output.mkdir(parents=True, exist_ok=False)
+    metadata.update(revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
+                    trackedChanges=subprocess.check_output(['git', 'diff', 'HEAD', '--stat'], cwd=root, text=True),
+                    nodeVersion=subprocess.check_output(['node', '--version'], cwd=root, text=True).strip(),
+                    workers=args.workers)
     (output / 'manifest.json').write_text(json.dumps(metadata, indent=2) + '\n')
 
     def run(case):
+        opponent = case.get('p2', 'hard' if case['p1'] == 'normal' else 'normal')
         command = ['node', 'dist/test/npc/sim-battle/runner.js', '--format', args.format,
                    '--game-type', 'singles', '--player', 'data/npc/teams/' + case['teams'][0],
                    '--npc', 'data/npc/teams/' + case['teams'][1], '--p1-strategy', 'mirror-npc',
                    '--p1-difficulty', case['p1'], '--npc-difficulty',
-                   'hard' if case['p1'] == 'normal' else 'normal', '--seed', case['seed'],
+                   opponent, '--seed', case['seed'],
                    '--max-turns', '300', '--log-level', 'VERBOSE']
         timed_out = False
         with (output / (case['id'] + '.log')).open('w') as stdout, \
@@ -73,7 +81,7 @@ def main():
         if code != 0 or timed_out:
             winner = 'error'
         elif win:
-            winner = case['p1'] if win[1] == 'Player' else ('hard' if case['p1'] == 'normal' else 'normal')
+            winner = case['p1'] if win[1] == 'Player' else opponent
         elif 'maxTurns=' in error:
             winner = 'capped'
         elif re.search(r'^\|tie(?:\||$)', log, re.M):
@@ -81,6 +89,7 @@ def main():
         else:
             winner = 'error'
         return dict(**case, winner=winner, turns=int(turns[-1]) if turns else 0,
+                    winnerSide=('p1' if win[1] == 'Player' else 'p2') if win else None,
                     exit=code, timedOut=timed_out)
 
     results = []

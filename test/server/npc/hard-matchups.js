@@ -36,6 +36,29 @@ describe('Hard singles matchup value', () => {
 		assert.deepEqual(f.evaluator.assess(f.state), expected);
 		assert.equal(f.evaluator.stats.misses, 4);
 	});
+	it('releases complete positions while reusing concrete matchups and damage across decisions', () => {
+		const { calculateDamage } = require('../../../dist/server/npc/ai/hard/damage');
+		const { hardMove } = require('../../../dist/server/npc/ai/hard/opponent-model');
+		const f = fixture([mon('Mew', ['psychic'])],
+			[mon('Machamp', ['closecombat'], { level: 1 }), mon('Magikarp', ['splash'])]);
+		const first = f.evaluator.assess(f.state);
+		assert(f.evaluator.holdsAdvantage(f.state, 'self', first));
+		assert(f.evaluator.positions.size > 0);
+		assert(f.evaluator.advantages.size > 0);
+		const stats = { ...f.evaluator.stats };
+		const hit = () => calculateDamage(f.state.self.active[0], f.state.opponent.active[0],
+			hardMove('psychic', 1, f.state.field.formatId), f.state.field, undefined, { cache: f.evaluator.damageCache });
+		const damage = hit(), damageHits = f.evaluator.damageCache.stats.hits;
+		f.evaluator.releasePositions();
+		assert.equal(f.evaluator.positions.size, 0);
+		assert.equal(f.evaluator.advantages.size, 0);
+		assert.deepEqual(f.evaluator.stats, stats, 'Releasing positions preserves cumulative diagnostics');
+		assert.deepEqual(hit(), damage);
+		assert.equal(f.evaluator.damageCache.stats.hits, damageHits + 1);
+		assert.deepEqual(f.evaluator.assess(f.state), first);
+		assert.equal(f.evaluator.stats.misses, stats.misses, 'The concrete pair cache survives the decision boundary');
+		assert(f.evaluator.holdsAdvantage(f.state, 'self'));
+	});
 	it('matches every complete-table cell with stranded boosts and weighted model pools', () => {
 		const { hp } = require('../../../dist/server/npc/ai/hard/projection');
 		const f = fixture([mon('Manaphy', ['psychic', 'scald']), mon('Volcarona', ['flamethrower'])],

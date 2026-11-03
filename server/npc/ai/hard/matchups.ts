@@ -315,6 +315,12 @@ export class MatchupEvaluator {
 		this.damagePolicy = damagePolicy; this.damageCache = damageCache;
 	}
 
+	/** Full-position verdicts belong to one decision; concrete pair and damage facts survive it. */
+	releasePositions(): void {
+		this.positions.clear();
+		this.advantages.clear();
+	}
+
 	/** A faster winning matchup can act before a pivot. A slower one cannot enforce
 	 * its stationary advantage when the opponent can pivot to a living reserve.
 	 */

@@ -85,6 +85,7 @@ export class HardAI extends NPCBattleAI {
 			super.receiveRequest(request);
 		} finally {
 			this.activeSlot = 1;
+			this.matchups.releasePositions();
 		}
 	}
 

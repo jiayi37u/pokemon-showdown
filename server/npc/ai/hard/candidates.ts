@@ -102,7 +102,7 @@ export class CandidateSelector {
 	entryChoices(state: BattleState, side: Side, context: 'switch' | 'exposed' | 'free'): AIPokemon[] {
 		const legal = state[side].reserve.filter(p => !p.fainted && p.hp > 0);
 		const required = context !== 'switch', exposed = context !== 'free';
-		if (!legal.length || !required && this.favorableStay(state, side)) return [];
+		if (!legal.length) return [];
 		const key = `${positionKey(state)}:${side}:${context}`, cached = this.entryCache.get(key);
 		if (cached) return legal.filter(p => cached.has(identity(p)));
 		const belief = this.entryKnowledge(state, side);
@@ -126,6 +126,9 @@ export class CandidateSelector {
 		});
 		const selected = new Set(entries.filter(e => e.health > 0 && e.margin > e.threat).map(e => e.p));
 		const hasAdvantage = selected.size > 0;
+		// Winning the current exchange does not make preserving this member useless.
+		// Keep reliable advantageous recipients for the team-value search to compare.
+		if (!required && this.favorableStay(state, side)) return legal.filter(p => selected.has(p));
 		const sacrifices = new Set<AIPokemon>();
 		for (const entry of entries) {
 			if (entry.health <= 0) sacrifices.add(entry.p);

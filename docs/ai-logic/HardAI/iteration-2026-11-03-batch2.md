@@ -91,3 +91,38 @@ Search 独占对象分别约 1936、1429 MiB；AI 保留对象分别约 1076、8
 两例 choice、完整 reasoning 及 MatchupEvaluator、DamageCache、Search 的全部受测 Map 条目数前后完全一致，也与原批次记录一致。总保留堆分别减少 1196.36 MiB 和 777.00 MiB；Search 独占量使用分阶段 GC 的差值，避免将模块或弱缓存残留差异算入收益。结果和测量脚本位于 `/tmp/npc-memory-ab-kOZ5NP/`。耗时差异是这次单轮观测，不外推为稳定的整场提速比例。
 
 回归覆盖完成分支释放后重新计算补位上界、复用已完成 continuation，以及有界搜索和完整搜索的一致性。完整 NPC 回归 1637 passing、1 pending；TypeScript、相关 ESLint 与 diff 空白检查通过。跨回合 AI 缓存仍占较大内存；本轮没有以完整对局复跑证明默认堆 OOM 全部消失。
+
+## 战略路线审计
+
+008a T12 的生产候选为 Calm Mind、Psyshock 和换 Talonflame。Slack Off 被评分断层排除，Scald 被当前目标 Water Absorb 免疫排除，Scizor 被换人目的筛选排除。固定对手换 Weavile，Calm Mind 后的最佳续行确实是换 Scizor；强化清除后的两步绝对价值 -28.7413，与 Psyshock 被免疫后再换 Scizor相同。Scald→换 Scizor 的条件价值 -15.4139 更好，但不能据此忽略对手留场免疫 Scald 的路线。
+
+将 Slack Off 加入根候选并关闭边界剪枝，完整两步参考给出 Calm Mind 增量 -16.0556、Slack Off -19.1840。两套 Volcanion 配置各占 0.5：面对防御配置的最坏回应换 Weavile，Calm Mind 比 Slack Off 差 5.3666；面对进攻配置的最坏回应 Toxic，Calm Mind 后 Psyshock 能通过强化换取对手 121 HP，使终值高 11.6233。现有证据不支持把这次冥想简单判错。
+
+价值校准暴露了更一般的候选问题：Calm Mind→Toxic、Psyshock→Hidden Power Grass 的终点是 179 HP、中毒、特攻和特防各 +1 的 Slowbro，面对 148 HP Volcanion。静态 V=-58.3189，继续展开一回合的最佳 Psyshock 原先得到 +103.4428。Volcanion 的近似对攻 check=1、Slowbro check=0，使 `favorableStay` 在入场评价之前删除全部主动换人。
+
+仅旁路该提前退出，Weavile 就通过已有后备筛选：入场 HP 250、counter=1、对手 check=0、预计能承受 Scald。仅补入该合法回应且不改任何配置、权重、己方候选或估值，Psyshock 的一回合参考从 +103.4428 降到 -35.7910；Weavile 免疫 Psyshock，Slowbro 回合末降到 131 HP。若 Slowbro 使用 Scald，Weavile 仍剩 89 HP。因此，“能赢当前对攻”不足以证明保留当前成员、改由可靠后备接替没有战略价值。该证据指向回应筛选，而不是要求专门降低 Calm Mind 的评分。
+
+上述诊断在同一知识局面中计算绝对价值，不使用未来公开信息、真实隐藏配置或当回合提交行动。材料位于 `/tmp/npc-slowbro-route-Cuxq6S/`，其中 `full-reference-result.json` 为完整参考，`ENTRY-AUDIT.md` 和 `entry-audit.json` 记录单一筛选的对照。
+
+候选规则在当前对攻有利时仍考虑通过现有入场评价的优势接替者；没有优势接替者时保持留场限制。这个分支只返回优势接替者，不额外开放牺牲后备，也不为已确定的候选重复计算无用的牺牲成本。当前对位判断、优势门槛、配置权重、评分常数和搜索深度保持原口径。
+
+004a T11 的两根完整参考进一步验证了战略收益：只比较换 Weavile 和换 Excadrill，关闭边界剪枝。Weavile 路线绝对价值由 12.3816 降到 -11.5088，Excadrill 保持 1.7812，因此后者高出 13.2901；这不是原日志上下界仅差约 0.1 分的勉强翻转。新增的第二回合 Clefable→Keldeo 回应，拦截了原 Icicle Crash 计划。Keldeo 使用公开相容的 Specs、SubCM 和 Taunt 配置，最佳共同续行转为 Knock Off，但不足以补回入场损失。相同 Flamethrower 回应下，Weavile 路线入场后剩 110/281 HP；Excadrill 路线入场后剩 291/405 HP，并保留满血 Weavile。具体配置分解及共同续行见 `/tmp/npc-alakazam-route-VGgCmD/REPORT.md`。
+
+六个战略样本的原规则 baseline 均复现原日志行动和完整 reasoning。最终规则的选择及节点数如下；候选扩展的成本没有被计作性能优化。
+
+| 样本 | 原选择→最终选择 | 原节点数→最终节点数 |
+| --- | --- | ---: |
+| 008a T12 Slowbro | Calm Mind→Calm Mind | 354→519 |
+| 008a T13 Slowbro | Scizor→Scizor | 36→140 |
+| 008a T15 Scizor | Slowbro→Slowbro | 146→163 |
+| 004a T11 Alakazam | Weavile→Excadrill | 2893→3071 |
+| 007a T15 Chansey | Stealth Rock→Stealth Rock | 1497→1579 |
+| 003a T9 Keldeo | Charizard→Charizard | 8514→12543 |
+
+六例合计 13440→18015 节点，增加 34.0%。初版将留场限制后移后还继续生成牺牲者，Keldeo 样本曾达到 19791 节点；最终规则在优势留场情境只返回优势接替者，不开放这部分额外牺牲。完整对照初版记录位于 `/tmp/npc-strategy-six-ab-QUzKmn/`，最终复核位于 `/tmp/hard-strategy-iteration/` 与 `/tmp/hard-clone-ab/`。控制测试还覆盖安全传递待结算 Wish、优势接替者挡住 Psychic 攻击，以及对攻有利时不额外牺牲无对位用途的成员。
+
+另两例用于避免错误归因：004a T11 的六套 Clefable 配置中，权重合计 0.8 的配置预计 Weavile 承受 Moonblast 后剩 19 HP，可在下一回合用 Choice Band Icicle Crash 换取进展；只有权重 0.2 的 Life Orb 配置直接击倒它。因此不能把实际倒下直接解释为搜索主动放弃满血成员。007a T15 的 Stealth Rock 和 Seismic Toss 都进入根搜索；其条件展开数据保存在 `/tmp/hard-strategy-iteration/chansey-routes.json`，尚未证明立即攻击在完整回应集合下更好。
+
+## 性能实验：快照投影缓存
+
+CPU 采样显示 `MatchupEvaluator.assess` 为主要调用链，单个样本中 `inferOpponent` 仅约 23 ms，重复推断不是主要瓶颈。对只读 snapshot 另加 profile/fingerprint 缓存的两例独立进程对照，命中率只有 7.19% 和 8.80%，耗时分别为 154.55→156.98 秒、101.93→104.66 秒，GC 后保留堆增加约 13 MiB、12 MiB。行动、完整 reasoning 和原有 Map 条目数完全一致。实验没有显示足以支持额外缓存结构的收益，实现不纳入生产。记录位于 `/tmp/hard-snapshot-projection-ab/`；单轮 RSS 下降不作为速度或稳定内存收益的证据。

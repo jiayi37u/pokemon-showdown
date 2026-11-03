@@ -617,7 +617,7 @@ describe('Hard gen7 OU inference and tactics', () => {
 		assert.equal(evaluate(game).scores[0].score, 0);
 	});
 
-	it('keeps a winning matchup instead of switching only to pass a pending Wish', () => {
+	it('passes a pending Wish to an injured reliable recipient while keeping a winning matchup', () => {
 		const game = setup([mon('Magikarp', ['splash'])], [
 			mon('Jirachi', ['wish', 'tackle']), mon('Blissey', ['seismictoss']),
 		], { format: 'gen7customgame' });
@@ -625,7 +625,7 @@ describe('Hard gen7 OU inference and tactics', () => {
 		battle.makeRequest('move');
 		game.reveal(['splash']);
 		game.ai.getTracker().parseMessage('|turn|1\n|move|p2a: Jirachi|Wish|p2a: Jirachi\n|turn|2');
-		assert.equal(game.decide(), 'move 2');
+		assert.equal(game.decide(), 'switch 2');
 	});
 
 	for (const AI of [NormalAI, HardAI]) {

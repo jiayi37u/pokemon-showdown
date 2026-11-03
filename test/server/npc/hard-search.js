@@ -756,17 +756,44 @@ describe('Hard damage-based state search', () => {
 			assert(search.entryChoices(f.state, 'self', 'free').length, 'A required pivot entry remains available');
 		}
 	});
-	it('does not override a winning matchup just to cure status with Natural Cure', () => {
+	it('retains a reliable replacement even when the active member already wins', () => {
 		const f = fixture([mon('Celebi', ['psychic'], { ability: 'Natural Cure' }), mon('Mew', ['psychic'])],
 			[mon('Machop', ['tackle'])]);
 		f.state.self.active[0].status = 'psn';
 		const search = new Search(new MatchupEvaluator());
 		assert(search.favorableStay(f.state, 'self'));
-		assert(!search.choices(f.state, 'self').some(a => a.switchTo));
+		assert(search.choices(f.state, 'self').some(a => a.switchTo?.species === 'Mew'),
+			'A winning duel does not prove that preserving the active member has no team value');
 		const next = clonePosition(f.state); switchIn(next, 'self', next.self.reserve[0]);
 		assert.equal(next.self.reserve.find(p => p.species === 'Celebi').status, '');
 	});
-	it('keeps the matchup advantage against Taunt and Will-O-Wisp when direct attacks win', () => {
+	it('includes an advantageous Dark recipient against Psychic pressure on a winning active', () => {
+		const f = fixture([mon('Slowbro', ['psyshock', 'scald', 'slackoff', 'calmmind'],
+			{ ability: 'Regenerator', item: 'Leftovers', nature: 'Bold', evs: { hp: 252, def: 252 } }),
+		mon('Scizor', ['bulletpunch'])], [
+			mon('Volcanion', ['flamethrower', 'hiddenpowergrass', 'toxic', 'substitute'],
+				{ ability: 'Water Absorb', nature: 'Modest', evs: { hp: 248, spa: 252 } }),
+			mon('Weavile', ['knockoff', 'iciclecrash', 'pursuit', 'iceshard'],
+				{ item: 'Choice Band', nature: 'Jolly', evs: { atk: 252, spe: 252 } }),
+			mon('Magikarp', ['splash']),
+		]);
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		hp(actor, 179); actor.status = 'tox'; actor.toxicCounter = 2;
+		actor.boosts.spa = 1; actor.boosts.spd = 1; hp(foe, 148);
+		hp(f.state.opponent.reserve[1], 1);
+		const search = new Search(new MatchupEvaluator(), f.state);
+		assert(search.favorableStay(f.state, 'opponent'));
+		const choices = search.choices(f.state, 'opponent');
+		assert(choices.some(a => a.switchTo?.species === 'Weavile'));
+		assert(!choices.some(a => a.switchTo?.species === 'Magikarp'),
+			'A winning active can preserve itself through a reliable recipient without offering a gratuitous sacrifice');
+		const replies = search.branches(f.state, action('psyshock'));
+		const switched = replies.find(b => b.state.opponent.active[0].species === 'Weavile');
+		assert(switched, 'The exact search can evaluate the defensive switch, not only staying attacks');
+		assert.equal(switched.state.opponent.active[0].hp, f.state.opponent.reserve[0].hp,
+			'The retained recipient blocks Psyshock');
+	});
+	it('keeps winning attacks eligible against Taunt and Will-O-Wisp', () => {
 		const f = fixture([mon('Rotom-Wash', ['hydropump', 'voltswitch', 'willowisp', 'painsplit'], { ability: 'Levitate' }),
 			mon('Metagross', ['earthquake']), mon('Tornadus-Therian', ['hurricane'])],
 		[mon('Heatran', ['magmastorm', 'earthpower', 'taunt', 'willowisp'])]);
@@ -779,7 +806,6 @@ describe('Hard damage-based state search', () => {
 			assert(search.favorableStay(f.state, 'self'));
 			const choices = search.choices(f.state, 'self');
 			assert(choices.some(a => a.move === 'hydropump'));
-			assert(!choices.some(a => a.switchTo), 'Do not override the matchup merely because disruption is present');
 		};
 		assertStays();
 		// Even when Heatran can act first, these moves do not invalidate the direct KO.

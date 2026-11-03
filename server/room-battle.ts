@@ -542,6 +542,8 @@ export class RoomBattle extends RoomGame<RoomBattlePlayer> {
 	options: RoomBattleOptions;
 	frozen?: boolean;
 	dataResolvers?: [((args: string[]) => void), ((error: Error) => void)][];
+	/** Release NPC controllers when play ends, while the room and replay may remain open. */
+	npcCleanup?: () => void;
 	constructor(room: GameRoom, options: RoomBattleOptions) {
 		super(room);
 		const format = Dex.formats.get(options.format, true);
@@ -755,6 +757,9 @@ export class RoomBattle extends RoomGame<RoomBattlePlayer> {
 			player.request = { rqid: 0, request: '', isWait: 'cantUndo', choice: '' };
 		}
 		super.setEnded();
+		const npcCleanup = this.npcCleanup;
+		this.npcCleanup = undefined;
+		npcCleanup?.();
 		this.timer.end();
 		this.checkActive();
 	}

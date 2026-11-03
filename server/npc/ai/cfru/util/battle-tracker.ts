@@ -273,8 +273,8 @@ export class BattleTracker {
 	 */
 	private ourLastMove: Map<string, string> = new Map();
 
-	/** Whether we've attached to a stream */
-	private attached = false;
+	/** Restore the original stream method when this battle stops observing messages. */
+	private detachStream?: () => void;
 
 	/** Whether this is a multi battle */
 	private isMultiBattle = false;
@@ -326,17 +326,22 @@ export class BattleTracker {
 	 * Attach to a battle stream to receive protocol messages
 	 */
 	attachToStream(stream: AnyObject): void {
-		if (this.attached) return;
-		this.attached = true;
+		if (this.detachStream) return;
 
 		// Intercept stream.push to parse messages
-		const originalPush = stream.push.bind(stream);
+		const originalPush = stream.push;
 		stream.push = (chunk: string) => {
 			if (chunk) {
 				this.parseMessage(chunk);
 			}
-			return originalPush(chunk);
+			return originalPush.call(stream, chunk);
 		};
+		this.detachStream = () => { stream.push = originalPush; };
+	}
+
+	detachFromStream(): void {
+		this.detachStream?.();
+		this.detachStream = undefined;
 	}
 
 	/**

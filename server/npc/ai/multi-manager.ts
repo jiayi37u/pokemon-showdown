@@ -89,6 +89,11 @@ export class NPCMultiManager {
 		this.pollHandle = null;
 	}
 
+	destroy(): void {
+		this.stop();
+		this.tracker.detachFromStream();
+	}
+
 	private checkSideRequest(side: NPCSide, player: AnyObject | null): void {
 		if (!player) return;
 		const envelope = player.request;

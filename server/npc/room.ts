@@ -273,7 +273,7 @@ function startNPCAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: strin
 
 	// Create AI instance based on difficulty (use override if provided)
 	const difficulty = overrideDifficulty || npc.difficulty || 'basic';
-	let ai: BasicAI | NormalAI | HardAI;
+	let ai: BasicAI | NormalAI | HardAI | undefined;
 
 	switch (difficulty) {
 	case 'hard':
@@ -318,8 +318,8 @@ function startNPCAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: strin
 
 	// Override the choose method to add >p2 prefix for server environment
 	// BattlePlayer.choose() writes directly to stream, but server needs ">p2 " prefix
-	const originalChoose = ai.choose.bind(ai);
 	ai.choose = (choice: string) => {
+		if (!ai) return;
 		console.log(`[NPC] AI choice: ${choice}`);
 		liveLog?.decision('p2', battle.turn, choice,
 			ai instanceof NormalAI || ai instanceof HardAI ? ai.getLogger().getEntries().slice(-1)[0] : undefined);
@@ -330,12 +330,23 @@ function startNPCAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: strin
 	let lastProcessedRqid = 0;
 	let retryCount = 0;
 	const MAX_RETRIES = 3;
+	let pollHandle: ReturnType<typeof setTimeout>;
+	const cleanup = () => {
+		clearTimeout(pollHandle);
+		ai?.getTracker().detachFromStream();
+		// Dropping the controller releases its entire battle-owned cache graph. No
+		// cache eviction or invalidation is needed while the battle is still running.
+		ai = undefined;
+		battle.npcCleanup = undefined;
+	};
+	battle.npcCleanup = cleanup;
 
 	// Poll for requests and pass them to the AI
 	// In server environment, we need to manually check for requests and call AI methods
 	const checkRequest = () => {
-		if (!room.battle || room.battle.ended) {
+		if (!ai || !room.battle || room.battle.ended) {
 			console.log(`[NPC] Battle ended for ${npc.name}`);
+			cleanup();
 			return;
 		}
 
@@ -354,7 +365,7 @@ function startNPCAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: strin
 						// Mark as wait to stop retrying
 						request.isWait = true;
 						retryCount = 0;
-						setTimeout(checkRequest, 100);
+						pollHandle = setTimeout(checkRequest, 100);
 						return;
 					}
 				} else {
@@ -377,11 +388,11 @@ function startNPCAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: strin
 		}
 
 		// Continue polling
-		setTimeout(checkRequest, 100);
+		pollHandle = setTimeout(checkRequest, 100);
 	};
 
 	// Start polling after a short delay to let the battle initialize
-	setTimeout(checkRequest, 500);
+	pollHandle = setTimeout(checkRequest, 500);
 }
 
 /**
@@ -743,6 +754,10 @@ function startNPCMultiAI(room: GameRoom, npc: NPCTemplate, overrideDifficulty?: 
 
 	// Store manager reference for cleanup
 	npcInfo.manager = manager;
+	battle.npcCleanup = () => {
+		manager.destroy();
+		delete npcInfo.manager;
+	};
 
 	// Start the manager
 	manager.start();

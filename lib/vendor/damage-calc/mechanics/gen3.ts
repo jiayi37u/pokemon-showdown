@@ -260,11 +260,11 @@ export function calculateBPModsADV(
   desc: RawDesc,
   basePower: number,
 ) {
-  if (attacker.curHP() <= attacker.maxHP() / 3 &&
-    ((attacker.hasAbility('Overgrow') && move.hasType('Grass')) ||
+  if (((attacker.hasAbility('Overgrow') && move.hasType('Grass')) ||
      (attacker.hasAbility('Blaze') && move.hasType('Fire')) ||
      (attacker.hasAbility('Torrent') && move.hasType('Water')) ||
-     (attacker.hasAbility('Swarm') && move.hasType('Bug')))
+     (attacker.hasAbility('Swarm') && move.hasType('Bug'))) &&
+    attacker.curHP() <= attacker.maxHP() / 3
   ) {
     basePower = Math.floor(basePower * 1.5);
     desc.attackerAbility = attacker.ability;

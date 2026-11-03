@@ -496,11 +496,11 @@ export function calculateBPModsDPP(
       (attacker.hasAbility('Iron Fist') && move.flags.punch)) {
     basePower = Math.floor(basePower * 1.2);
     desc.attackerAbility = attacker.ability;
-  } else if ((attacker.curHP() <= attacker.maxHP() / 3 &&
-    ((attacker.hasAbility('Overgrow') && move.hasType('Grass')) ||
+  } else if (((attacker.hasAbility('Overgrow') && move.hasType('Grass')) ||
       (attacker.hasAbility('Blaze') && move.hasType('Fire')) ||
       (attacker.hasAbility('Torrent') && move.hasType('Water')) ||
-      (attacker.hasAbility('Swarm') && move.hasType('Bug'))))
+      (attacker.hasAbility('Swarm') && move.hasType('Bug'))) &&
+    attacker.curHP() <= attacker.maxHP() / 3
   ) {
     basePower = Math.floor(basePower * 1.5);
     desc.attackerAbility = attacker.ability;

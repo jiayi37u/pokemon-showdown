@@ -59,6 +59,33 @@ describe('Hard battle calculation caches', () => {
 		assert.equal(hit('waterpulse').rolls, original.rolls);
 		assert.equal(cache.stats.entries, 4);
 	});
+	for (const gen of [3, 4, 6, 9]) {
+		it(`reuses ordinary attacks across attacker HP changes in gen ${gen}`, () => {
+			const { state, cache, hit } = fixture(gen);
+			const actor = state.self.active[0], original = hit(), misses = cache.stats.misses;
+			for (const amount of [Math.floor(actor.maxHp / 3), 1, actor.maxHp]) {
+				actor.hp = amount; actor.hpPercent = 100 * amount / actor.maxHp;
+				assert.equal(hit().rolls, original.rolls);
+				assert.deepEqual(hit(), hit('psychic', false));
+			}
+			assert.equal(cache.stats.misses, misses);
+		});
+		it(`retains the HP threshold only for a matching low-health ability in gen ${gen}`, () => {
+			const { state, cache, hit } = fixture(gen, 'Charizard', 'Blaze');
+			const actor = state.self.active[0], full = hit('fireblast');
+			actor.hp = Math.floor(actor.maxHp / 3) + 1;
+			assert.equal(hit('fireblast').average, full.average);
+			actor.hp--;
+			const low = hit('fireblast');
+			assert(low.average > full.average);
+			assert.deepEqual(low, hit('fireblast', false));
+			const unrelated = hit(), misses = cache.stats.misses;
+			actor.hp = actor.maxHp;
+			assert.equal(hit().rolls, unrelated.rolls, 'Blaze does not make Psychic depend on HP');
+			assert.equal(cache.stats.misses, misses);
+			assert.equal(hit('fireblast').rolls, full.rolls);
+		});
+	}
 	for (const gen of [3, 6, 9]) {
 		it(`matches uncached damage across HP-dependent mechanics in gen ${gen}`, () => {
 			const { state, hit } = fixture(gen, 'Charizard', 'Blaze');

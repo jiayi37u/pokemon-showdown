@@ -29,7 +29,7 @@ export function effectiveAbility(pokemon: AbilityPokemon, field: AbilityField = 
 	if (ability.flags.cantsuppress) return ability.id;
 	if (pokemon.volatiles.has('gastroacid')) return '';
 	// Ability Shield ignores Klutz; checking it directly avoids item/ability recursion.
-	const shield = !pokemon.itemLost && toID(pokemon.item) === 'abilityshield' &&
+	const shield = field.neutralizingGas && !pokemon.itemLost && toID(pokemon.item) === 'abilityshield' &&
 		!field.magicroom && !pokemon.volatiles.has('embargo');
 	if (field.neutralizingGas && ability.id !== 'neutralizinggas' && !shield &&
 		!pokemon.volatiles.has('commanding')) return '';

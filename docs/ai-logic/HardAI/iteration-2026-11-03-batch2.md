@@ -175,3 +175,5 @@ CPU 采样显示 `MatchupEvaluator.assess` 为主要调用链，单个样本中 
 保持其他优化一致的 Slowbro 独立对照，实际伤害计算 9728→1142，减少 88.26%；伤害缓存命中 41468→50054。排除日志时间戳后，完整决策记录相同。耗时 5.084→4.325 秒，仅为共享负载下单次观测。跨代回归验证普通攻击跨 HP 复用、低血特性对不匹配属性不产生 HP 依赖，以及匹配招式跨阈值仍分别计算；已有 HP 相关招式、Multiscale 等回归继续覆盖真实依赖。
 
 缓存审计材料位于 `/tmp/hard-cache-feasibility/`，单项基线模块位于 `/tmp/hard-hpdependency-baseline/`，组合与单项回放位于 `/tmp/hard-final-perf/`。组合的完整 NPC 回归为 1653 passing、1 pending；TypeScript、相关 ESLint 和 diff 检查通过。
+
+优化后的 Alakazam CPU 采样中，主要开销仍为对位估值（`evaluate` inclusive 68.38%）及其内部伤害查询（`calculateDamage` inclusive 26.22%），两者重叠；`entryBound` 仅 1.11%，不优先重写边界聚合。公共 `effectiveAbility` 在没有 Neutralizing Gas 时无需解析 Ability Shield，道具规范化随 Gas 条件短路；特性抑制、Gastro Acid、Transform 和 Ability Shield 的结果不变。该项仅删除无用判断，不根据采样比例承诺整体提速。CPU 资料位于 `/tmp/hard-search-work/post-profile/`。

@@ -127,7 +127,7 @@ Multi 文件可以带 `slot: "p2" | "p4"` 字段，被自动分割。
 | `--npc2-difficulty` | p4 的难度（Multi） | 同 `--npc-difficulty` |
 | `--seed` | PRNG 种子 `a,b,c,d` | 随机 |
 | `--log-level` | `NONE` \| `DECISION` \| `SCORING` \| `VERBOSE` | `DECISION` |
-| `--max-turns` | 上限，到达后 `>forcetie` | `200` |
+| `--max-turns` | 回合上限，到达后 `>forcetie`；0 不施加 runner 上限 | `200` |
 | `--debug-ai` | 额外打印 NPC 的 choose（stderr） | 关闭 |
 
 ---
@@ -219,15 +219,15 @@ python3 test/npc/sim-battle/benchmark.py \
 
 ## Hard 自我对战与关键决策复现
 
-目标是减少经分析确认的不合理决策与决策耗时，胜负仅作为对局背景。`--self-play` 让双方使用 Hard；每组交换队伍，manifest 保留双方难度、种子、代码版本及并发数。省略此参数保持 Hard/Normal 对照；旧 manifest 仍按原双方难度复现。
+目标是减少经分析确认的不合理决策与决策耗时，胜负仅作为对局背景。`--self-play` 让双方使用 Hard，每个队伍组合只打一局，不交换队伍，默认不设置运行时间或 runner 回合上限；PS 自身的终局规则仍生效。`--pairs` 指不同队伍组合数。manifest 保留双方难度、种子、代码版本、并发数及运行限制。省略 `--self-play` 保持交换队伍的 Hard/Normal 对照（默认每局 240 秒、300 回合）。复现自我对战 manifest 时同样传入 `--self-play`，或显式指定 `--timeout 0 --max-turns 0`。
 
 ```bash
 node build
 NPC_TIMING_DIR=/tmp/hard-batch/timing \
 NPC_CAPTURE_DIR=/tmp/hard-batch/snapshots \
 NODE_OPTIONS='--require ./test/npc/sim-battle/decision-timing.js' \
-python3 test/npc/sim-battle/benchmark.py --self-play --pairs 2 --workers 1 \
-  --timeout 600 --output /tmp/hard-batch/results
+python3 test/npc/sim-battle/benchmark.py --self-play --pairs 6 --workers 3 \
+  --output /tmp/hard-batch/results
 node test/npc/sim-battle/summarize-decisions.js /tmp/hard-batch/timing > /tmp/hard-batch/decisions.json
 node test/npc/sim-battle/replay-decision.js /tmp/hard-batch/snapshots/PID-N.bin
 ```

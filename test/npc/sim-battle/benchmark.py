@@ -1,4 +1,4 @@
-"""Paired AI matches from a local NPC team pool; swap teams in every pair."""
+"""AI matches from a local NPC team pool; self-play samples each team pair once."""
 import argparse
 import concurrent.futures
 import json
@@ -18,12 +18,17 @@ def main():
     parser.add_argument('--offset', type=int, default=0, help='Skip pairs reserved for previous tuning')
     parser.add_argument('--seed', type=int, default=21021026)
     parser.add_argument('--workers', type=int, default=4)
-    parser.add_argument('--timeout', type=int, default=240, help='Wall-clock seconds per match; turn limit stays 300')
+    parser.add_argument('--timeout', type=int, help='Seconds per match; 0 disables (self-play: 0, comparison: 240)')
+    parser.add_argument('--max-turns', type=int, help='Runner turn limit; 0 disables (self-play: 0, comparison: 300)')
     parser.add_argument('--format', default='gen6ou')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    if args.pairs < 1 or args.offset < 0 or not 1 <= args.workers <= 8 or args.timeout < 1:
-        parser.error('pairs and timeout must be positive, offset nonnegative, workers between 1 and 8')
+    if args.timeout is None:
+        args.timeout = 0 if args.self_play else 240
+    if args.max_turns is None:
+        args.max_turns = 0 if args.self_play else 300
+    if args.pairs < 1 or args.offset < 0 or not 1 <= args.workers <= 8 or args.timeout < 0 or args.max_turns < 0:
+        parser.error('pairs must be positive, offset/timeout/max-turns nonnegative, workers between 1 and 8')
     root = Path(__file__).resolve().parents[3]
     if args.replay_manifest:
         metadata = json.loads(args.replay_manifest.read_text())
@@ -41,7 +46,7 @@ def main():
         cases = []
         for i in range(args.offset, args.offset + args.pairs):
             a, b = pairs[i]
-            for reverse in (False, True):
+            for reverse in ((False,) if args.self_play else (False, True)):
                 cases.append(dict(id=f'{i + 1:03d}{"b" if reverse else "a"}',
                                   teams=[b, a] if reverse else [a, b],
                                   p1='hard' if args.self_play or i % 2 else 'normal',
@@ -55,6 +60,7 @@ def main():
     metadata.update(revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
                     trackedChanges=subprocess.check_output(['git', 'diff', 'HEAD', '--stat'], cwd=root, text=True),
                     nodeVersion=subprocess.check_output(['node', '--version'], cwd=root, text=True).strip(),
+                    maxTurns=args.max_turns,
                     workers=args.workers)
     (output / 'manifest.json').write_text(json.dumps(metadata, indent=2) + '\n')
 
@@ -65,12 +71,12 @@ def main():
                    '--npc', 'data/npc/teams/' + case['teams'][1], '--p1-strategy', 'mirror-npc',
                    '--p1-difficulty', case['p1'], '--npc-difficulty',
                    opponent, '--seed', case['seed'],
-                   '--max-turns', '300', '--log-level', 'VERBOSE']
+                   '--max-turns', str(args.max_turns), '--log-level', 'VERBOSE']
         timed_out = False
         with (output / (case['id'] + '.log')).open('w') as stdout, \
                 (output / (case['id'] + '.err')).open('w') as stderr:
             try:
-                process = subprocess.run(command, cwd=root, stdout=stdout, stderr=stderr, timeout=args.timeout)
+                process = subprocess.run(command, cwd=root, stdout=stdout, stderr=stderr, timeout=args.timeout or None)
                 code = process.returncode
             except subprocess.TimeoutExpired:
                 code, timed_out = None, True

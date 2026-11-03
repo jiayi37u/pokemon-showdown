@@ -130,7 +130,7 @@ function parseArgs(argv: string[]): CliArgs {
 
 		seed,
 		logLevel: ((args['log-level'] || 'DECISION')) as CliArgs['logLevel'],
-		maxTurns: Number(args['max-turns']) || 200,
+		maxTurns: args['max-turns'] === undefined ? 200 : Number(args['max-turns']),
 		debugAI: args['debug-ai'] === 'true',
 		allowIllegalTeams: args['allow-illegal-teams'] === 'true',
 	};
@@ -369,7 +369,7 @@ async function main(): Promise<void> {
 			const m = chunk.match(/\|turn\|(\d+)/);
 			if (m) turn = parseInt(m[1], 10);
 			if (/\|win\|/.test(chunk) || /\|tie(\||$)/m.test(chunk)) ended = true;
-			if (turn >= args.maxTurns) {
+			if (args.maxTurns > 0 && turn >= args.maxTurns) {
 				console.error(`[runner] 达到 maxTurns=${args.maxTurns}，强制结束`);
 				void streams.omniscient.write(`>forcetie`);
 				ended = true;

@@ -292,7 +292,7 @@ function teamValue(party: AIPokemon[], foes: AIPokemon[], rows: Matchup[][], sta
 
 export class MatchupEvaluator {
 	private cache = new Map<string, Pair>();
-	/** Raw inputs alias the resolved pair, so repeated lookups do not redo entry/Trace work. */
+	/** Concrete inputs and ordered weighted pools share read-only pair facts. */
 	private pairInputs = new Map<string, Pair>();
 	private positions = new Map<string, Assessment>();
 	private advantages = new Map<string, boolean>();
@@ -477,9 +477,16 @@ export class MatchupEvaluator {
 		const cell = (i: number, j: number): Pair => {
 			const original = own[i], target = foes[j];
 			if (!original.hp || !target.hp || original.fainted || target.fainted) return { self: zero(), opponent: zero() };
-			const sum: Pair = { self: zero(), opponent: zero() };
 			const ownPool = i === ownActive && foeActive >= 0 && j !== foeActive ? ownPotential : actors[i];
 			const foePool = j === foeActive && ownActive >= 0 && i !== ownActive ? foePotential : profiles[j];
+			if (ownPool.length === 1 && foePool.length === 1 && ownPool[0].weight === 1 && foePool[0].weight === 1) {
+				return pair(ownPool[0], foePool[0]);
+			}
+			const weighted = JSON.stringify(['weighted', inputs,
+				ownPool.map(p => [p.key, p.weight]), foePool.map(p => [p.key, p.weight])]);
+			const weightedPair = this.pairInputs.get(weighted);
+			if (weightedPair) return weightedPair;
+			const sum: Pair = { self: zero(), opponent: zero() };
 			for (const ownModel of ownPool) for (const model of foePool) {
 				const weight = ownModel.weight * model.weight, result = pair(ownModel, model);
 				for (const side of ['self', 'opponent'] as const) {
@@ -491,7 +498,7 @@ export class MatchupEvaluator {
 					}
 				}
 			}
-			return sum;
+			this.pairInputs.set(weighted, sum); return sum;
 		};
 		if (coordinates) return coordinates.map(([i, j]) => cell(i, j));
 		const matrix = own.map((original, i) => foes.map((target, j) => cell(i, j)));

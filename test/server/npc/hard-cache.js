@@ -154,6 +154,25 @@ describe('Hard battle calculation caches', () => {
 		assert.equal(modelsFor(changed)[0].pokemon.item, 'Life Orb');
 		assert.equal(modelsFor(target)[0].pokemon.item, 'Leftovers');
 	});
+	it('shares weighted matchup results only for the same ordered model inputs', () => {
+		const state = clonePosition(fixture().state);
+		const target = state.opponent.active[0];
+		target.presetModels = [0.25, 0.75].map((weight, i) => ({ name: String(i), weight, matched: true,
+			pokemon: { ...target, baseStats: { ...target.baseStats, atk: i ? 350 : 100 } },
+			moves: [{ id: 'closecombat', availability: 1 }] }));
+		const before = structuredClone(state), evaluator = new MatchupEvaluator();
+		const pair = evaluator.pairs(state, [[0, 0]])[0], next = clonePosition(state);
+		next.field.weatherTurns--;
+		assert.equal(evaluator.pairs(next, [[0, 0]])[0], pair, 'Field clocks do not change a stationary matchup');
+		assert.deepEqual(state, before, 'Reusing a weighted result does not mutate its inputs');
+		target.presetModels = target.presetModels.map((model, i) => ({ ...model, weight: i ? 0.25 : 0.75 }));
+		const changed = evaluator.pairs(state, [[0, 0]])[0];
+		assert.notEqual(changed, pair, 'Different weights cannot alias a cached weighted result');
+		assert.deepEqual(changed, new MatchupEvaluator().pairs(state, [[0, 0]])[0]);
+		target.presetModels.reverse();
+		assert.notEqual(evaluator.pairs(state, [[0, 0]])[0], changed, 'Summation order remains part of the key');
+		assert.deepEqual(evaluator.assess(state), new MatchupEvaluator().assess(state));
+	});
 	it('keeps the battle cache and hypotheses when scoring a replacement perspective', () => {
 		const { state, cache } = fixture();
 		const original = state.self.active[0], target = state.opponent.active[0];

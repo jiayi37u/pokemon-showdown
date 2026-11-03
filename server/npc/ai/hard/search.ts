@@ -289,7 +289,8 @@ export class Search extends CandidateSelector {
 		const frontier: ResponseWork['frontier'] = [];
 		const targets: (OpponentModel | undefined)[] = reply.switchTo ? modelsFor(reply.switchTo) : [undefined];
 		for (const target of targets) {
-			const start = clonePosition(bound);
+			// Turn projection copies before writing; only profile binding needs a copy here.
+			const start = target ? clonePosition(bound) : bound;
 			if (target) bindOpponent(start, reply.switchTo!, target);
 			for (const a of actionOutcomes(start, 'self', own)) {
 				for (const b of actionOutcomes(start, 'opponent', reply, profile.moves)) {

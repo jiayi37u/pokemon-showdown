@@ -59,16 +59,15 @@ function triggerHealthItem(pokemon: AIPokemon, state: BattleState): void {
 	}
 }
 
-/** Branch-local mutable data; preset pools and move knowledge are immutable inputs. */
+/** Copy branch-local mutable data. Moves, types, base stats and saved native profiles
+ * are shared inputs: transitions replace these values rather than mutating them.
+ */
 export function clonePokemon(p: ProjectedPokemon): ProjectedPokemon {
 	const projection = p.projection;
 	return { ...p, boosts: { ...p.boosts }, volatiles: new Set(p.volatiles),
-		moves: [...p.moves], types: [...p.types], baseStats: { ...p.baseStats },
 		projection: projection && { ...projection,
 			pp: projection.pp && { ...projection.pp }, nativePP: projection.nativePP && { ...projection.nativePP },
 			roostTypes: projection.roostTypes && [...projection.roostTypes],
-			native: projection.native && { ...projection.native, types: [...projection.native.types],
-				moves: [...projection.native.moves], baseStats: { ...projection.native.baseStats } },
 		} };
 }
 

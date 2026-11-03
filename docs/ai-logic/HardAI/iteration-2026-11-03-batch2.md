@@ -126,3 +126,22 @@ Search 独占对象分别约 1936、1429 MiB；AI 保留对象分别约 1076、8
 ## 性能实验：快照投影缓存
 
 CPU 采样显示 `MatchupEvaluator.assess` 为主要调用链，单个样本中 `inferOpponent` 仅约 23 ms，重复推断不是主要瓶颈。对只读 snapshot 另加 profile/fingerprint 缓存的两例独立进程对照，命中率只有 7.19% 和 8.80%，耗时分别为 154.55→156.98 秒、101.93→104.66 秒，GC 后保留堆增加约 13 MiB、12 MiB。行动、完整 reasoning 和原有 Map 条目数完全一致。实验没有显示足以支持额外缓存结构的收益，实现不纳入生产。记录位于 `/tmp/hard-snapshot-projection-ab/`；单轮 RSS 下降不作为速度或稳定内存收益的证据。
+
+## 分支输入共享与重复克隆
+
+生产转移对 `moves`、`types`、`baseStats` 和保存的 native 配置使用整体替换，不原地修改。`clonePokemon` 共享这些输入；`boosts`、`volatiles`、projection 外层、PP、nativePP 和 roostTypes 继续复制。Transform/native 恢复、Mega 和 Roost/pending pivot 的隔离回归覆盖源状态、兄弟分支及 PP 不被反写。
+
+三个样本各做两个独立进程对照，双方都使用最终候选策略，baseline 仅替换优化前的 projection 模块。串行、交错顺序、12 GiB 堆、无执行时间限制；一次外部 SIGTERM 的记录保留，只恢复未完成项，不重跑完成项。
+
+| 快照 | 原克隆/秒 | 共享输入/秒 |
+| --- | ---: | ---: |
+| 004a T4，834790-8 | 164.94 | 156.15 |
+| 008a T3，853804-6 | 133.04 | 131.31 |
+| 003a T9，11-18 | 35.58 | 35.66 |
+| 合计 | 333.57 | 323.12 |
+
+三例 choice、完整 reasoning 和各原有 Map 条目数完全一致。合计耗时减少 3.13%，但每模式每例仅一次，不能视为稳定收益；GC 后保留堆每例减少约 4～5.5 MiB，RSS 没有一致改善。该优化不增加缓存结构或新抽象。结果位于 `/tmp/hard-clone-ab/`。
+
+普通回应的 `responseWork` 不再先复制整队再交给 `beginTurn` 复制；需要绑定换入配置时仍先复制，正式补位转移也在写入前复制。另两例快照的前后行动及完整 reasoning 一致；对 008a T12 的调用计数显示，整队克隆由 1741 次减少至 1426 次。该计数来自加载时插桩，不进入生产。两例耗时有增有减，不单独宣称此行修改的时间收益。原尝试修改只读模块导出的计数未生效，不作为证据；有效记录为 `/tmp/hard-strategy-iteration/clones-{baseline,optimized}.json`。
+
+最终组合的完整 NPC 回归为 1641 passing、1 pending，TypeScript、相关 ESLint 和 diff 空白检查通过。策略补全增加的搜索成本仍需继续优化；这些复制改进没有抵消全部新增节点成本，不能将本轮结果描述为整体决策提速。

@@ -14,7 +14,7 @@ import {
 	rewardSetupMove, rewardDefensiveSetup, rewardHealing, rewardTaunt, rewardPivotMove, rewardScreens,
 	rewardWishProtection,
 } from '../cfru/scoring/positives';
-import { checkRecoverySurvival } from '../cfru/scoring/negatives';
+import { checkRecoverySurvival, checkHealingUnnecessary } from '../cfru/scoring/negatives';
 import { createCache } from '../cfru/util/cache';
 import { getSecondaryEffectDamage, getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { calculateDamage, DamageCache } from './damage';
@@ -107,8 +107,13 @@ export class HardEvaluation {
 		const engine = new ScoringEngine(config, createCache(state.turn),
 			(attacker, defender, move, field, cache, context) =>
 				calculateDamage(attacker, defender, move, field, cache, { ...context, cache: this.damageCache }));
-		if (!prediction) engine.setScorers(allNegativeScorers.filter(fn => fn !== checkRecoverySurvival),
-			allPositiveScorers.filter(fn => !replacedRewards.has(fn)));
+		// Hard values direct recovery after incoming damage, including survival and action order.
+		if (!prediction) {
+			engine.setScorers(allNegativeScorers.filter(fn => fn !== checkRecoverySurvival).map(fn => {
+				if (fn !== checkHealingUnnecessary) return fn;
+				return ctx => directRecoveryAmount(ctx.attacker, ctx.move, ctx.state.field) > 0 ? 0 : fn(ctx);
+			}), allPositiveScorers.filter(fn => !replacedRewards.has(fn)));
+		}
 		return engine.scoreMoves(state, actor, moves, target);
 	}
 

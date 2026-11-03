@@ -177,3 +177,33 @@ CPU 采样显示 `MatchupEvaluator.assess` 为主要调用链，单个样本中 
 缓存审计材料位于 `/tmp/hard-cache-feasibility/`，单项基线模块位于 `/tmp/hard-hpdependency-baseline/`，组合与单项回放位于 `/tmp/hard-final-perf/`。组合的完整 NPC 回归为 1653 passing、1 pending；TypeScript、相关 ESLint 和 diff 检查通过。
 
 优化后的 Alakazam CPU 采样中，主要开销仍为对位估值（`evaluate` inclusive 68.38%）及其内部伤害查询（`calculateDamage` inclusive 26.22%），两者重叠；`entryBound` 仅 1.11%，不优先重写边界聚合。公共 `effectiveAbility` 在没有 Neutralizing Gas 时无需解析 Ability Shield，道具规范化随 Gas 条件短路；特性抑制、Gastro Acid、Transform 和 Ability Shield 的结果不变。该项仅删除无用判断，不根据采样比例承诺整体提速。CPU 资料位于 `/tmp/hard-search-work/post-profile/`。
+
+## 组合性能对照
+
+固定 `348bf8623` 为基线，组合按需对位、配置覆盖排序及真实 HP 依赖优化，以独立进程串行、交错顺序重放三例。双方均保留公开输入与原策略权重；该组不包含随后单行 Ability Shield 优化。
+
+| 快照 | 原耗时/秒 | 组合耗时/秒 | 原最大 RSS/MiB | 组合最大 RSS/MiB | 实际伤害计算次数 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 004a T4 Zapdos | 182.49 | 143.74 | 2771.6 | 2934.0 | 185390→15078 |
+| 008a T3 Serperior | 153.52 | 45.26 | 2689.2 | 1167.3 | 136705→15132 |
+| 003a T9 Keldeo | 37.82 | 33.59 | 839.8 | 797.4 | 39672→7668 |
+
+选择和基础评分全部一致；耗时合计 373.83→222.60 秒，本组观测减少 40.45%。这仍是与八场模拟共享机器时的单轮样本，不等同于稳定的全局提速率。内存没有一致下降：Zapdos 的峰值 RSS 增加，不能把更少的伤害记录直接描述为整次搜索的内存都改善。原始输出、串行脚本和汇总位于 `/tmp/hard-final-perf/`。
+
+## 连续 Protect 与回复响应缺失
+
+完整六场复查发现，006a T11 Diancie-Mega 连续 Protect 的价值来自缺失的防守响应。生产推演正确结算此次 Protect 失败，Diancie 从 141 HP 降到 41；并非漏算保护失败。若先 Protect，次回合 Chansey 为 597 HP，Soft-Boiled 评分 75.98，被断层剪枝删除；若先 Moonblast 或 Diamond Storm，Chansey 分别为 483、362 HP，Soft-Boiled 评分 111.82、118.88，被保留。搜索因而可以通过先不攻击，规避本应可选的回复回应。
+
+Hard 的 `recoveryOutlook` 已按双方行动先后计算实际回复量与存活性，基础层的 `checkHealingUnnecessary` 仍按行动前 HP 叠加 -40／-5／0 惩罚，忽略慢速回复可以在同回合先承受攻击。只在既有模型、合法招式中补回 Soft-Boiled，Protect 从下界 63.1 降为上界 -39.3，选择变为换 Weavile（下界 28.5）。该因果对照不读取真实隐藏队伍或未来行动，也不依据实际 Protect 成败判错。
+
+两种通用诊断均保留现有无效／免疫过滤：一是仅在 Hard 取消评分断层剪枝，二是仅对 Hard 非预测评分中的直接回复跳过上述行动前高血量惩罚。前者使用临时模块，不进入生产。
+
+| 快照 | 原选择／节点 | 取消 gap | 按实际回复量评分 |
+| --- | --- | --- | --- |
+| 006a T11 Diancie | Protect／76 | Weavile／196 | Weavile／106 |
+| 007a T15 Chansey | Stealth Rock／1129 | Stealth Rock／2408 | Stealth Rock／1515 |
+| 008a T12 Slowbro | Calm Mind／394 | Calm Mind／761 | Calm Mind／660 |
+
+两种方案的关键选择及价值排序相同；节点合计分别增加 110.4% 和 42.7%。取消 gap 还恢复 Toxic、Thunder Wave、Stealth Rock、Protect、Roar 等其他响应，未在这三个样本中带来额外根选择改善。因此采用较小的回复计分修正，保持其余评分断层规则；这不意味着余下启发式剪枝已经有支配性证明。Chansey 的 Soft-Boiled 上界为 -4.4，仍低于铺岩下界 9.3；Slowbro 的 Slack Off 上界 -17.6，仍低于 Calm Mind 下界 -11.5，恢复回复备选不等于强制回复。
+
+诊断和逐模型候选清单位于 `/tmp/hard-strategy-audit/gap-recovery-comparison.json`，生产分支推演见同目录 `diancie-lines.json`、`diancie-replies.json`。Excadrill 在强化 Serperior 面前 Rapid Spin 的另一线索中，攻击行动和 Leaf Storm 回应均已保留，现有证据不足以将清岩直接判错。

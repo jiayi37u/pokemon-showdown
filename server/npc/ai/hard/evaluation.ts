@@ -28,7 +28,7 @@ import {
 } from '../cfru/util/turn-outcome';
 import { compareActionOrder } from '../cfru/util/speed';
 import {
-	effectiveAbility, effectiveItem, replaceActivePokemon,
+	effectiveAbility, effectiveItem, effectivePriority, replaceActivePokemon,
 } from '../cfru/util/mechanics';
 import {
 	applyTeamPresetRules, fightingStyle, hardMove, inferOpponent, predictOpponent,
@@ -119,6 +119,39 @@ export class HardEvaluation {
 				this.baseScores(state, attacker, moves, target, true), this.models.get(foe),
 			replacements && !replacements.length ? 0 : this.retreatConfidence(actor, foe, replacements), this.damageCache),
 		]));
+	}
+
+	/** Condition heuristic responses on the public phase, never on the simulator's queued action. */
+	pendingPredictions(actor: AIPokemon): Map<AIPokemon, PredictedAction[]> {
+		const predictions = this.predictions(actor);
+		const position = (p: AIPokemon) => `${p.ownerSide}${String.fromCharCode(96 + p.slot)}`;
+		const pivot = this.dex.moves.get(actor.lastMove);
+		const priority = pivot.selfSwitch && this.state.actedThisTurn?.includes(position(actor)) ?
+			effectivePriority(actor, pivot, this.state.field) : undefined;
+		for (const [foe, actions] of predictions) {
+			if (this.state.actedThisTurn?.includes(position(foe))) {
+				predictions.delete(foe);
+				continue;
+			}
+			const compatible = actions.filter(action => !action.switching && (priority === undefined ||
+				!action.move || effectivePriority(action.user || foe, action.selectedMove || action.move,
+				this.state.field) <= priority));
+			// Preserve each compatible configuration's mass; condition its move weights separately.
+			const mass = new Map<AIPokemon, { all: number, remaining: number }>();
+			for (const action of actions) {
+				const user = action.modelUser || action.user || foe;
+				const value = mass.get(user) || { all: 0, remaining: 0 };
+				value.all += action.weight;
+				if (compatible.includes(action)) value.remaining += action.weight;
+				mass.set(user, value);
+			}
+			const total = [...mass.values()].reduce((sum, value) => sum + (value.remaining ? value.all : 0), 0);
+			predictions.set(foe, compatible.map(action => {
+				const value = mass.get(action.modelUser || action.user || foe)!;
+				return { ...action, weight: action.weight / value.remaining * value.all / total };
+			}));
+		}
+		return predictions;
 	}
 
 	/** The same evidence-refined hypotheses feed scoring and disposable search worlds. */

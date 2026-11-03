@@ -264,10 +264,13 @@ export class HardAI extends NPCBattleAI {
 				active: [fainted], team: [fainted, ...state.self.team] } };
 		}
 		const evaluator = new HardEvaluation(state, this.configCFRU.formatId, undefined, this.matchups.damageCache);
+		const actor = state.self.active.find(p => p.ident === active?.ident);
+		const pending = actor && !actor.fainted ? evaluator.pendingPredictions(actor) : undefined;
 		const candidates = switches.map(sw => {
 			const mon = state.self.reserve.find(p => p.slot === sw.slot) ||
 				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId);
-			return evaluator.scoreSwitch(mon, evaluator.predictions(mon), true);
+			return pending?.size ? evaluator.scoreSwitch(mon, pending, false, actor) :
+				evaluator.scoreSwitch(mon, evaluator.predictions(mon), true);
 		});
 		const search = this.useSearch ? searchPosition(state, evaluator,
 			candidates.map(c => ({ id: `switch ${c.pokemon.slot}`, switchTo: c.pokemon, prior: c.score })),

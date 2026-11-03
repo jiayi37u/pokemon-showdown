@@ -194,6 +194,37 @@ describe('Hard CFRU tactical decisions', () => {
 		assert(reason.startsWith('Replacement search'), reason);
 	});
 
+	for (const queued of ['highjumpkick', 'frustration']) {
+		it(`scores an exposed pivot from public evidence without reading queued ${queued}`, () => {
+			const game = setup([mon('Lopunny', ['highjumpkick', 'frustration', 'quickattack'],
+				{ ability: 'Scrappy', item: 'Lopunnite', happiness: 0 }), mon('Mew', ['splash'])],
+			[mon('Zapdos', ['voltswitch']), mon('Weavile', ['knockoff', 'iciclecrash']),
+				mon('Keldeo', ['scald', 'secretsword'])], { format: 'gen6customgame' });
+			game.reveal();
+			battle.p1.active[0].setStatus('par');
+			game.ai.getTracker().parseMessage('|-status|p1a: Lopunny|par\n|turn|1');
+			const original = battle.log.length;
+			battle.makeChoices(`move ${queued} mega`, 'move voltswitch');
+			game.ai.getTracker().parseMessage(battle.log.slice(original).join('\n'));
+			assert.equal(battle.requestState, 'switch');
+			const state = buildBattleStateWithTracker(battle.p2.activeRequest, null, game.ai.getTracker(),
+				{ formatId: 'gen6customgame' });
+			assert.deepEqual(state.actedThisTurn, ['p2a']);
+			const evaluator = new HardEvaluation(state, 'gen6customgame');
+			const pending = evaluator.pendingPredictions(state.self.active[0]);
+			const responses = [...pending.values()].flat();
+			assert(responses.some(a => a.move?.id === 'highjumpkick'));
+			assert(responses.every(a => !a.switching && a.move?.id !== 'quickattack'));
+			assert(Math.abs(responses.reduce((n, a) => n + a.weight, 0) - 1) < 1e-9);
+			assert.equal(game.decide(), 'switch 3');
+			const scores = game.ai.getLogger().getEntries().at(-1).switchScores;
+			assert(scores.every(s => !s.reasons[0].endsWith('damage 0.0 HP')));
+			state.actedThisTurn.push('p1a');
+			assert.equal(new HardEvaluation(state, 'gen6customgame').pendingPredictions(state.self.active[0]).size, 0,
+				'A slow pivot after the opponent acted has no pending attack');
+		});
+	}
+
 	it('keeps redundant hazard checks when simulator search is enabled', () => {
 		const game = setup([mon('Talonflame', ['bravebird', 'swordsdance', 'roost'], { ability: 'Gale Wings' }),
 			mon('Serperior', ['leafstorm'], { ability: 'Contrary' })],

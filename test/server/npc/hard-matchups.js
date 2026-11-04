@@ -323,6 +323,24 @@ describe('Hard singles matchup value', () => {
 		assert.equal(damaged.matrix[0][0].self.check, 0);
 		assert.deepEqual(damaged, new MatchupEvaluator().assess(f.state));
 	});
+	it('preserves queued priority and tied speeds in a Trick Room matchup', () => {
+		const f = fixture([mon('Talonflame', ['bravebird'], { ability: 'Flame Body' })],
+			[mon('Greninja', ['hydropump'])]);
+		f.state.field.formatId = 'gen7customgame';
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		actor.baseStats.spe = 1000; foe.baseStats.spe = 1; foe.baseStats.spa = 1000;
+		foe.hp = 30; foe.hpPercent = 100 * foe.hp / foe.maxHp;
+		actor.queuedSpeed = 100; foe.queuedSpeed = 200;
+		actor.queuedPriorityAbility = 'galewings';
+		const check = () => f.evaluator.pairs(f.state, [[0, 0]])[0].self.check;
+		assert.equal(check(), 1, 'Queued Gale Wings priority wins despite the queued lower speed');
+		actor.queuedPriorityAbility = undefined;
+		assert.equal(check(), 0, 'The queued lower speed overrides the current faster stats');
+		f.state.field.trickroom = true;
+		assert.equal(check(), 1, 'Trick Room reverses the unequal queued speeds');
+		foe.queuedSpeed = actor.queuedSpeed;
+		assert.equal(check(), 0, 'Trick Room does not turn a tied speed into a reliable first strike');
+	});
 	it('invalidates cached values for state changes and hidden-profile weights', () => {
 		const f = fixture([mon('Mew', ['psychic', 'recover']), mon('Skarmory', ['bravebird'])],
 			[mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);

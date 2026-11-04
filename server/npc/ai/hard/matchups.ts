@@ -9,11 +9,11 @@ import { calculateDamage, selectDamage, DamageCache, type DamagePolicy } from '.
 import { modelsFor, clonePosition, settleFutureAttacks, bindOpponent,
 	positionKey, usableMove, hasMovePP, clonePokemon, projectEntry, boosts, status,
 	applyRecovery, type Side } from './projection';
-import { compareActionOrder, compareSpeedOrder } from '../cfru/util/speed';
+import { compareSpeedOrder, type ActionOrder } from '../cfru/util/speed';
 import { getMoveInteraction } from '../cfru/util/type-calc';
 import { directRecoveryAmount } from '../cfru/util/turn-outcome';
 import {
-	effectiveAbility, effectiveItem, fieldWithActivePokemon, rulesDex, tracedAbility,
+	effectiveAbility, effectiveItem, effectivePriority, fieldWithActivePokemon, rulesDex, tracedAbility,
 } from '../cfru/util/mechanics';
 import {
 	mustSkipMove, statusFailure, sleepClauseOccupied, moveSelectionFailure, conditionalAttackDiscouraged,
@@ -189,7 +189,9 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 	const theirs = reverse(state);
 	const ownFacts = combatant(actor, state), foeFacts = combatant(target, state);
 	const attacks = ownFacts.attacks, responses = foeFacts.attacks;
-	const incoming = responses.map(move => ({ move, amount: damage(target, actor, move, theirs) }));
+	const incoming: { move: AIMove, amount: number, priority?: number }[] =
+		responses.map(move => ({ move, amount: damage(target, actor, move, theirs) }));
+	let speedOrder: ActionOrder | undefined;
 	const worst = Math.max(0, ...incoming.map(r => r.amount));
 	const residual = Math.max(0, actor.hp - residualHP(actor, effectiveAbility(target, state.field), ownFacts, state));
 	const targetResidual = target.hp - residualHP(target, effectiveAbility(actor, state.field), foeFacts, state);
@@ -224,9 +226,12 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		if (check >= breaking && pressure >= maximumPressure) continue;
 		const turns = Math.ceil(target.hp / progress);
 		let race = 1, opportunity = 1;
+		const ownPriority = incoming.length ? effectivePriority(actor, move, state.field) : 0;
 		for (const response of incoming) {
-			const first = (compareActionOrder(actor, target, move, [response.move], state.field,
-				state.self.conditions, state.opponent.conditions) + 1) / 2;
+			const responsePriority = response.priority ??= effectivePriority(target, response.move, state.field);
+			const order = ownPriority !== responsePriority ? (ownPriority > responsePriority ? 1 : -1) :
+				(speedOrder ??= compareSpeedOrder(actor, target, state.field, state.self.conditions, state.opponent.conditions));
+			const first = (order + 1) / 2;
 			const foeDelay = foeFacts.delays.get(response.move)!;
 			const before = Math.max(0, turns - first + ownDelay - foeDelay) * response.amount +
 				Math.max(0, turns - 1 + ownDelay) * residual;

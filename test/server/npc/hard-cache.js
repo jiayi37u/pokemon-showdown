@@ -230,10 +230,10 @@ describe('Hard battle calculation caches', () => {
 		const independent = new MatchupEvaluator();
 		assert.equal(independent.damageCache.stats.entries, 0, 'Another battle owns an independent cache');
 	});
-	it('reuses immutable snapshot profiles while recomputing changed branch inputs', () => {
+	for (const inferred of [false, true]) it(`reuses ${inferred ? 'inferred' : 'known'} snapshot profiles without stale branch inputs`, () => {
 		const { state } = fixture();
-		const target = state.opponent.active[0]; target.itemKnown = false;
-		target.presetModels = [{ name: 'candidate', pokemon: { ...target, item: 'Leftovers' },
+		const target = state.opponent.active[0]; target.itemKnown = false; target.item = 'Leftovers';
+		if (inferred) target.presetModels = [{ name: 'candidate', pokemon: { ...target, item: 'Leftovers' },
 			weight: 1, matched: true, moves: [{ id: 'splash', availability: 1 }] }];
 		snapshotPosition(state);
 		const before = modelsFor(target); assert.equal(before[0].pokemon.item, 'Leftovers');

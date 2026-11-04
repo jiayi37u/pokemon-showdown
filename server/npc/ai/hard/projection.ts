@@ -127,6 +127,11 @@ export function positionKey(state: BattleState): string {
 /** Project the same hidden profile onto current public/hypothetical HP, boosts and conditions. */
 export function modelsFor(p: AIPokemon): OpponentModel[] {
 	const cached = snapshotModels.get(p); if (cached) return cached;
+	if (!p.presetModels && !p.moveKnowledge && snapshotMembers.has(p)) {
+		const result = [{ name: 'bound', weight: 1, matched: true, pokemon: p,
+			moves: [...new Set(p.moves)].map(id => ({ id, availability: 1 })) }];
+		snapshotModels.set(p, result); return result;
+	}
 	const pool = p.presetModels || [{ name: 'bound', weight: 1, matched: true, pokemon: p,
 		moves: [...new Set([...p.moves, ...(p.moveKnowledge?.presetCandidates || [])])].map(id => ({ id, availability: 1 })) }];
 	const known = p.moveKnowledge?.revealedMoves || p.moves;

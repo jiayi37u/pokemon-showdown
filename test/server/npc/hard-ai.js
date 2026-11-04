@@ -740,17 +740,17 @@ describe('Hard generic opponent presets', () => {
 		return buildBattleStateWithTracker(battle.p2.activeRequest, null, game.ai.getTracker(), { formatId: format });
 	}
 
-	it('uses one search representative per family and item without losing mass or mutating public inference', () => {
+	it('uses one search representative per family without losing mass or mutating public inference', () => {
 		const game = setup([mon('Garchomp', ['swordsdance'])], [mon('Mew', ['splash'])], { format: 'gen6ou' });
 		game.reveal();
 		const models = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou');
 		const before = structuredClone(models);
 		const selected = searchOpponentModels(models, 'gen6ou');
 		assert.equal(models.filter(m => m.name === 'Offensive Stealth Rock').length, 4);
-		assert.equal(selected.filter(m => m.name === 'Offensive Stealth Rock').length, 2, 'Keep both Lum Berry and Focus Sash');
-		assert.equal(selected.length, new Set(models.map(m => `${m.name}:${m.pokemon.item}`)).size);
+		assert.equal(selected.filter(m => m.name === 'Offensive Stealth Rock').length, 1);
+		assert.equal(selected.length, new Set(models.map(m => m.name)).size);
 		for (const representative of selected) {
-			const family = models.filter(m => m.name === representative.name && m.pokemon.item === representative.pokemon.item);
+			const family = models.filter(m => m.name === representative.name);
 			assert.equal(representative.weight, family.reduce((sum, m) => sum + m.weight, 0));
 			assert.equal(representative.pokemon, family[0].pokemon, 'Equal weights retain catalogue order');
 			assert(representative.moves.some(m => m.id === 'swordsdance' && m.availability === 1));

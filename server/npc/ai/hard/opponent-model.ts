@@ -101,10 +101,9 @@ export function searchOpponentModels(models: readonly OpponentHypothesis[], form
 	if (!strategyFormats[toID(formatId)]) return [...models];
 	const groups = new Map<string, { representative: OpponentHypothesis, weight: number }>();
 	for (const model of models) {
-		const key = JSON.stringify([model.name, toID(model.pokemon.item)]);
-		const group = groups.get(key);
+		const group = groups.get(model.name);
 		if (!group) {
-			groups.set(key, { representative: model, weight: model.weight });
+			groups.set(model.name, { representative: model, weight: model.weight });
 		} else {
 			group.weight += model.weight;
 			if (model.weight > group.representative.weight) group.representative = model;

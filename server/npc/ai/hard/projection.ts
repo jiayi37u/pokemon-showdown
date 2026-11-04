@@ -6,7 +6,8 @@ import { hardMove } from './opponent-model';
 import { calculateDamage, selectDamage, type DamageCache, type DamagePolicy } from './damage';
 import { canHaveOpponentMoves } from '../cfru/util/opponent-presets';
 import {
-	effectiveAbility, defensiveAbility, effectiveItem, fieldWithActivePokemon, grounded, rulesDex, tracedAbility,
+	effectiveAbility, defensiveAbility, effectiveItem, effectivePriority, fieldWithActivePokemon,
+	grounded, rulesDex, tracedAbility,
 } from '../cfru/util/mechanics';
 import { compareActionOrder, compareSpeedOrder } from '../cfru/util/speed';
 import { megaEvolutionState } from '../cfru/util/forms';
@@ -104,7 +105,7 @@ export function positionKey(state: BattleState): string {
 		p.status, p.sleepTurns, p.toxicCounter, p.boosts, p.baseStats, p.statSpread, p.trapSource,
 		p.types, p.item, p.itemKnown, p.itemLost,
 		p.itemChanged, p.itemExchange, p.ability, p.observedAbility, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
-		[...p.volatiles].sort(), [p.volatileTurns?.taunt, p.volatileTurns?.encore], p.projection,
+		[...p.volatiles].sort(), p.volatileTurns?.taunt, p.volatileTurns?.encore, p.projection,
 		p.queuedSpeed, p.queuedPriorityAbility,
 		p.moveKnowledge, p.presetModels?.map(m => {
 			let key = profileKeys.get(m);
@@ -299,10 +300,11 @@ export function projectEntry(pokemon: AIPokemon, conditions: BattleState['self']
 }
 
 export function status(
-	state: BattleState, side: Side, actor: AIPokemon, target: AIPokemon, id: string, condition: string
+	state: BattleState, side: Side, actor: AIPokemon, target: AIPokemon,
+	move: ReturnType<typeof hardMove>, condition: string
 ): void {
 	const perspective = side === 'self' ? state : { ...state, self: state.opponent, opponent: state.self };
-	if (statusFailure(perspective, actor, target, hardMove(id, 1, state.field.formatId || ''), condition)) return;
+	if (statusFailure(perspective, actor, target, move, condition)) return;
 	target.status = condition; target.toxicCounter = 0;
 	if (condition === 'slp') {
 		target.sleepTurns = 3; target.sleepSelfInflicted = actor === target;
@@ -321,7 +323,7 @@ export function applyRecovery(state: BattleState, side: Side, actor: AIPokemon,
 	const healing = id === 'rest' && actor.status === 'slp' ? 0 : directRecoveryAmount(actor, move, state.field);
 	if (healing && actor.hp && !actor.volatiles.has('healblock')) {
 		if (id !== 'rest' || !statusFailure(perspective, actor, actor, move, 'slp')) {
-			if (id === 'rest') { actor.status = ''; status(state, side, actor, actor, id, 'slp'); }
+			if (id === 'rest') { actor.status = ''; status(state, side, actor, actor, move, 'slp'); }
 			hp(actor, actor.hp + healing);
 		}
 	}
@@ -367,14 +369,21 @@ interface PendingEntry { side: Side; cause: 'pivot' | 'phaze' }
 
 function execute(state: BattleState, side: Side, action: SearchAction, reply: SearchAction,
 	policy: DamagePolicy, remaining: TurnCheckpoint['remaining'], startedActors: readonly string[],
-	cache?: DamageCache): PendingEntry | undefined {
+	cache?: DamageCache, queuedMove?: { priority: number, pranksterBoosted: boolean }): PendingEntry | undefined {
 	if (action.switchTo) { switchIn(state, side, action.switchTo); return; }
 	let party = state[side], foeParty = state[other(side)];
 	let actor = party.active[0] as ProjectedPokemon, target = foeParty.active[0] as ProjectedPokemon;
 	if (!actor || actor.fainted || !action.move) return;
-	const dex = rulesDex(state.field), selected = dex.moves.get(action.move);
+	const dex = rulesDex(state.field);
+	// Override at execution time without rescheduling the selected action.
+	const lockedMove = actor.volatiles.has('encore') ? toID(actor.lastMove) : '';
+	const overridden = action.move !== 'struggle' && lockedMove && lockedMove !== action.move;
+	if (overridden) action = { ...action, move: lockedMove, calledMove: undefined };
+	const selected = dex.moves.get(action.move);
 	const data = dex.moves.get(action.calledMove || action.move), id = data.id;
-	const move = hardMove(action.calledMove || action.move, 1, state.field.formatId || '');
+	const baseMove = hardMove(action.calledMove || action.move!, 1, state.field.formatId || '');
+	const move = overridden && queuedMove ? { ...baseMove, priorityOverride: queuedMove.priority,
+		pranksterBoosted: queuedMove.pranksterBoosted } : baseMove;
 	actor.projection ||= {};
 	if (actor.projection.flinch) return;
 	if (actor.volatiles.has('mustrecharge')) { actor.volatiles.delete('mustrecharge'); return; }
@@ -384,7 +393,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		else if (!selected.sleepUsable) return;
 	}
 	if (actor.status === 'frz') { if (data.flags.defrost) actor.status = ''; else return; }
-	if (!usableMove(state, side, action.move)) return;
+	if (selected.id !== 'struggle' && !usableMove(state, side, selected.id)) return;
 	if (selected.id === 'sleeptalk' && actor.status !== 'slp' &&
 		effectiveAbility(actor, state.field) !== 'comatose') return;
 	const previous = actor.lastMove;
@@ -570,12 +579,12 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 			boosts(recipient, boostChanges(move, perspective) || data.boosts, state, !targetsSelf);
 		}
 	}
-	if (data.status && !target.fainted) status(state, side, actor, targetsSelf ? actor : target, id, data.status);
+	if (data.status && !target.fainted) status(state, side, actor, targetsSelf ? actor : target, move, data.status);
 	for (const secondary of data.secondaries || []) {
 		if (secondary.chance !== 100 || effectiveAbility(actor, state.field) === 'sheerforce') continue;
 		if (secondary.self?.boosts && actor.hp) boosts(actor, secondary.self.boosts, state);
 		if (target.fainted || defensiveAbility(actor, target, move, state.field) === 'shielddust') continue;
-		if (secondary.status) status(state, side, actor, target, id, secondary.status);
+		if (secondary.status) status(state, side, actor, target, move, secondary.status);
 		if (secondary.boosts) boosts(target, secondary.boosts, state, true);
 	}
 	applyRecovery(state, side, actor, move);
@@ -592,7 +601,8 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		actor.projection.substituteHp = Math.floor(actor.maxHp / 4); hp(actor, actor.hp - actor.projection.substituteHp);
 		actor.volatiles.add('substitute');
 	}
-	if (['taunt', 'encore', 'leechseed'].includes(id) && !volatileEffectFailure(perspective, actor, target, move)) {
+	if (['taunt', 'encore', 'leechseed'].includes(id) && !volatileEffectFailure(perspective, actor, target, move) &&
+		(id !== 'encore' || hasMovePP(target, toID(target.lastMove)))) {
 		target.volatiles.add(id); target.projection ||= {};
 		if (id === 'taunt' || id === 'encore') {
 			const control = id === 'taunt' ? 'taunt' : 'encore';
@@ -779,7 +789,10 @@ export interface TurnCheckpoint {
 	state: BattleState;
 	startedActors: readonly string[];
 	pending?: PendingEntry;
-	remaining: { side: Side, actor: string, action: SearchAction, reply: SearchAction }[];
+	remaining: {
+		side: Side, actor: string, action: SearchAction, reply: SearchAction,
+		queuedMove?: { priority: number, pranksterBoosted: boolean },
+	}[];
 	/** Voluntary switches precede Mega evolution and its entry abilities. */
 	megaPending?: { side: Side, actor: string, action: SearchAction }[];
 }
@@ -819,11 +832,20 @@ export function beginTurn(state: BattleState, own: SearchAction, foe: SearchActi
 			next.self.conditions, next.opponent.conditions) > 0;
 	// Speed ties conservatively let the opponent act first; no random tie samples.
 	const order: Side[] = first ? ['self', 'opponent'] : ['opponent', 'self'];
+	const canOverride = (own.calledMove || own.move) === 'encore' || (foe.calledMove || foe.move) === 'encore';
 	return { state: next, startedActors: [identity(a), identity(b)],
 		megaPending: deferMega ? queued.filter(q => q.action.mega && q.action.move) : undefined,
-		remaining: order.map(side => ({ side,
-			actor: identity(side === 'self' ? a : b), action: side === 'self' ? own : foe,
-			reply: side === 'self' ? foe : own })) };
+		remaining: order.map(side => {
+			const actor = side === 'self' ? a : b, action = side === 'self' ? own : foe;
+			const move = canOverride && action.move ? hardMove(action.move, 1, next.field.formatId || '') : undefined;
+			return { side, actor: identity(actor), action, reply: side === 'self' ? foe : own,
+				queuedMove: move ? {
+					// PS preserves modified move priority from Gen 6 onward.
+					priority: rulesDex(next.field).gen > 5 ? effectivePriority(actor, move, next.field) : move.priority,
+					pranksterBoosted: (actor.queuedPriorityAbility ?? effectiveAbility(actor, next.field)) === 'prankster' &&
+						move.category === 'Status',
+				} : undefined };
+		}) };
 }
 
 /** Mutates this checkpoint only; callers clone its state when branching at an entry. */
@@ -838,11 +860,11 @@ export function continueTurn(
 			turn.remaining = turn.remaining.map(q => q.actor === identity(before[q.side].active[0]) ?
 				{ ...q, actor: identity(next[q.side].active[0]) } : q);
 		}
-		const { side, actor, action, reply } = turn.remaining.shift()!;
+		const { side, actor, action, reply, queuedMove } = turn.remaining.shift()!;
 		// Phazing/pivots must not give the replacement the outgoing Pokemon's queued attack.
 		if (!action.switchTo && identity(next[side].active[0]) !== actor) continue;
 		const pending = execute(next, side, action, reply, policy,
-			turn.remaining, turn.startedActors, cache);
+			turn.remaining, turn.startedActors, cache, queuedMove);
 		if (pending && next[pending.side].reserve.some(p => !p.fainted && p.hp > 0)) {
 			turn.pending = pending; return undefined;
 		}

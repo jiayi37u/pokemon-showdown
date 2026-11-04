@@ -440,8 +440,8 @@ export function getMoveInteraction(
 		.includes(move.target) &&
 		!(move.id === 'curse' && !attacker.types.includes('Ghost'));
 	const foeTarget = direct && attacker !== defender && !context.isAllyTarget;
-	if (foeTarget && (move.category === 'Status' || !!move.calledMove) &&
-		effectiveAbility(attacker, field) === 'prankster' &&
+	if (foeTarget && (move.pranksterBoosted ?? ((move.category === 'Status' || !!move.calledMove) &&
+		effectiveAbility(attacker, field) === 'prankster')) &&
 		!dex.getImmunity('prankster', defender.types)) {
 		return block('Dark target immune to Prankster status move');
 	}

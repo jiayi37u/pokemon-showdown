@@ -286,7 +286,7 @@ function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Mat
 			boosts(attacker, move.boosts, state);
 		} else if (move.status && !statusFailure(reverse(state), target, actor, move)) {
 			defender = clonePokemon(actor);
-			status(state, 'opponent', target, defender, move.id, move.status);
+			status(state, 'opponent', target, defender, move, move.status);
 		} else if (directRecoveryAmount(target, move, state.field)) {
 			attacker = clonePokemon(target);
 			applyRecovery(state, 'opponent', attacker, move);

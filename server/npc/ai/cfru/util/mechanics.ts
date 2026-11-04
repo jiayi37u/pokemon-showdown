@@ -136,9 +136,11 @@ export function grounded(pokemon: AIPokemon, field: Partial<FieldConditions>, ig
 
 export function effectivePriority(
 	pokemon: AIPokemon,
-	move: Pick<AIMove, 'priority' | 'category' | 'type' | 'flags'> & Partial<Pick<AIMove, 'id' | 'calledMove'>>,
+	move: Pick<AIMove, 'priority' | 'category' | 'type' | 'flags'> &
+		Partial<Pick<AIMove, 'id' | 'calledMove' | 'priorityOverride'>>,
 	field: Partial<FieldConditions>
 ): number {
+	if (move.priorityOverride !== undefined) return move.priorityOverride;
 	const ability = pokemon.queuedPriorityAbility ?? effectiveAbility(pokemon, field);
 	if (move.calledMove) move = rulesDex(field).moves.get(move.id);
 	let priority = move.priority;

@@ -38,3 +38,13 @@ Mew 的 Taunt 使一个真实终点从未受控对照的 193.162 降到 68.519�
 `test/server/npc/control-durations.js` 的 22 项回归以 PS 公开协议和己方 request 对照固定世代、快慢顺序、换入、cant、upkeep、分支克隆、随机未知与 PP0。全部 NPC 回归 1705 passing、1 pending，TypeScript 与 diff 检查通过。修改后的 projection、move-effects 和新测试 ESLint 通过；state-builder、types、tracker 的既存 lint 错误已与 HEAD 基线核对，未新增错误。
 
 计时修复不等于解决静态长期控制估值，也不改变上面的三回合校准结论。复现和测试材料：`/tmp/hard-control-duration/`。
+
+## Encore 覆盖尚未执行的选择
+
+PS 中，目标上回合使用 Tackle、本回合原选 Splash，被先手 Encore 命中后会实际使用 Tackle，并消耗 Tackle 的 PP。预测必须覆盖原选择，不能因 Splash 受 Encore 限制而跳过整次行动。假想队列保留原行动位置、对应世代的原优先级以及 Prankster 标记；替代招式不能重新获得原选择没有的先制度或恶系免疫标签。
+
+一个 Gen 7 PS 对照中，Prankster Mew 原选 Tackle，被更快的 Umbreon 用 Encore 改为上回合的 Thunder Wave，可以成功麻痹 Umbreon。按替代招式重新推断 Prankster 会错误判定恶系免疫。执行期元数据同时传给状态效果、优先级阻挡与伤害计算，普通评分和普通伤害缓存输入不变。仅存在假想 Encore 动作时额外捕获这组事实。
+
+`test/server/npc/encore-action.js` 的 11 项 PS 对照覆盖替代招 PP、时序、世代优先级、Prankster、Psychic Terrain、Sleep Talk、Struggle 和 PP0。组合后的全部 NPC 回归为 1721 passing、1 pending（同时包含固定事件竞速改动）；Encore、控制计时与搜索专项为 147 passing。TypeScript 通过，新增改动没有增加既存 lint 问题。
+
+早期临时复现的候选池缺少 Encore，假想施放未生效，不能作为覆盖缺陷的证据；结论依据候选和配置匹配的新 PS 对照。材料：`/tmp/hard-control-duration/ENCORE-OVERRIDE-REPORT.md`。

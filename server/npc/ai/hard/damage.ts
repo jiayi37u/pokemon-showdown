@@ -129,7 +129,8 @@ export function calculateDamage(
 		overrides: { basePower: move.isZMove || ['return', 'frustration'].includes(data.id) ? move.basePower : data.basePower,
 			// Hidden Power's canonical ID omits its publicly inferred/request-supplied type.
 			type: (data.id === 'hiddenpower' ? move.type : data.type) as TypeName,
-			category: move.isZMove ? move.category : data.category },
+			category: move.isZMove ? move.category : data.category,
+			priority: move.priorityOverride },
 	};
 	const weather: Record<string, string> = { sun: 'Sun', rain: 'Rain', sand: 'Sand', hail: 'Hail', snow: 'Snow' };
 	const side = (s?: DamageContext['attackerSideConditions']) => ({

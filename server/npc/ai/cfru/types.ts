@@ -354,6 +354,9 @@ export interface AIMove {
 
 	/** Deterministic called attack, while id/slot still identify the selected move. */
 	calledMove?: string;
+	/** Execution metadata when Encore replaces an already queued move. */
+	priorityOverride?: number;
+	pranksterBoosted?: boolean;
 	/** Ability conversion power modifier; recalculated from the current snapshot. */
 	typeChangeBoost?: number;
 	/** Type before context-dependent conversion, for repeatable resolution. */

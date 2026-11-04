@@ -322,7 +322,7 @@ function coverage(values: number[]): number {
 	return clamp((sorted[0] || 0) + 0.2 * (sorted[1] || 0));
 }
 
-const valueWeights = { member: 25, hp: 35, pressure: 15, check: 45, counter: 30, sustain: 10, active: 35 };
+export const valueWeights = { member: 25, hp: 35, pressure: 15, check: 45, counter: 30, sustain: 10, active: 35 };
 
 function teamValue(
 	party: AIPokemon[], availableParty: AIPokemon[], availableFoes: AIPokemon[], rows: Matchup[][]

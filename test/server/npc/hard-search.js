@@ -975,6 +975,10 @@ describe('Hard damage-based state search', () => {
 		const names = context => new Search(new MatchupEvaluator()).entryChoices(f.state, 'self', context).map(p => p.species);
 		assert.deepEqual(names('switch'), [], 'A weak switch must improve on the cost of staying');
 		assert.deepEqual(names('exposed'), ['Blissey'], 'A mandatory recipient does not need to improve on staying');
+		const healthyHP = actor.hp;
+		hp(actor, 1);
+		assert.deepEqual(names('switch'), ['Blissey'], 'Saving a member can justify losing more HP on entry');
+		hp(actor, healthyHP);
 		actor.baseStats.def = 1;
 		assert.deepEqual(names('switch'), ['Blissey'], 'The same recipient is useful when staying is more costly');
 		assert.deepEqual(names('exposed'), ['Blissey']);

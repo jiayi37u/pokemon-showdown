@@ -2,7 +2,7 @@
 import { type AIPokemon, type BattleState, type MoveScore } from '../cfru/types';
 import { hardMove } from './opponent-model';
 import { HardEvaluation } from './evaluation';
-import { actionDelay, type MatchupEvaluator } from './matchups';
+import { actionDelay, valueWeights, type MatchupEvaluator } from './matchups';
 import { megaEvolutionState } from '../cfru/util/forms';
 import { effectiveAbility, effectiveItem, grounded, rulesDex } from '../cfru/util/mechanics';
 import { selectMoveCandidates } from '../cfru/scoring';
@@ -130,10 +130,11 @@ export class CandidateSelector {
 			return { p, own, margin: (exposed ? own?.counter : own?.check) || 0,
 				pressure: (exposed ? own?.entryPressure : own?.pressure) || 0,
 				sustain: (exposed ? own?.entrySustain : own?.sustain) || 0,
-				threat: opposing?.check || 0, health, loss: 0, stayLoss: 0, survival: 0 };
+				threat: opposing?.check || 0, health, loss: 0, stayLoss: 0, survival: 0, stayFatal: true };
 		});
 		const selected = new Set(entries.filter(e => e.health > 0 && e.margin > e.threat).map(e => e.p));
 		const hasAdvantage = selected.size > 0;
+		const certainAdvantage = entries.some(e => e.health > 0 && e.margin >= 1 && e.threat === 0);
 		// Winning the current exchange does not make preserving this member useless.
 		// Keep reliable advantageous recipients for the team-value search to compare.
 		if (!required && this.favorableStay(state, side)) return legal.filter(p => selected.has(p));
@@ -141,8 +142,7 @@ export class CandidateSelector {
 		for (const entry of entries) {
 			if (entry.health <= 0) { sacrifices.add(entry.p); continue; }
 			if (!exposed) continue;
-			// With an advantageous recipient, only sacrifice membership remains relevant;
-			// the loss metrics are used solely by the no-advantage comparison below.
+			// An advantageous recipient can still need a sacrifice or a cheaper way to save the active member.
 			models: for (const model of modelsFor(foe)) {
 				const before = clonePosition(view); bindOpponent(before, foe, model);
 				for (const entrant of modelsFor(view.self.team.find(p => identity(p) === identity(entry.p))!)) {
@@ -158,19 +158,26 @@ export class CandidateSelector {
 						if (actionDelay(attacker, state.field, hardMove(id, 1, state.field.formatId || ''))) continue;
 						const dealt = this.damage(after, attacker, incoming, id, 'opponent');
 						worst = Math.max(worst, dealt);
-						if (!required && !hasAdvantage) {
+						if (!required && !certainAdvantage) {
 							stay = Math.max(stay, this.damage(before, before.opponent.active[0], before.self.active[0], id, 'opponent'));
 						}
 					}
 					if (worst >= incoming.hp) { sacrifices.add(entry.p); if (hasAdvantage) break models; }
 					const weight = model.weight * entrant.weight;
-					entry.loss += weight * (Math.max(0, entryHP - incoming.hp) + Math.min(incoming.hp, worst)) / incoming.maxHp;
-					entry.stayLoss += weight * Math.min(actor.hp, stay) / actor.maxHp;
+					if (!required && weight > 0) entry.stayFatal &&= stay >= actor.hp;
+					entry.loss += weight * (valueWeights.hp *
+						(Math.max(0, entryHP - incoming.hp) + Math.min(incoming.hp, worst)) / incoming.maxHp +
+						valueWeights.member * Number(incoming.fainted || worst >= incoming.hp));
+					entry.stayLoss += weight * (valueWeights.hp * Math.min(actor.hp, stay) / actor.maxHp +
+						valueWeights.member * Number(stay >= actor.hp));
 					entry.survival += weight * Number(!incoming.fainted && worst < incoming.hp);
 				}
 			}
 		}
-		if (!hasAdvantage) {
+		// Losing the active member is not cheaper merely because it has little HP left.
+		// Preserve alternatives only when a recipient survives every probed configuration.
+		if (!hasAdvantage || !required && !certainAdvantage &&
+			entries.some(e => e.survival > 0 && !sacrifices.has(e.p) && e.stayFatal)) {
 			const useful = entries.filter(e => e.health > 0 && e.own && (required ||
 				e.survival > 0 && e.loss < e.stayLoss));
 			// Without a winning matchup, preserve distinct strengths rather than a fixed top K.

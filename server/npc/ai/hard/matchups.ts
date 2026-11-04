@@ -394,26 +394,35 @@ export class MatchupEvaluator {
 		const keys = new WeakMap<object, number>();
 		const sleepers = (party: AIPokemon[]) => party.filter(p => !p.fainted && p.status === 'slp')
 			.map(p => [p.ownerSide, !!p.sleepSelfInflicted]);
-		const context = JSON.stringify([state.field, state.self.conditions, state.opponent.conditions,
-			// Sleep-clause eligibility is the one team-wide status dependency of pair evaluation.
-			sleepers(own), sleepers(foes)]);
+		const ownActive = own.findIndex(p => p.active && p.hp > 0 && !p.fainted);
+		const foeActive = foes.findIndex(p => p.active && p.hp > 0 && !p.fainted);
+		// Partial queries need their coordinates and the active pair's stranded-boost verdict.
+		const ownNeeded = coordinates && new Set([ownActive, ...coordinates.map(([i]) => i)]);
+		const foeNeeded = coordinates && new Set([foeActive, ...coordinates.map(([, j]) => j)]);
 		// A perspective change does not turn estimated profiles into known configurations.
-		const profilesFor = (party: AIPokemon[]) => party.map(target => modelsFor(target).map(model => {
-			const pokemon = { ...model.pokemon, moves: model.moves.filter(m =>
-				hasMovePP(model.pokemon, rulesDex(state.field).moves.get(m.id).id)).map(m => m.id) };
-			return { pokemon, weight: model.weight, key: this.inputKey(pokemon, () => fingerprint(pokemon), keys) };
-		}));
-		const actors = profilesFor(own), profiles = profilesFor(foes);
-		const prefix = this.token(context + JSON.stringify(this.damagePolicy));
-		// Cache evaluation inputs, not search history. Exhausted moves alter profiles;
-		// positive PP counts, pending choices and reveal bookkeeping do not alter this value.
-		const position = JSON.stringify([prefix,
-			...[own, foes].map(party => party.map(p => this.inputKey(p, () => fingerprint(p), keys))),
-			...[actors, profiles].map(pools => pools.map(pool => pool.map(p => [p.key, p.weight])))]);
-		const cached = this.positions.get(position);
-		if (cached) {
-			this.stats.positions++;
-			return coordinates ? coordinates.map(([i, j]) => cached.matrix[i][j]) : cached;
+		const profilesFor = (party: AIPokemon[], needed?: Set<number>) => party.map((target, i) =>
+			needed && !needed.has(i) ? [] : modelsFor(target).map(model => {
+				const pokemon = { ...model.pokemon, moves: model.moves.filter(m =>
+					hasMovePP(model.pokemon, rulesDex(state.field).moves.get(m.id).id)).map(m => m.id) };
+				return { pokemon, weight: model.weight, key: this.inputKey(pokemon, () => fingerprint(pokemon), keys) };
+			}));
+		const actors = profilesFor(own, ownNeeded), profiles = profilesFor(foes, foeNeeded);
+		let position = '';
+		if (!coordinates) {
+			const context = JSON.stringify([state.field, state.self.conditions, state.opponent.conditions,
+				// Sleep-clause eligibility is the one team-wide status dependency of pair evaluation.
+				sleepers(own), sleepers(foes)]);
+			const prefix = this.token(context + JSON.stringify(this.damagePolicy));
+			// Cache evaluation inputs, not search history. Exhausted moves alter profiles;
+			// positive PP counts, pending choices and reveal bookkeeping do not alter this value.
+			position = JSON.stringify([prefix,
+				...[own, foes].map(party => party.map(p => this.inputKey(p, () => fingerprint(p), keys))),
+				...[actors, profiles].map(pools => pools.map(pool => pool.map(p => [p.key, p.weight])))]);
+			const cached = this.positions.get(position);
+			if (cached) {
+				this.stats.positions++;
+				return cached;
+			}
 		}
 		const sides = [state.self.conditions, state.opponent.conditions]
 			.map(value => this.inputKey(value, () => combatSideKey(value), keys)).join(':');
@@ -457,8 +466,6 @@ export class MatchupEvaluator {
 			}
 			return result;
 		};
-		const ownActive = own.findIndex(p => p.active && p.hp > 0 && !p.fainted);
-		const foeActive = foes.findIndex(p => p.active && p.hp > 0 && !p.fainted);
 		const withoutStrandedBoosts = (pool: Profile[], opponents: Profile[], side: Side): Profile[] =>
 			pool.map(model => {
 				if (!Object.values(model.pokemon.boosts).some(n => n > 0) || !opponents.length) return model;

@@ -2,14 +2,14 @@
  * Ratings are bounded estimates, not proofs of a counter or calibrated win probabilities.
  * Inputs are knowledge snapshots (or disposable search hypotheses), never a live opponent team.
  */
-import type { AIPokemon, AIMove, BattleState, FieldConditions, SideConditions } from '../cfru/types';
+import type { AIPokemon, AIMove, BattleState, FieldConditions, SideConditions, OpponentModel } from '../cfru/types';
 import { hardMove, hardMoveId } from './opponent-model';
 import {
 	getEffectiveHpAfterSecondary, prepareResidualEffects, fixedDamageKnockoutTurns, type ResidualEffects,
 } from '../cfru/util/damage-calc';
 import { calculateDamage, selectDamage, DamageCache, type DamagePolicy } from './damage';
 import { modelsFor, clonePosition, settleFutureAttacks, bindOpponent,
-	positionKey, usableMove, hasMovePP, clonePokemon, projectEntry, boosts, status,
+	positionKey, usableMove, hasMovePP, clonePokemon, projectEntry, boosts, status, isSnapshotPokemon,
 	applyRecovery, type Side } from './projection';
 import { compareSpeedOrder, type ActionOrder } from '../cfru/util/speed';
 import { getMoveInteraction } from '../cfru/util/type-calc';
@@ -37,6 +37,7 @@ export interface Matchup {
 }
 interface Pair { self: Matchup; opponent: Matchup }
 interface Assessment { value: number; self: number; opponent: number; matrix: Pair[][] }
+interface Profile { pokemon: AIPokemon; weight: number; key: number }
 interface CombatantFacts {
 	moves: AIMove[];
 	attacks: AIMove[];
@@ -363,6 +364,9 @@ export class MatchupEvaluator {
 	/** Concrete inputs and ordered weighted pools share read-only pair facts. */
 	private pairInputs = new Map<string, Pair>();
 	private positions = new Map<string, Assessment>();
+	private profilePools = new Map<string, Profile[]>();
+	private profileModels = new WeakMap<OpponentModel, number>();
+	private profileModelCount = 0;
 	private advantages = new Map<string, boolean>();
 	private attacks = new Map<string, Map<string, AttackFacts>>();
 	private combatants = new Map<string, CombatantFacts>();
@@ -404,6 +408,7 @@ export class MatchupEvaluator {
 	/** Full-position verdicts belong to one decision; concrete pair and damage facts survive it. */
 	releasePositions(): void {
 		this.positions.clear();
+		this.profilePools.clear();
 		this.advantages.clear();
 	}
 
@@ -507,12 +512,29 @@ export class MatchupEvaluator {
 		const ownNeeded = coordinates && new Set([ownActive, ...coordinates.map(([i]) => i)]);
 		const foeNeeded = coordinates && new Set([foeActive, ...coordinates.map(([, j]) => j)]);
 		// A perspective change does not turn estimated profiles into known configurations.
-		const profilesFor = (party: AIPokemon[], needed?: Set<number>) => party.map((target, i) =>
-			target.fainted || !target.hp || needed && !needed.has(i) ? [] : modelsFor(target).map(model => {
-				const pokemon = { ...model.pokemon, moves: model.moves.filter(m =>
+		const profilesFor = (party: AIPokemon[], needed?: Set<number>) => party.map((target, i) => {
+			if (target.fainted || !target.hp || needed && !needed.has(i)) return [];
+			const reusable = isSnapshotPokemon(target);
+			// Models are immutable; their ordered identities retain weights and summation order.
+			const template = reusable && target.presetModels?.map(model => {
+				let id = this.profileModels.get(model);
+				if (id === undefined) this.profileModels.set(model, id = ++this.profileModelCount);
+				return id;
+			});
+			// Preserve all member inputs, including PP and public knowledge. Unchanged reserves
+			// need no repeated inference, move filtering or normalized-profile construction.
+			const poolKey = reusable ? JSON.stringify([state.field.formatId, template,
+				{ ...target, presetModels: undefined, volatiles: [...target.volatiles] }]) : undefined;
+			const cached = poolKey === undefined ? undefined : this.profilePools.get(poolKey);
+			if (cached) return cached;
+			const pool = modelsFor(target).map(model => {
+				const pokemon = { ...(reusable ? clonePokemon(model.pokemon) : model.pokemon), moves: model.moves.filter(m =>
 					hasMovePP(model.pokemon, rulesDex(state.field).moves.get(m.id).id)).map(m => m.id) };
 				return { pokemon, weight: model.weight, key: this.inputKey(pokemon, () => fingerprint(pokemon), keys) };
-			}));
+			});
+			if (poolKey !== undefined) this.profilePools.set(poolKey, pool);
+			return pool;
+		});
 		const actors = profilesFor(own, ownNeeded), profiles = profilesFor(foes, foeNeeded);
 		let position = '';
 		if (!coordinates) {
@@ -539,7 +561,6 @@ export class MatchupEvaluator {
 			sleepers(own), sleepers(foes)]));
 		// Resolve each concrete pair through one cache path, including the current pair
 		// used to determine whether a boost can contribute to other team matchups.
-		type Profile = typeof actors[number][number];
 		const pair = (actorModel: Profile, foeModel: Profile): Pair => {
 			const actor = actorModel.pokemon;
 			const input = `${inputs}:${actorModel.key}:${foeModel.key}`;

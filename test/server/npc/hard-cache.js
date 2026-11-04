@@ -262,6 +262,24 @@ describe('Hard battle calculation caches', () => {
 		assert.notEqual(evaluator.pairs(state, [[0, 0]])[0], changed, 'Summation order remains part of the key');
 		assert.deepEqual(evaluator.assess(state), new MatchupEvaluator().assess(state));
 	});
+	it('reuses completed member pools while retaining changed PP and public move knowledge', () => {
+		const state = snapshotPosition(fixture().state), evaluator = new MatchupEvaluator();
+		const initial = evaluator.assess(state), pools = evaluator.profilePools.size;
+		assert(pools > 0);
+		assert.deepEqual(evaluator.assess(snapshotPosition(clonePosition(state))), initial);
+		assert.equal(evaluator.profilePools.size, pools, 'Unchanged members do not need new normalized pools');
+		const next = clonePosition(state);
+		next.self.active[0].projection = { pp: { psychic: 0 } };
+		next.opponent.active[0].moveKnowledge = {
+			revealedMoves: ['splash'], presetCandidates: ['closecombat'], remainingSlots: 3,
+		};
+		snapshotPosition(next);
+		assert.deepEqual(evaluator.assess(next), new MatchupEvaluator().assess(next));
+		assert.deepEqual(evaluator.assess(state), initial, 'A changed branch cannot overwrite the original pool');
+		evaluator.releasePositions();
+		assert.equal(evaluator.profilePools.size, 0, 'Request-specific profiles are released with positions');
+		assert.deepEqual(evaluator.assess(state), initial);
+	});
 	it('keeps the battle cache and hypotheses when scoring a replacement perspective', () => {
 		const { state, cache } = fixture();
 		const original = state.self.active[0], target = state.opponent.active[0];

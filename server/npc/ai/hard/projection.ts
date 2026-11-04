@@ -97,6 +97,10 @@ export function snapshotPosition(state: BattleState): BattleState {
 	return state;
 }
 
+export function isSnapshotPokemon(p: AIPokemon): boolean {
+	return snapshotMembers.has(p);
+}
+
 const profileKeys = new WeakMap<OpponentModel, string>();
 /** Compact cache identity: never serialize whole repeated preset objects per search node. */
 export function positionKey(state: BattleState): string {

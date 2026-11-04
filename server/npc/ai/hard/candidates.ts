@@ -7,7 +7,7 @@ import { megaEvolutionState } from '../cfru/util/forms';
 import { effectiveAbility, effectiveItem, grounded, rulesDex } from '../cfru/util/mechanics';
 import { selectMoveCandidates } from '../cfru/scoring';
 import { bindOpponent, clonePosition, identity, knownMoves, modelsFor, moveAction, positionKey, switchIn,
-	usableMove, projectEntry,
+	usableMove, projectEntry, snapshotPosition,
 	type SearchAction, type Side } from './projection';
 
 export function perspective(state: BattleState, side: Side): BattleState {
@@ -98,7 +98,7 @@ export class CandidateSelector {
 			p.hpPercent = Math.ceil(p.hpPercent);
 			p.hp = Math.ceil(p.hpPercent * p.maxHp / 100);
 		}
-		return next;
+		return snapshotPosition(next);
 	}
 
 	/** One entry policy. `switch` is voluntary and concedes an action; `exposed` is

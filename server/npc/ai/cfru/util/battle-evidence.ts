@@ -67,6 +67,7 @@ export class BattleEvidenceTracker {
 	private order: { ident: string, move: string }[] = [];
 	private turn = 0;
 	private selections = new Map<string, string>();
+	private leftovers?: { context: EvidenceContext, opponents: Set<string> };
 
 	getHistory(): readonly BattleEvidence[] { return [...this.history]; }
 
@@ -75,6 +76,7 @@ export class BattleEvidenceTracker {
 
 	begin(state: BattleState): void {
 		this.flush();
+		this.leftovers = undefined;
 		this.turn = state.turn;
 		// Public opponents carry no guessed stats, items, abilities or move pools in evidence.
 		const opponents = state.opponent.active.map(p => ({ ...p, presetModels: undefined, moveKnowledge: undefined,
@@ -227,8 +229,37 @@ export class BattleEvidenceTracker {
 			context: structuredClone(context), first: pokemon.ident!, second: '', move, excludedItems });
 	}
 
+	private beginResidual(): void {
+		const context = this.context;
+		this.leftovers = undefined;
+		if (!context) return;
+		const field = fieldWithActivePokemon(context.field, [...context.self, ...context.opponents]);
+		const dex = Dex.forFormat(field.formatId || 'gen9customgame');
+		if (dex.gen < 2) return;
+		const opponents = context.opponents.filter(p => p.hpPercent > 0 && p.hpPercent < 100 &&
+			!p.itemKnown && !p.itemLost && !p.itemChanged && !p.volatiles.has('healblock') &&
+			(p.observedAbility || !Object.values(dex.species.get(p.species).abilities)
+				.some(ability => Dex.toID(ability) === 'klutz')) &&
+				effectiveItem({ ...p, item: 'leftovers' }, field) === 'leftovers');
+		if (opponents.length) this.leftovers = { context: structuredClone(context),
+			opponents: new Set(opponents.map(p => p.ident!)) };
+	}
+
+	private finishResidual(): void {
+		const residual = this.leftovers;
+		this.leftovers = undefined;
+		if (!residual) return;
+		for (const opponent of residual.opponents) this.add({ kind: 'selection', turn: this.turn,
+			opponent, context: residual.context, first: opponent, second: '', move: '', excludedItems: ['leftovers'] });
+	}
+
 	observe(parts: string[]): void {
 		const [event, ident = '', effect = ''] = parts;
+		// PS brackets residual processing with an empty protocol line and upkeep. Empty
+		// lines before ordinary actions are cancelled by the ensuing move/cant instead.
+		if (!event) this.beginResidual();
+		if (event === 'upkeep') this.finishResidual();
+		if (event === 'move' || event === 'cant') this.leftovers = undefined;
 		this.observeEntry(parts);
 		if (['switch', 'drag', 'replace', '-transform', 'detailschange', '-formechange', '-item', '-enditem',
 			'-ability', '-endability', '-fieldstart', '-fieldend', '-start', '-end'].includes(event)) {
@@ -250,6 +281,7 @@ export class BattleEvidenceTracker {
 		].includes(event)) {
 			// A fresh request rearms recording. Do not reconstruct mid-turn mechanics a second time here.
 			this.context = undefined;
+			if (event !== '-weather' || !parts.includes('[upkeep]')) this.leftovers = undefined;
 			if (!preservesActionOrder(event, effect)) {
 				this.speedContext = undefined;
 				this.order = [];
@@ -291,6 +323,7 @@ export class BattleEvidenceTracker {
 				invalid: !!data.multihit || !data.basePower || !!data.damage || !!data.damageCallback || !!data.basePowerCallback,
 				hits: [], itemEffects: new Set() };
 		}
+		if (event === '-heal' && pokemon) this.leftovers?.opponents.delete(pokemon.ident!);
 		if (['-damage', '-heal'].includes(event) && pokemon) {
 			const [hp, max] = effect.split(' ')[0].split('/').map(Number);
 			const percent = max ? Math.ceil(hp / max * 100) : 0;
@@ -311,6 +344,7 @@ export class BattleEvidenceTracker {
 	reset(): void {
 		this.history = []; this.context = undefined; this.speedContext = undefined;
 		this.attack = undefined;
+		this.leftovers = undefined;
 		this.entry = undefined;
 		this.order = []; this.positions.clear(); this.selections.clear();
 	}

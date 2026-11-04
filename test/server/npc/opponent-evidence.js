@@ -7,7 +7,7 @@ const { DEFAULT_AI_CONFIG } = require('../../../dist/server/npc/ai/cfru/types');
 const { computeStatsFromPreset } = require('../../../dist/server/npc/ai/cfru/util/opponent-presets');
 const { refineOpponentModels } = require('../../../dist/server/npc/ai/hard/evidence');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
-const { inferOpponent, predictOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
+const { inferOpponent, predictOpponent, searchOpponentModels } = require('../../../dist/server/npc/ai/hard/opponent-model');
 
 const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
 let battles = [];
@@ -55,6 +55,68 @@ function refine(state, presets) {
 
 describe('Hard inference from observed battle outcomes', () => {
 	afterEach(() => { battles.forEach(b => b.destroy()); battles = []; });
+	it('excludes missing Leftovers before selecting a surviving family representative', () => {
+		const g = game({ ...passive, moves: ['nightshade'] },
+			{ species: 'Volcanion', ability: 'Water Absorb', moves: ['splash'] }, 'singles', 'gen6ou');
+		const state = g.play();
+		assert(state.opponentEvidence.some(e => e.excludedItems?.includes('leftovers')));
+		const result = refine(state, [
+			{ name: 'same family', item: 'leftovers' }, { name: 'same family', item: 'sitrusberry' },
+		]);
+		assert.deepEqual(result.models.map(m => m.pokemon.item), ['sitrusberry']);
+		const evaluator = new HardEvaluation(state, 'gen6ou');
+		const inferred = evaluator.opponentModels(state.opponent.active[0]);
+		assert(inferred.length && inferred.every(m => m.pokemon.item !== 'leftovers'));
+		assert(searchOpponentModels(inferred, 'gen6ou').every(m => m.pokemon.item !== 'leftovers'));
+		assert.deepEqual(searchOpponentModels(result.models, 'gen6ou').map(m => [m.pokemon.item, m.weight]),
+			[['sitrusberry', 1]]);
+	});
+	it('observes missing Leftovers during sand residual without treating upkeep as a weather change', () => {
+		for (const item of ['', 'Shell Bell', 'Leftovers']) {
+			const g = game({ species: 'Tyranitar', ability: 'Sand Stream', moves: ['nightshade'] },
+				{ ...passive, item });
+			const state = g.play();
+			assert(g.battle.log.some(line => line.includes('|-weather|Sandstorm|[upkeep]')));
+			assert.equal(state.opponentEvidence.some(e => e.excludedItems?.includes('leftovers')), item !== 'Leftovers');
+		}
+	});
+	it('does not infer missing Leftovers from full HP followed by poison damage', () => {
+		const g = game({ ...passive, moves: ['toxic'] }, { ...passive, item: 'Leftovers', moves: ['recover'] });
+		g.play();
+		const start = g.battle.log.length;
+		const state = g.play();
+		const lines = g.battle.log.slice(start);
+		assert(lines.some(line => {
+			if (!line.startsWith('|-heal|p1a:')) return false;
+			const [hp, max] = line.split('|')[3].split(' ')[0].split('/').map(Number);
+			return hp === max;
+		}));
+		assert(lines.some(line => line.startsWith('|-damage|p1a:') && line.includes('[from] psn')));
+		assert(!state.opponentEvidence.some(e => e.excludedItems?.includes('leftovers')));
+	});
+	it('retains Leftovers when public item or healing suppression prevents its trigger', () => {
+		for (const move of ['healblock', 'embargo', 'magicroom']) {
+			const g = game({ ...passive, moves: [move, 'nightshade'] }, { ...passive, item: 'Leftovers' });
+			g.play();
+			g.battle.makeChoices('move 1', 'move 2');
+			const state = g.state();
+			assert(state.opponent.active[0].hpPercent < 100);
+			assert(!state.opponentEvidence.some(e => e.excludedItems?.includes('leftovers')), move);
+		}
+		const known = game({ species: 'Lopunny', ability: 'Klutz', moves: ['entrainment', 'seismictoss'] },
+			{ ...passive, item: 'Leftovers' });
+		known.play();
+		known.battle.makeChoices('move 1', 'move 2');
+		const state = known.state();
+		assert.equal(Dex.toID(state.opponent.active[0].ability), 'klutz');
+		assert(state.opponent.active[0].hpPercent < 100);
+		assert(!state.opponentEvidence.some(e => e.excludedItems?.includes('leftovers')));
+		for (const ability of ['Klutz', 'Limber']) {
+			const g = game({ ...passive, moves: ['seismictoss'] },
+				{ species: 'Lopunny', ability, moves: ['splash'], item: ability === 'Klutz' ? 'Leftovers' : '' });
+			assert(!g.play().opponentEvidence.some(e => e.excludedItems?.includes('leftovers')), ability);
+		}
+	});
 	it('carries public binding sources and own Mega spreads through singles, doubles and Multi', () => {
 		const own = { species: 'Diancie', item: 'Diancite', nature: 'Timid', moves: ['protect'], evs: { spe: 252 } };
 		for (const mode of ['singles', 'doubles', 'multi']) {

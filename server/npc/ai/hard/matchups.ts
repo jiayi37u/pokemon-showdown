@@ -507,7 +507,7 @@ export class MatchupEvaluator {
 		const foeNeeded = coordinates && new Set([foeActive, ...coordinates.map(([, j]) => j)]);
 		// A perspective change does not turn estimated profiles into known configurations.
 		const profilesFor = (party: AIPokemon[], needed?: Set<number>) => party.map((target, i) =>
-			needed && !needed.has(i) ? [] : modelsFor(target).map(model => {
+			target.fainted || !target.hp || needed && !needed.has(i) ? [] : modelsFor(target).map(model => {
 				const pokemon = { ...model.pokemon, moves: model.moves.filter(m =>
 					hasMovePP(model.pokemon, rulesDex(state.field).moves.get(m.id).id)).map(m => m.id) };
 				return { pokemon, weight: model.weight, key: this.inputKey(pokemon, () => fingerprint(pokemon), keys) };

@@ -27,6 +27,24 @@ describe('Hard singles matchup value', () => {
 		assert.deepEqual(evaluator.pairs(state, coordinates), coordinates.map(([i, j]) => expected.matrix[i][j]));
 		assert.deepEqual(state, before);
 	}
+	it('keeps complete values and matrix cells independent of dead-member model pools', () => {
+		const { hp } = require('../../../dist/server/npc/ai/hard/projection');
+		const f = fixture([mon('Mew', ['psychic']), mon('Skarmory', ['bravebird'])],
+			[mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);
+		const dead = [f.state.self.team[1], f.state.opponent.team[1]];
+		for (const pokemon of dead) hp(pokemon, 0);
+		const expected = new MatchupEvaluator().assess(f.state);
+		for (const pokemon of dead) {
+			pokemon.presetModels = [0.25, 0.75].map((weight, i) => ({
+				name: String(i), weight, matched: true,
+				pokemon: { ...pokemon, baseStats: { ...pokemon.baseStats, spe: i ? 999 : 1 } },
+				moves: [{ id: i ? 'swordsdance' : 'splash', availability: 1 }],
+			}));
+		}
+		assert.deepEqual(f.evaluator.assess(f.state), expected);
+		assert.deepEqual(f.evaluator.pairs(f.state, [[0, 1], [1, 0], [1, 1]]),
+			[expected.matrix[0][1], expected.matrix[1][0], expected.matrix[1][1]]);
+	});
 	it('computes only the requested concrete pair before a complete valuation is needed', () => {
 		const f = fixture([mon('Mew', ['psychic']), mon('Skarmory', ['bravebird'])],
 			[mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);

@@ -13,3 +13,11 @@
 本次总耗时减少 2.33%，属于单次共享负载观测；不宣称稳定比例。022 maxRSS 从 3292 增至 3492 MiB，没有证明内存收益。保留依据是删除相同输入的重复入场计算，且完整结果一致。专项 184 项回归、TypeScript 与 ESLint 通过；随后与叶值缓存候选合并验证的全部 NPC 回归为 1723 passing、1 pending。
 
 材料：`/tmp/hard-entry-value-reuse/REPORT.md`、`comparison.json`、`frozen-manifest.json`，包含完整模块 SHA256 与逐例结果。试验不设置运行时间上限。
+
+## 不展开死亡成员配置
+
+`profilesFor` 不规范化 `fainted` 或 HP 为零的成员配置。完整矩阵和部分查询仍返回原有零值格，存活成员的配置、权重及强化兑现判断不变。
+
+冻结 48 加入场复用的独立诊断中，Slowbro 的 21058 次配置规范化有 3358 次用于死亡成员，011 的 603276 次有 28243 次。跳过后，两例完整 Assessment／pairs 返回序列、行动、节点和完整 reasoning 一致；仪表化耗时分别为 5.713 → 5.585 秒、53.116 → 51.945 秒。该时间含哈希校验开销，仅作为方向性证据。组合专项 187 项回归和 TypeScript 检查通过。
+
+同一格式下模型对象身份重复率仅 0.12% 和 1.43%，因此不增加规范化 profile 的身份缓存。材料：`/tmp/hard-profile-normalization/REPORT.md`、`comparison.json`。

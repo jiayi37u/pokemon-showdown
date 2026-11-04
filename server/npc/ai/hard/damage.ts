@@ -94,15 +94,18 @@ export function calculateDamage(
 			guaranteedKO: min >= defender.hp, hitsToKO: average ? Math.ceil(defender.hp / average) : Infinity };
 	};
 	if (move.category === 'Status' || interaction.blockedBy || !interaction.effectiveness) return result(zeroDamage);
-	const options = (p: AIPokemon) => ({
-		level: p.level, ability: (dex.abilities.get(effectiveAbility(p, field)).name || 'No Ability') as AbilityName,
-		item: (dex.items.get(effectiveItem(p, field)).name ||
+	const ownAbility = effectiveAbility(attacker, field), ownItem = effectiveItem(attacker, field);
+	const ownAbilityName = dex.abilities.get(ownAbility).name, ownItemName = dex.items.get(ownItem).name;
+	const options = (p: AIPokemon, ability = dex.abilities.get(effectiveAbility(p, field)).name,
+		item = dex.items.get(effectiveItem(p, field)).name) => ({
+		level: p.level, ability: (ability || 'No Ability') as AbilityName,
+		item: (item ||
 			(!p.itemKnown && !p.itemLost && !p.itemAssumed ? 'Unknown Item' : undefined)) as ItemName | undefined,
 		abilityOn: p.volatiles.has('flashfire') || p.volatiles.has('unburden') || p.volatiles.has('slowstart'),
 		boosts: p.boosts, status: p.status as StatusName, teraType: p.terastallized as TypeName,
 		gender: (p.gender === 'N' ? 'N' : p.gender === 'F' ? 'F' : 'M') as Pokemon['gender'],
 	});
-	const ownOptions = options(attacker), foeOptions = options(defender);
+	const ownOptions = options(attacker, ownAbilityName, ownItemName), foeOptions = options(defender);
 	const stats = (p: AIPokemon) => [p.maxHp, p.baseStats.atk, p.baseStats.def, p.baseStats.spa,
 		p.baseStats.spd, p.baseStats.spe];
 	const monKey = (p: AIPokemon, settings: ReturnType<typeof options>) =>
@@ -118,11 +121,10 @@ export function calculateDamage(
 		return mon;
 	};
 	const data = dex.moves.get(move.calledMove || move.id);
-	const hits = Math.max(1, Math.round(getExpectedHitCount(move, effectiveAbility(attacker, field),
-		effectiveItem(attacker, field), attacker.species)));
+	const hits = Math.max(1, Math.round(getExpectedHitCount(move, ownAbility, ownItem, attacker.species)));
 	const moveOptions = { hits,
-		ability: dex.abilities.get(effectiveAbility(attacker, field)).name as AbilityName,
-		item: dex.items.get(effectiveItem(attacker, field)).name as ItemName,
+		ability: ownAbilityName as AbilityName,
+		item: ownItemName as ItemName,
 		// Re-resolve dynamic power/type inside calc, never apply an already resolved boost twice.
 		overrides: { basePower: move.isZMove || ['return', 'frustration'].includes(data.id) ? move.basePower : data.basePower,
 			// Hidden Power's canonical ID omits its publicly inferred/request-supplied type.

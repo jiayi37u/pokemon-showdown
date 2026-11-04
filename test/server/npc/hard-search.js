@@ -491,6 +491,8 @@ describe('Hard damage-based state search', () => {
 		// Ice Beam is just over 100; Giga Drain just under it. Even Water Gun remains
 		// because the boundary gap is small, despite Thunderbolt's much higher score.
 		assert.deepEqual([...kept].sort(), [...moves].sort());
+		// Without a recipient, pivoting cannot remove the weak-attack penalty.
+		f.state.self.reserve[0].hp = 0; f.state.self.reserve[0].fainted = true;
 		const separated = search.choices(f.state, 'self', ['thunderbolt', 'rapidspin', 'uturn'].map(action));
 		assert.deepEqual(separated.map(a => a.move), ['thunderbolt'], 'No independent pivot or clearing exemption');
 	});

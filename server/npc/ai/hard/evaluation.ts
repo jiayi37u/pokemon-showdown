@@ -14,7 +14,7 @@ import {
 	rewardSetupMove, rewardDefensiveSetup, rewardHealing, rewardTaunt, rewardPivotMove, rewardScreens,
 	rewardWishProtection,
 } from '../cfru/scoring/positives';
-import { checkRecoverySurvival, checkHealingUnnecessary } from '../cfru/scoring/negatives';
+import { checkRecoverySurvival, checkHealingUnnecessary, checkLowDamage } from '../cfru/scoring/negatives';
 import { createCache } from '../cfru/util/cache';
 import { getSecondaryEffectDamage, getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { calculateDamage, DamageCache } from './damage';
@@ -107,13 +107,18 @@ export class HardEvaluation {
 		const engine = new ScoringEngine(config, createCache(state.turn),
 			(attacker, defender, move, field, cache, context) =>
 				calculateDamage(attacker, defender, move, field, cache, { ...context, cache: this.damageCache }));
-		// Hard values direct recovery after incoming damage, including survival and action order.
-		if (!prediction) {
-			engine.setScorers(allNegativeScorers.filter(fn => fn !== checkRecoverySurvival).map(fn => {
-				if (fn !== checkHealingUnnecessary) return fn;
+		// A live recipient gives a pivot a purpose independent of its direct damage.
+		// Immunity and failed effects still use the shared scoring rules.
+		engine.setScorers(allNegativeScorers.filter(fn => prediction || fn !== checkRecoverySurvival).map(fn => {
+			if (fn === checkLowDamage) return ctx => ctx.dex.moves.get(ctx.move.id).selfSwitch &&
+				ctx.state.self.reserve.some(p => !p.fainted && p.hp > 0 &&
+					(!ctx.attacker.ownerSide || p.ownerSide === ctx.attacker.ownerSide)) ? 0 : fn(ctx);
+			// Direct recovery is valued after incoming damage, including survival and action order.
+			if (!prediction && fn === checkHealingUnnecessary) {
 				return ctx => directRecoveryAmount(ctx.attacker, ctx.move, ctx.state.field) > 0 ? 0 : fn(ctx);
-			}), allPositiveScorers.filter(fn => !replacedRewards.has(fn)));
-		}
+			}
+			return fn;
+		}), prediction ? allPositiveScorers : allPositiveScorers.filter(fn => !replacedRewards.has(fn)));
 		return engine.scoreMoves(state, actor, moves, target);
 	}
 

@@ -16,6 +16,20 @@ function fixture(own, foe) {
 
 describe('Hard singles matchup value', () => {
 	afterEach(() => { battles.splice(0).forEach(b => b.destroy()); });
+	it('keeps unanimous matchup coverage exact across fractional configuration weights', () => {
+		const f = fixture([mon('Mew', ['psychic'])], [mon('Magikarp', ['splash'])]);
+		const foe = f.state.opponent.active[0];
+		const expected = f.evaluator.pairs(f.state, [[0, 0]])[0];
+		assert.equal(expected.self.check, 1);
+		for (const weights of [[1 / 3, 1 / 6, 1 / 6, 1 / 6, 1 / 6], [1 / 3, 1 / 3, 1 / 3]]) {
+			foe.presetModels = weights.map((weight, i) => ({ name: String(i), weight, matched: true,
+				pokemon: { ...foe, presetModels: undefined }, moves: [{ id: 'splash', availability: 1 }],
+			}));
+			const evaluator = new MatchupEvaluator();
+			assert.equal(evaluator.pairs(f.state, [[0, 0]])[0].self.check, 1);
+			assert(evaluator.holdsAdvantage(f.state, 'self'));
+		}
+	});
 	function compareRequestedPairs(state) {
 		const expected = new MatchupEvaluator().assess(state), evaluator = new MatchupEvaluator();
 		const before = structuredClone(state);

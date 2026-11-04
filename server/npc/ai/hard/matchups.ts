@@ -629,16 +629,25 @@ export class MatchupEvaluator {
 			const weightedPair = this.pairInputs.get(weighted);
 			if (weightedPair) return weightedPair;
 			const sum: Pair = { self: zero(), opponent: zero() };
+			const metrics = ['check', 'counter', 'pressure', 'sustain', 'entryPressure', 'entrySustain'] as const;
+			let mass = 0;
 			for (const ownModel of ownPool) for (const model of foePool) {
 				const weight = ownModel.weight * model.weight, result = pair(ownModel, model);
+				mass += weight;
 				for (const side of ['self', 'opponent'] as const) {
-					for (const metric of ['check', 'counter', 'pressure', 'sustain', 'entryPressure', 'entrySustain'] as const) {
+					for (const metric of metrics) {
 						sum[side][metric] += weight * result[side][metric];
 					}
 					for (const [move, value] of Object.entries(result[side].switchPressure)) {
 						sum[side].switchPressure[move] = (sum[side].switchPressure[move] || 0) + weight * value;
 					}
 				}
+			}
+			// Accumulate the denominator in the same order: unanimous 1s must average
+			// to exactly 1, since advantage pruning distinguishes certainty from partial coverage.
+			if (mass) for (const side of ['self', 'opponent'] as const) {
+				for (const metric of metrics) sum[side][metric] /= mass;
+				for (const move of Object.keys(sum[side].switchPressure)) sum[side].switchPressure[move] /= mass;
 			}
 			this.pairInputs.set(weighted, sum); return sum;
 		};

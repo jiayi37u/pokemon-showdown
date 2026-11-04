@@ -934,6 +934,27 @@ describe('Hard damage-based state search', () => {
 		const entries = search.transitions(f.state, action('splash'), action('seismictoss'), false);
 		assert.deepEqual(entries.map(b => b.state.self.active[0].species).sort(), ['Garchomp']);
 	});
+	it('retains both an advantageous required entry and the necessary sacrifice', () => {
+		const f = fixture([mon('Mew', ['splash']), mon('Gengar', ['shadowball']), mon('Magikarp', ['splash'])],
+			[mon('Machamp', ['closecombat'])]);
+		hp(f.state.self.reserve[1], 1);
+		const foe = f.state.opponent.active[0];
+		foe.presetModels = [0.3, 0.7].map((weight, i) => ({ name: String(i), weight, matched: true,
+			pokemon: { ...foe, baseStats: { ...foe.baseStats, atk: foe.baseStats.atk + i } },
+			moves: [{ id: 'closecombat', availability: 1 }] }));
+		const search = new Search(new MatchupEvaluator());
+		assert.deepEqual(search.entryChoices(f.state, 'self', 'exposed').map(p => p.species), ['Gengar', 'Magikarp']);
+	});
+	it('uses staying damage for voluntary weak entries while required entries remain available', () => {
+		const f = fixture([mon('Mew', ['splash']), mon('Blissey', ['splash'])], [mon('Mew', ['tackle'])]);
+		const actor = f.state.self.active[0]; actor.baseStats.def = 1000;
+		const names = context => new Search(new MatchupEvaluator()).entryChoices(f.state, 'self', context).map(p => p.species);
+		assert.deepEqual(names('switch'), [], 'A weak switch must improve on the cost of staying');
+		assert.deepEqual(names('exposed'), ['Blissey'], 'A mandatory recipient does not need to improve on staying');
+		actor.baseStats.def = 1;
+		assert.deepEqual(names('switch'), ['Blissey'], 'The same recipient is useful when staying is more costly');
+		assert.deepEqual(names('exposed'), ['Blissey']);
+	});
 	it('uses the same entry policy for voluntary switching and a pivot with an opposing action pending', () => {
 		const f = fixture([mon('Mew', ['uturn']), mon('Alakazam', ['psychic']), mon('Gengar', ['psychic'])],
 			[mon('Machamp', ['closecombat'])]);

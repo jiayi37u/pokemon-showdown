@@ -139,9 +139,11 @@ export class CandidateSelector {
 		if (!required && this.favorableStay(state, side)) return legal.filter(p => selected.has(p));
 		const sacrifices = new Set<AIPokemon>();
 		for (const entry of entries) {
-			if (entry.health <= 0) sacrifices.add(entry.p);
+			if (entry.health <= 0) { sacrifices.add(entry.p); continue; }
 			if (!exposed) continue;
-			for (const model of modelsFor(foe)) {
+			// With an advantageous recipient, only sacrifice membership remains relevant;
+			// the loss metrics are used solely by the no-advantage comparison below.
+			models: for (const model of modelsFor(foe)) {
 				const before = clonePosition(view); bindOpponent(before, foe, model);
 				for (const entrant of modelsFor(view.self.team.find(p => identity(p) === identity(entry.p))!)) {
 					const after = clonePosition(before);
@@ -149,16 +151,18 @@ export class CandidateSelector {
 					const entryHP = after.self.team.find(p => identity(p) === identity(entry.p))!.hp;
 					switchIn(after, 'self', entry.p);
 					const incoming = after.self.active[0], attacker = after.opponent.active[0];
-					if (incoming.fainted) sacrifices.add(entry.p);
+					if (incoming.fainted) { sacrifices.add(entry.p); if (hasAdvantage) break models; }
 					let worst = 0, stay = 0;
 					for (const id of knownMoves(attacker).filter(move => usableMove(before, 'opponent', move))) {
 						if (rulesDex(state.field).moves.get(id).category === 'Status') continue;
 						if (actionDelay(attacker, state.field, hardMove(id, 1, state.field.formatId || ''))) continue;
 						const dealt = this.damage(after, attacker, incoming, id, 'opponent');
 						worst = Math.max(worst, dealt);
-						stay = Math.max(stay, this.damage(before, before.opponent.active[0], before.self.active[0], id, 'opponent'));
+						if (!required && !hasAdvantage) {
+							stay = Math.max(stay, this.damage(before, before.opponent.active[0], before.self.active[0], id, 'opponent'));
+						}
 					}
-					if (worst >= incoming.hp) sacrifices.add(entry.p);
+					if (worst >= incoming.hp) { sacrifices.add(entry.p); if (hasAdvantage) break models; }
 					const weight = model.weight * entrant.weight;
 					entry.loss += weight * (Math.max(0, entryHP - incoming.hp) + Math.min(incoming.hp, worst)) / incoming.maxHp;
 					entry.stayLoss += weight * Math.min(actor.hp, stay) / actor.maxHp;

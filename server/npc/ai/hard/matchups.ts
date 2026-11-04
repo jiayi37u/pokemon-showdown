@@ -56,6 +56,7 @@ interface PairState extends BattleState {
 export interface AttackFacts { damage: number; delay: number }
 const zero = (): Matchup => ({ check: 0, counter: 0, pressure: 0, switchPressure: {}, sustain: 0,
 	entryPressure: 0, entrySustain: 0 });
+const emptyPair: Pair = { self: zero(), opponent: zero() };
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const hp = (p: AIPokemon, value: number): AIPokemon => ({ ...p, hp: Math.max(0, value),
 	hpPercent: 100 * Math.max(0, value) / p.maxHp });
@@ -596,7 +597,7 @@ export class MatchupEvaluator {
 			withoutStrandedBoosts(profiles[foeActive], actors[ownActive], 'opponent') : [];
 		const cell = (i: number, j: number): Pair => {
 			const original = own[i], target = foes[j];
-			if (!original.hp || !target.hp || original.fainted || target.fainted) return { self: zero(), opponent: zero() };
+			if (!original.hp || !target.hp || original.fainted || target.fainted) return emptyPair;
 			const ownPool = i === ownActive && foeActive >= 0 && j !== foeActive ? ownPotential : actors[i];
 			const foePool = j === foeActive && ownActive >= 0 && i !== ownActive ? foePotential : profiles[j];
 			if (ownPool.length === 1 && foePool.length === 1 && ownPool[0].weight === 1 && foePool[0].weight === 1) {

@@ -1555,7 +1555,7 @@ export function getSecondaryEffectDamage(
 }
 
 /** Signed HP changes in simulator residual order; healing cannot revive an earlier KO. */
-export function residualEvents(pokemon: AIPokemon, weather: string, opponentAbility: string, field?: FieldConditions,
+function residualEvents(pokemon: AIPokemon, weather: string, opponentAbility: string, field?: FieldConditions,
 	wishRecovery = 0) {
 	const dex = rulesDex(field || {});
 	const ability = effectiveAbility(pokemon, field);
@@ -1599,6 +1599,40 @@ export function residualEvents(pokemon: AIPokemon, weather: string, opponentAbil
 	] as const) add(damage, dex.moves.get(id).condition!);
 	add(getBadDreamsDamage(pokemon, opponentAbility, field), dex.abilities.get('baddreams'));
 	return events.sort((a, b) => a.order - b.order || a.subOrder - b.subOrder);
+}
+
+export interface ResidualEffects {
+	change: number;
+	ceiling: number;
+	knockoutThreshold: number;
+}
+
+/** For known maxHp, reuse ordered residuals across current HP, preserving healing caps and earlier KOs. */
+export function prepareResidualEffects(
+	pokemon: AIPokemon, weather: string, opponentAbility = '', field?: FieldConditions, wishRecovery = 0
+): ResidualEffects {
+	let change = 0, ceiling = Infinity, knockoutThreshold = 0;
+	for (const event of residualEvents(pokemon, weather, opponentAbility, field, wishRecovery)) {
+		change -= event.damage;
+		ceiling = Math.min(pokemon.maxHp || 100, ceiling - event.damage);
+		knockoutThreshold = Math.max(knockoutThreshold, -change);
+		if (ceiling <= 0) knockoutThreshold = Infinity;
+	}
+	return { change, ceiling, knockoutThreshold };
+}
+
+/** Fixed damage and fixed residual events only; no advancing status counters, PP or damage. */
+export function fixedDamageKnockoutTurns(hp: number, damage: number, effects: ResidualEffects): number {
+	if (hp <= 0) return 0;
+	const threshold = damage + effects.knockoutThreshold;
+	if (hp <= threshold) return 1;
+	const net = damage - effects.change;
+	const afterFirst = Math.min(effects.ceiling, hp - net);
+	// Healing can hit its cap before later residual damage leaves a second-hit KO,
+	// even when the uncapped net change would recover more than the attack deals.
+	if (afterFirst <= threshold) return 2;
+	if (net <= 0) return Infinity;
+	return 2 + Math.ceil((afterFirst - threshold) / net);
 }
 
 /**
@@ -1663,11 +1697,15 @@ export function getEffectiveHpAfterSecondary(
 	/** Recovery due this turn, inserted at the ruleset's Wish residual order. */
 	wishRecovery = 0,
 	/** Reuse only when all residual inputs except current HP match. */
-	preparedEvents?: ReturnType<typeof residualEvents>
+	preparedEffects?: ResidualEffects
 ): number {
 	if (defender.hp <= 0 || beforeOrder === Infinity && defender.volatiles.has('perish0')) return 0;
+	if (preparedEffects && beforeOrder === Infinity) {
+		return defender.hp <= preparedEffects.knockoutThreshold ? 0 :
+			Math.min(preparedEffects.ceiling, defender.hp + preparedEffects.change);
+	}
 	let hp = defender.hp;
-	for (const event of preparedEvents || residualEvents(defender, weather, attackerAbility, field, wishRecovery)) {
+	for (const event of residualEvents(defender, weather, attackerAbility, field, wishRecovery)) {
 		if (event.order >= beforeOrder) break;
 		hp = Math.min(defender.maxHp || 100, hp - event.damage);
 		if (hp <= 0) return 0;

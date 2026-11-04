@@ -4,7 +4,9 @@
  */
 import type { AIPokemon, AIMove, BattleState, FieldConditions, SideConditions } from '../cfru/types';
 import { hardMove, hardMoveId } from './opponent-model';
-import { getEffectiveHpAfterSecondary, residualEvents } from '../cfru/util/damage-calc';
+import {
+	getEffectiveHpAfterSecondary, prepareResidualEffects, fixedDamageKnockoutTurns, type ResidualEffects,
+} from '../cfru/util/damage-calc';
 import { calculateDamage, selectDamage, DamageCache, type DamagePolicy } from './damage';
 import { modelsFor, clonePosition, settleFutureAttacks, bindOpponent,
 	positionKey, usableMove, hasMovePP, clonePokemon, projectEntry, boosts, status,
@@ -41,7 +43,7 @@ interface CombatantFacts {
 	delays: Map<AIMove, number>;
 	delay: number;
 	recovery: number;
-	residuals: Map<string, ReturnType<typeof residualEvents>>;
+	residuals: Map<string, ResidualEffects>;
 }
 interface PairState extends BattleState {
 	evaluator: MatchupEvaluator;
@@ -172,13 +174,15 @@ function attrition(target: AIPokemon, state: PairState): boolean {
 /** Ordered effects are HP-independent for Hard's positive maxHp inputs. Apply their
  * caps and earlier KOs separately at every current or post-hit HP. Static races have no Wish.
  */
-function residualHP(pokemon: AIPokemon, opponentAbility: string, facts: CombatantFacts, state: PairState): number {
-	let events = facts.residuals.get(opponentAbility);
-	if (!events) {
-		events = residualEvents(pokemon, state.field.weather, opponentAbility, state.field);
-		facts.residuals.set(opponentAbility, events);
+function residualEffects(
+	pokemon: AIPokemon, opponentAbility: string, facts: CombatantFacts, state: PairState
+): ResidualEffects {
+	let effects = facts.residuals.get(opponentAbility);
+	if (!effects) {
+		effects = prepareResidualEffects(pokemon, state.field.weather, opponentAbility, state.field);
+		facts.residuals.set(opponentAbility, effects);
 	}
-	return getEffectiveHpAfterSecondary(pokemon, state.field.weather, opponentAbility, state.field, Infinity, 0, events);
+	return effects;
 }
 
 /** Attack race plus sustainable recovery. The two-turn search handles exact move effects;
@@ -193,8 +197,13 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		responses.map(move => ({ move, amount: damage(target, actor, move, theirs) }));
 	let speedOrder: ActionOrder | undefined;
 	const worst = Math.max(0, ...incoming.map(r => r.amount));
-	const residual = Math.max(0, actor.hp - residualHP(actor, effectiveAbility(target, state.field), ownFacts, state));
-	const targetResidual = target.hp - residualHP(target, effectiveAbility(actor, state.field), foeFacts, state);
+	const ownAbility = effectiveAbility(actor, state.field), foeAbility = effectiveAbility(target, state.field);
+	const ownEffects = residualEffects(actor, foeAbility, ownFacts, state);
+	const foeEffects = residualEffects(target, ownAbility, foeFacts, state);
+	const residual = Math.max(0, actor.hp -
+		getEffectiveHpAfterSecondary(actor, state.field.weather, foeAbility, state.field, Infinity, 0, ownEffects));
+	const targetResidual = target.hp -
+		getEffectiveHpAfterSecondary(target, state.field.weather, ownAbility, state.field, Infinity, 0, foeEffects);
 	const healing = ownFacts.recovery, targetHealing = foeFacts.recovery;
 	const delay = ownFacts.delay;
 	const stable = healing > worst + residual && actor.hp > worst * 2 && !delay;
@@ -213,10 +222,10 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 			switchPressure[hardMoveId(move)] = clamp(dealt / target.hp) * accuracy * directBreaking;
 		}
 		const afterHit = hp(target, target.hp - dealt);
-		// Residual recovery follows damage, and cannot rescue a first-hit KO. The
-		// resulting constant net rate remains an estimate of subsequent exchanges.
+		// Residual recovery follows damage and cannot rescue a first-hit KO.
+		// First-turn net progress supplies the existing pressure estimate.
 		const progress = dealt >= target.hp ? target.hp : target.hp -
-			residualHP(afterHit, effectiveAbility(actor, state.field), foeFacts, state);
+			getEffectiveHpAfterSecondary(afterHit, state.field.weather, ownAbility, state.field, Infinity, 0, foeEffects);
 		if (progress <= 0) continue;
 		const wall = targetHealing > progress && target.hp > dealt * 2;
 		const breaking = wall ? clamp(dealt / Math.max(1, 2 * targetHealing)) : 1;
@@ -224,8 +233,9 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		// Other moves already provide both capabilities. Keep this move's switch-in
 		// pressure, but no response can improve either of the remaining maxima.
 		if (check >= breaking && pressure >= maximumPressure) continue;
-		const turns = Math.ceil(target.hp / progress);
-		let race = 1, opportunity = 1;
+		const turns = target.volatiles.has('perish0') ? 1 : fixedDamageKnockoutTurns(target.hp, dealt, foeEffects);
+		const canFinish = turns !== Infinity;
+		let race = Number(canFinish), opportunity = 1;
 		const ownPriority = incoming.length ? effectivePriority(actor, move, state.field) : 0;
 		for (const response of incoming) {
 			const responsePriority = response.priority ??= effectivePriority(target, response.move, state.field);
@@ -233,14 +243,16 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 				(speedOrder ??= compareSpeedOrder(actor, target, state.field, state.self.conditions, state.opponent.conditions));
 			const first = (order + 1) / 2;
 			const foeDelay = foeFacts.delays.get(response.move)!;
-			const before = Math.max(0, turns - first + ownDelay - foeDelay) * response.amount +
-				Math.max(0, turns - 1 + ownDelay) * residual;
-			race = Math.min(race, actor.hp > before ? 1 : 0);
+			if (canFinish) {
+				const before = Math.max(0, turns - first + ownDelay - foeDelay) * response.amount +
+					Math.max(0, turns - 1 + ownDelay) * residual;
+				race = Math.min(race, actor.hp > before ? 1 : 0);
+			}
 			opportunity = Math.min(opportunity, clamp((actor.hp - Math.max(0, 1 - first + ownDelay - foeDelay) * response.amount) /
 				Math.max(1, actor.hp)));
 			if (!race && !opportunity) break;
 		}
-		if (stable && !wall) race = Math.max(race, 0.9);
+		if (canFinish && stable && !wall) race = Math.max(race, 0.9);
 		check = Math.max(check, race * breaking * accuracy ** Math.min(3, turns));
 		pressure = Math.max(pressure, maximumPressure * opportunity);
 	}

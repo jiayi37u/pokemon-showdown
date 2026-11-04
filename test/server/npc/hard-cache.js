@@ -6,7 +6,7 @@ const { DamageCache, calculateDamage } = require('../../../dist/server/npc/ai/ha
 const { hardMove } = require('../../../dist/server/npc/ai/hard/opponent-model');
 const { MatchupEvaluator } = require('../../../dist/server/npc/ai/hard/matchups');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
-const { residualEvents, getEffectiveHpAfterSecondary } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
+const { prepareResidualEffects, fixedDamageKnockoutTurns, getEffectiveHpAfterSecondary } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { advancePosition, clonePosition, snapshotPosition, modelsFor } = require('../../../dist/server/npc/ai/hard/projection');
 
 describe('Hard battle calculation caches', () => {
@@ -29,7 +29,7 @@ describe('Hard battle calculation caches', () => {
 		const { state } = fixture();
 		const actor = state.self.active[0];
 		Object.assign(actor, { hp: 160, maxHp: 160, hpPercent: 100, item: 'leftovers', status: 'psn' });
-		const events = residualEvents(actor, 'sand', '', state.field);
+		const events = prepareResidualEffects(actor, 'sand', '', state.field);
 		const hpAfter = hp => getEffectiveHpAfterSecondary({ ...actor, hp, hpPercent: hp / 1.6 },
 			'sand', '', state.field, Infinity, 0, events);
 		assert.equal(hpAfter(160), 140);
@@ -37,9 +37,67 @@ describe('Hard battle calculation caches', () => {
 		assert.equal(hpAfter(10), 0, 'Leftovers cannot revive an earlier sandstorm KO');
 		assert.equal(hpAfter(0), 0);
 		const healthy = { ...actor, status: '' };
-		const healing = residualEvents(healthy, '', '', state.field);
+		const healing = prepareResidualEffects(healthy, '', '', state.field);
 		assert.equal(getEffectiveHpAfterSecondary(healthy, '', '', state.field, Infinity, 0, healing), 160);
 		assert.equal(getEffectiveHpAfterSecondary({ ...healthy, hp: 155 }, '', '', state.field, Infinity, 0, healing), 160);
+	});
+	it('matches ordered residuals across healing caps, Wish and partial-turn cutoffs', () => {
+		const { state } = fixture();
+		for (const [weather, item, ability, status] of [
+			['sand', 'leftovers', 'synchronize', 'tox'], ['', 'blacksludge', 'synchronize', 'brn'],
+			['rain', '', 'dryskin', 'slp'], ['hail', 'leftovers', 'icebody', 'psn'],
+			['sun', 'stickybarb', 'magicguard', 'tox'], ['', '', 'poisonheal', 'tox'],
+		]) {
+			const actor = { ...state.self.active[0], maxHp: 160, item, ability, status, toxicCounter: 3,
+				volatiles: new Set(['leechseed', 'partiallytrapped', 'curse', 'nightmare', 'saltcure']) };
+			const field = { ...state.field, weather, terrain: 'grassy' };
+			for (const wish of [0, 351.5]) {
+				const effects = prepareResidualEffects(actor, weather, 'baddreams', field, wish);
+				for (const hp of [0, 1, 9, 10, 11, 80, 159, 160]) {
+					const pokemon = { ...actor, hp, hpPercent: 100 * hp / actor.maxHp };
+					for (const before of [2, 8, 13, Infinity]) {
+						assert.equal(getEffectiveHpAfterSecondary(pokemon, weather, 'baddreams', field, before, wish, effects),
+							getEffectiveHpAfterSecondary(pokemon, weather, 'baddreams', field, before, wish));
+					}
+				}
+			}
+		}
+	});
+	it('preserves a Wish cap followed by poison and the Perish Song cutoff', () => {
+		const { state } = fixture();
+		const actor = { ...state.self.active[0], hp: 50, maxHp: 100, hpPercent: 50,
+			status: 'tox', toxicCounter: 9, item: '', volatiles: new Set() };
+		const effects = prepareResidualEffects(actor, '', '', state.field, 200);
+		assert.deepEqual(effects, { change: 140, ceiling: 40, knockoutThreshold: 0 });
+		assert.equal(getEffectiveHpAfterSecondary(actor, '', '', state.field, Infinity, 200, effects), 40);
+		assert.equal(fixedDamageKnockoutTurns(100, 50, effects), 2,
+			'The healing cap leaves a second-hit KO despite the positive uncapped recovery');
+		actor.volatiles.add('perish0');
+		assert.equal(getEffectiveHpAfterSecondary(actor, '', '', state.field, Infinity, 200, effects), 0);
+		assert.equal(getEffectiveHpAfterSecondary(actor, '', '', state.field, 9, 200, effects), 100);
+	});
+	it('finishes before the final Leftovers recovery and matches fixed-event turn settlement', () => {
+		const { state } = fixture();
+		const actor = { ...state.self.active[0], maxHp: 394, item: 'leftovers', status: '', volatiles: new Set() };
+		const effects = prepareResidualEffects(actor, '', '', state.field);
+		assert.equal(fixedDamageKnockoutTurns(394, 100, effects), 5);
+		assert.equal(fixedDamageKnockoutTurns(394, 24, effects), Infinity);
+		for (const status of ['', 'tox', 'brn']) {
+			actor.status = status; actor.toxicCounter = 3;
+			const fixed = prepareResidualEffects(actor, '', '', state.field);
+			for (const initial of [1, 90, 166, 394]) for (const damage of [0, 24, 63.8125, 100, 394]) {
+				let hp = initial, turns = 0;
+				const seen = new Set();
+				while (hp > 0) {
+					if (seen.has(hp)) { turns = Infinity; break; }
+					seen.add(hp); turns++;
+					hp -= damage;
+					if (hp > 0) hp = getEffectiveHpAfterSecondary({ ...actor, hp, hpPercent: 100 * hp / actor.maxHp },
+						'', '', state.field);
+				}
+				assert.equal(fixedDamageKnockoutTurns(initial, damage, fixed), turns);
+			}
+		}
 	});
 	it('keeps the opposing ability in residual facts across repeated matchup queries', () => {
 		const { state } = fixture();

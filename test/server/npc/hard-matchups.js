@@ -341,6 +341,33 @@ describe('Hard singles matchup value', () => {
 		foe.queuedSpeed = actor.queuedSpeed;
 		assert.equal(check(), 0, 'Trick Room does not turn a tied speed into a reliable first strike');
 	});
+	it('wins a five-hit race without giving the knocked-out target another Leftovers recovery', () => {
+		const { calculateDamage } = require('../../../dist/server/npc/ai/hard/damage');
+		const { hardMove } = require('../../../dist/server/npc/ai/hard/opponent-model');
+		const f = fixture([mon('Chansey', ['seismictoss'])],
+			[mon('Clefable', ['moonblast'], { item: 'Leftovers', ability: 'Magic Guard' })]);
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		actor.baseStats.spe = 1000; actor.baseStats.spd = 100;
+		foe.baseStats.spe = 1; foe.baseStats.spa = 100;
+		foe.hp = foe.maxHp = 394; foe.hpPercent = 100;
+		const incoming = calculateDamage(foe, actor, hardMove('moonblast', 1, f.state.field.formatId), f.state.field).average;
+		actor.hp = Math.floor(incoming * 4.5); actor.hpPercent = 100 * actor.hp / actor.maxHp;
+		assert(actor.hp > incoming * 4 && actor.hp < incoming * 5);
+		assert(actor.hp <= actor.maxHp);
+		assert.equal(f.evaluator.pairs(f.state, [[0, 0]])[0].self.check, 1);
+	});
+	it('does not turn capped residual healing into a direct win against a harmless response', () => {
+		const f = fixture([mon('Chansey', ['pound', 'softboiled'])],
+			[mon('Toxicroak', ['shadowball'], { ability: 'Dry Skin', item: 'Sticky Barb' })]);
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		actor.baseStats.atk = 1; foe.baseStats.def = 1000;
+		foe.hp = foe.maxHp = 100; foe.hpPercent = 100;
+		f.state.field.weather = 'rain'; f.state.field.weatherId = 'raindance'; f.state.field.terrain = 'grassy';
+		const matchup = f.evaluator.pairs(f.state, [[0, 0]])[0].self;
+		assert.equal(matchup.check, 0, 'The first capped HP loss cannot repeat until a KO');
+		assert(matchup.pressure > 0, 'The immediate opportunity still has its original pressure value');
+		assert(matchup.switchPressure.pound > 0);
+	});
 	it('invalidates cached values for state changes and hidden-profile weights', () => {
 		const f = fixture([mon('Mew', ['psychic', 'recover']), mon('Skarmory', ['bravebird'])],
 			[mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);

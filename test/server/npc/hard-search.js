@@ -31,6 +31,30 @@ const scoresFor = (search, state, moves, side = 'self') => Object.fromEntries(
 
 describe('Hard damage-based state search', () => {
 	afterEach(() => battles.splice(0).forEach(b => b.destroy()));
+	for (const move of ['roost', 'swordsdance', 'reflect', 'spikes', 'sunnyday', 'thunderwave']) {
+		it(`resolves ${move} after the opposing attacker faints to contact damage`, () => {
+			const f = fixture([mon('Espeon', ['tackle'], { ability: 'Magic Bounce' }), mon('Mew', ['splash'])],
+				[mon('Skarmory', [move], { item: 'Rocky Helmet', ability: 'Keen Eye' })]);
+			f.b.p1.active[0].hp = 1; f.b.p2.active[0].hp = 100;
+			const state = step(projectedState(f.b), 'tackle', move);
+			f.b.makeChoices('move 1', 'move 1');
+			const projected = state.opponent.active[0], actual = f.b.p2.active[0];
+			assert(state.self.team[0].fainted && f.b.p1.pokemon[0].fainted);
+			if (move === 'roost') {
+				assert(projected.hp > 100 && actual.hp > 100, 'Recovery still executes after the opposing KO');
+			} else if (move === 'swordsdance') {
+				assert.equal(projected.boosts.atk, 2); assert.equal(actual.boosts.atk, 2);
+			} else if (move === 'reflect') {
+				assert(state.opponent.conditions.reflect && f.b.p2.sideConditions.reflect);
+			} else if (move === 'spikes') {
+				assert.equal(state.self.conditions.spikes, 1); assert.equal(f.b.p1.sideConditions.spikes.layers, 1);
+			} else if (move === 'sunnyday') {
+				assert.equal(state.field.weather, 'sun'); assert.equal(f.b.field.weather, 'sunnyday');
+			} else {
+				assert.equal(state.self.team[0].status, ''); assert.notEqual(f.b.p1.pokemon[0].status, 'par');
+			}
+		});
+	}
 	for (const effect of ['taunt', 'encore']) for (const affected of ['self', 'opponent']) {
 		it(`separates public ${effect} expiry on ${affected} in continuation observation groups`, () => {
 			const recipient = mon('Gengar', ['tackle', 'recover']);

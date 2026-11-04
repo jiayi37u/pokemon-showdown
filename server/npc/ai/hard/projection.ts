@@ -438,25 +438,27 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		if (!protectionMoves.has(previous)) actor.projection.protect = true;
 		return;
 	}
-	if (!target || target.fainted) return;
+	const targetsSelf = id === 'curse' && !actor.types.includes('Ghost') ||
+		data.target === 'self' || data.target === 'allySide' || data.target === 'allyTeam';
+	const needsOpponent = !targetsSelf && data.target !== 'all' && data.target !== 'foeSide';
+	if (!target || needsOpponent && target.fainted) return;
 	let perspective = side === 'self' ? state : { ...state, self: state.opponent, opponent: state.self };
 	if (id === 'suckerpunch' && (!reply.move || dex.moves.get(reply.move).category === 'Status' ||
 		compareActionOrder(actor, target, move, [hardMove(reply.move, 1, state.field.formatId || '')],
 			state.field) <= 0)) return;
 	if (id === 'fakeout' && (actor.activeMoveActions || 0) > 1) return;
 	if (id === 'focuspunch' && actor.hp < actor.projection.startHp! && !actor.volatiles.has('substitute')) return;
-	const targetsSelf = id === 'curse' && !actor.types.includes('Ghost') ||
-		data.target === 'self' || data.target === 'allySide' || data.target === 'allyTeam';
-	if (!targetsSelf && target.projection?.protect && data.flags.protect && !data.breaksProtect) return;
+	const targetCanRespond = !targetsSelf && !target.fainted;
+	if (targetCanRespond && target.projection?.protect && data.flags.protect && !data.breaksProtect) return;
 	const interaction = getMoveInteraction(actionActor, target, move, state.field);
-	if (!targetsSelf && (interaction.failed || data.category === 'Status' && interaction.blockedBy)) return;
-	if (data.category === 'Status' && !targetsSelf && data.flags.reflectable &&
+	if (targetCanRespond && (interaction.failed || data.category === 'Status' && interaction.blockedBy)) return;
+	if (data.category === 'Status' && targetCanRespond && data.flags.reflectable &&
 		defensiveAbility(actor, target, move, state.field) === 'magicbounce') {
 		[actor, target] = [target, actor]; [party, foeParty] = [foeParty, party]; side = other(side);
 		perspective = side === 'self' ? state : { ...state, self: state.opponent, opponent: state.self };
 	}
 	const immunity = getMoveInteraction(actionActor, target, move, state.field);
-	if (target.volatiles.has('bounce') && data.target !== 'self' &&
+	if (needsOpponent && target.volatiles.has('bounce') &&
 		!['thunder', 'hurricane', 'gust', 'twister', 'skyuppercut', 'smackdown'].includes(id) &&
 		effectiveAbility(actor, state.field) !== 'noguard' && effectiveAbility(target, state.field) !== 'noguard') return;
 	if (data.category !== 'Status' && !immunity.effectiveness) {

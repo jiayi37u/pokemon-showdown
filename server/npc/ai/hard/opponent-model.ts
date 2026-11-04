@@ -14,7 +14,7 @@ import { calculateDamage, type DamageCache } from './damage';
 import { compareActionOrder } from '../cfru/util/speed';
 import { replaceActivePokemon } from '../cfru/util/mechanics';
 import { inferRandomBattle } from '../cfru/util/random-presets';
-import { canRestoreUserHp, mustSkipMove, moveSelectionFailure } from '../cfru/util/move-effects';
+import { canRestoreUserHp, recoveryKind, mustSkipMove, moveSelectionFailure } from '../cfru/util/move-effects';
 import { buildAIMove } from '../cfru/state-builder';
 import { megaEvolutionState } from '../cfru/util/forms';
 import {
@@ -96,20 +96,40 @@ function strategyData(formatId: string): Record<string, StrategySet[]> {
 	return strategies.get(source)!;
 }
 
-/** Approximate detailed presets for search; public inference keeps the complete pools. */
-export function searchOpponentModels(models: readonly OpponentHypothesis[], formatId: string): OpponentHypothesis[] {
-	if (!strategyFormats[toID(formatId)]) return [...models];
+function representativesBy(models: readonly OpponentHypothesis[], keyFor: (model: OpponentHypothesis) => string) {
 	const groups = new Map<string, { representative: OpponentHypothesis, weight: number }>();
 	for (const model of models) {
-		const group = groups.get(model.name);
+		const key = keyFor(model), group = groups.get(key);
 		if (!group) {
-			groups.set(model.name, { representative: model, weight: model.weight });
+			groups.set(key, { representative: model, weight: model.weight });
 		} else {
 			group.weight += model.weight;
 			if (model.weight > group.representative.weight) group.representative = model;
 		}
 	}
 	return [...groups.values()].map(({ representative, weight }) => ({ ...representative, weight }));
+}
+
+/** Approximate already filtered detailed presets; public inference keeps the complete pools. */
+export function searchOpponentModels(models: readonly OpponentHypothesis[], formatId: string): OpponentHypothesis[] {
+	if (!strategyFormats[toID(formatId)]) return [...models];
+	const families = representativesBy(models, model => model.name);
+	const dex = Dex.forFormat(formatId), field = { formatId };
+	return representativesBy(families, model => {
+		const evs = model.spread?.evs;
+		// Unknown investment and Choice-item families remain independent.
+		if (!evs || dex.items.get(model.pokemon.item).isChoice) return JSON.stringify(['family', model.name]);
+		const offense = (evs.atk || 0) + (evs.spa || 0);
+		const defense = (evs.hp || 0) + (evs.def || 0) + (evs.spd || 0);
+		const moves = model.moves.map(move => dex.moves.get(move.id));
+		const recovery = [...new Set(moves.filter(move => canRestoreUserHp(move, field))
+			.map(move => recoveryKind(move, field)))].sort();
+		return JSON.stringify(['traits', toID(model.pokemon.item), toID(model.pokemon.ability),
+			fightingStyle(model.pokemon, formatId),
+			dex.natures.get(model.spread?.nature || model.pokemon.statSpread?.nature || '').plus || '',
+			moves.some(move => move.category === 'Physical'), moves.some(move => move.category === 'Special'),
+			Math.sign(offense - defense), recovery]);
+	});
 }
 
 /** Legal stone-based forms, shared by catalogue lookup and the user-authorized team priors. */

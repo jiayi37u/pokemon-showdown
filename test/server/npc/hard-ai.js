@@ -759,6 +759,65 @@ describe('Hard generic opponent presets', () => {
 		assert.deepEqual(searchOpponentModels(models, 'gen9randombattle'), models, 'Random roles are not OU families');
 	});
 
+	it('merges compatible defensive families by family mass without changing their inferred configurations', () => {
+		const game = setup([mon('Rotom-Wash', ['hydropump'])], [mon('Mew', ['splash'])], { format: 'gen6ou' });
+		const inferred = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou');
+		const defensive = inferred.find(m => m.name === 'Physically Defensive Pivot');
+		const utility = inferred.find(m => m.name === 'Fast Utility');
+		const models = [{ ...defensive, weight: 0.3 }, { ...defensive, weight: 0.25 }, { ...utility, weight: 0.45 }];
+		const before = structuredClone(models);
+		const selected = searchOpponentModels(models, 'gen6ou');
+		assert.equal(selected.length, 1);
+		assert.equal(selected[0].weight, 1);
+		assert.equal(selected[0].name, defensive.name, 'The larger family wins, not the largest individual variant');
+		assert.equal(selected[0].pokemon, defensive.pokemon);
+		assert.equal(selected[0].moves, defensive.moves, 'Keep a real loadout rather than combining candidate moves');
+		assert.deepEqual(models, before);
+	});
+
+	function celebiHypotheses() {
+		const game = setup([mon('Celebi', ['psychic'])], [mon('Mew', ['splash'])], { format: 'gen6ou' });
+		const base = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou')[0];
+		return (name, { evs = { spa: 252, spe: 252 }, nature = 'Modest', item = 'leftovers',
+			moves = ['calmmind', 'psychic', 'seedbomb', 'recover'] } = {}) => {
+			const spread = { nature, evs };
+			const stats = computeStatsFromPreset(Dex.species.get('Celebi').baseStats, base.pokemon.level, spread);
+			return { ...base, name, weight: 1 / 3, spread, moves: moves.map(id => ({ id, availability: 1 })),
+				pokemon: { ...base.pokemon, baseStats: stats, maxHp: stats.hp, hp: stats.hp, item,
+					moveKnowledge: { revealedMoves: [], presetCandidates: moves, remainingSlots: 4 } } };
+		};
+	}
+
+	it('keeps offensive, defensive and balanced investment families and separate Choice families', () => {
+		const model = celebiHypotheses();
+		const investment = [model('attacker'), model('defender', { evs: { hp: 252, spd: 252 } }),
+			model('balanced', { evs: { hp: 252, spa: 252 } })];
+		assert.deepEqual(searchOpponentModels(investment, 'gen6ou').map(m => m.name),
+			['attacker', 'defender', 'balanced']);
+		const choice = ['first Choice family', 'second Choice family'].map((name, i) => ({ ...model(name,
+			{ item: 'choicescarf', moves: ['psychic', 'energyball', i ? 'shadowball' : 'earthpower', 'uturn'] }), weight: 0.5 }));
+		assert.equal(searchOpponentModels(choice, 'gen6ou').length, 2, 'Identical Choice items do not permit crossing families');
+	});
+
+	it('retains distinct recovery and attack capabilities even when their coarse fighting style agrees', () => {
+		const model = celebiHypotheses();
+		const recovery = ['recover', 'gigadrain', 'leechseed'].map(move => model(move,
+			{ moves: ['calmmind', 'psychic', 'seedbomb', move] }));
+		const attacks = [model('mixed'), model('physical', { moves: ['calmmind', 'seedbomb', 'zenheadbutt', 'recover'] }),
+			model('special', { moves: ['calmmind', 'psychic', 'energyball', 'recover'] })];
+		for (const models of [recovery, attacks]) {
+			assert(models.every(m => fightingStyle(m.pokemon, 'gen6ou') === 'setup'));
+			assert.deepEqual(searchOpponentModels(models, 'gen6ou').map(m => m.name), models.map(m => m.name));
+		}
+	});
+
+	it('separates a Speed-boosting nature from special offense without requiring identical nature names', () => {
+		const model = celebiHypotheses();
+		const selected = searchOpponentModels([model('Modest'), model('Mild', { nature: 'Mild' }),
+			model('Timid', { nature: 'Timid' })], 'gen6ou');
+		assert.deepEqual(selected.map(m => [m.name, m.weight]), [['Modest', 2 / 3], ['Timid', 1 / 3]]);
+	});
+
 	it('selects search representatives from publicly compatible models with their surviving weights', () => {
 		const game = setup([mon('Garchomp', ['swordsdance'])], [mon('Mew', ['splash'])], { format: 'gen6ou' });
 		game.ai.getTracker().parseMessage('|-item|p1a: Garchomp|Focus Sash');

@@ -387,3 +387,12 @@ export function estimatedMoveAccuracy(
 	if (move.id === 'blizzard' && ['hail', 'snow'].includes(field.weather)) return 100;
 	return move.accuracy;
 }
+
+/** Fixed control durations only; randomized conditions remain unknown. */
+export function controlDuration(
+	effect: 'taunt' | 'encore', field: Pick<FieldConditions, 'formatId'>, willMove: boolean, enteredThisTurn: boolean
+): number | undefined {
+	const dex = rulesDex(field), condition = dex.moves.get(effect).condition;
+	if (!condition?.duration || condition.durationCallback) return undefined;
+	return condition.duration + (dex.gen >= 5 && !willMove && (effect === 'encore' || !enteredThisTurn) ? 1 : 0);
+}

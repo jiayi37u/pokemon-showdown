@@ -273,6 +273,7 @@ function applyPublicMechanics(
 	pokemon.types = pokemon.terastallized && pokemon.terastallized !== 'Stellar' ?
 		[pokemon.terastallized] : pokemon.originalTypes;
 	if (pokemon.active) {
+		pokemon.volatileTurns = tracker.getVolatileTurns(identity);
 		pokemon.usedMoves = tracker.getUsedMoves(identity);
 		pokemon.trapSource = tracker.getTrapSource(identity);
 	}

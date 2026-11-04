@@ -14,7 +14,7 @@ import { directRecoveryAmount, entryHazardDamage, flinchesOnHit } from '../cfru/
 import { getEffectiveHpAfterSecondary, getExpectedHitCount } from '../cfru/util/damage-calc';
 import {
 	boostsCanChange, boostChanges, statusFailure, protectionMoves, volatileEffectFailure, moveSelectionFailure,
-	pendingWishRecovery,
+	pendingWishRecovery, controlDuration,
 } from '../cfru/util/move-effects';
 import { getMoveInteraction } from '../cfru/util/type-calc';
 import { itemMoveFailure, itemRemovalFailure } from '../cfru/util/items';
@@ -31,7 +31,7 @@ export interface SearchAction {
 export type Side = 'self' | 'opponent';
 interface ProjectedPokemon extends AIPokemon {
 	projection?: { pp?: Record<string, number>, substituteHp?: number, protect?: boolean, flinch?: boolean,
-		tauntTurns?: number, encoreTurns?: number, startHp?: number, roostTypes?: string[],
+		startHp?: number, roostTypes?: string[],
 		chargingMove?: string, damageTaken?: number, damageCategory?: string,
 		nativePP?: Record<string, number>,
 		native?: Pick<AIPokemon, 'species' | 'types' | 'baseStats' | 'ability' | 'abilityChanged' | 'moves' | 'moveKnowledge'>,
@@ -65,6 +65,7 @@ function triggerHealthItem(pokemon: AIPokemon, state: BattleState): void {
 export function clonePokemon(p: ProjectedPokemon): ProjectedPokemon {
 	const projection = p.projection;
 	return { ...p, boosts: { ...p.boosts }, volatiles: new Set(p.volatiles),
+		volatileTurns: p.volatileTurns && { ...p.volatileTurns },
 		projection: projection && { ...projection,
 			pp: projection.pp && { ...projection.pp }, nativePP: projection.nativePP && { ...projection.nativePP },
 			roostTypes: projection.roostTypes && [...projection.roostTypes],
@@ -103,7 +104,8 @@ export function positionKey(state: BattleState): string {
 		p.status, p.sleepTurns, p.toxicCounter, p.boosts, p.baseStats, p.statSpread, p.trapSource,
 		p.types, p.item, p.itemKnown, p.itemLost,
 		p.itemChanged, p.itemExchange, p.ability, p.observedAbility, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
-		[...p.volatiles].sort(), p.projection, p.queuedSpeed, p.queuedPriorityAbility,
+		[...p.volatiles].sort(), [p.volatileTurns?.taunt, p.volatileTurns?.encore], p.projection,
+		p.queuedSpeed, p.queuedPriorityAbility,
 		p.moveKnowledge, p.presetModels?.map(m => {
 			let key = profileKeys.get(m);
 			if (!key) {
@@ -219,7 +221,7 @@ export function switchIn(state: BattleState, side: Side, selected: AIPokemon): v
 		const ability = effectiveAbility(outgoing, state.field);
 		if (!outgoing.fainted && ability === 'regenerator') hp(outgoing, outgoing.hp + Math.floor(outgoing.maxHp / 3));
 		if (ability === 'naturalcure') outgoing.status = '';
-		outgoing.active = false; outgoing.volatiles.clear();
+		outgoing.active = false; outgoing.volatiles.clear(); delete outgoing.volatileTurns;
 		delete outgoing.trapSource;
 		outgoing.lastMove = ''; outgoing.activeMoveActions = 0;
 		outgoing.toxicCounter = 0;
@@ -330,6 +332,11 @@ export function transitionSupported(state: BattleState): string | undefined {
 	if (state.self.active.length !== 1 || state.opponent.active.length !== 1) return 'requires active placeholders';
 	if (rulesDex(state.field).gen < 3 || rulesDex(state.field).gen > 7) return 'generation outside transition coverage';
 	for (const side of [state.self, state.opponent]) {
+		for (const p of side.active) for (const effect of ['taunt', 'encore'] as const) {
+			if (p.volatiles.has(effect) && p.volatileTurns?.[effect] === undefined) {
+				return `${effect} remaining duration unavailable`;
+			}
+		}
 		if (Object.entries(side.conditions.futureMoves).some(([slot, n]) => n > 0 &&
 			!side.conditions.futureAttacks?.[+slot])) return 'delayed attack source unavailable';
 		if (Object.values(side.conditions.wishes).some(n => n > 0) &&
@@ -342,6 +349,7 @@ export function transitionSupported(state: BattleState): string | undefined {
 /** A limited effect vocabulary, not silent no-ops for unknown status moves. */
 export function supportsMove(state: BattleState, id: string): boolean {
 	const move = rulesDex(state.field).moves.get(id); id = move.id;
+	if ((id === 'taunt' || id === 'encore') && controlDuration(id, state.field, true, false) === undefined) return false;
 	if (move.selfSwitch === 'copyvolatile' ||
 		move.flags.charge && !['solarbeam', 'bounce'].includes(id) || move.ohko) return false;
 	if (rulesDex(state.field).gen < 5 &&
@@ -358,7 +366,8 @@ export type ChooseEntry = (state: BattleState, side: Side, cause: 'pivot' | 'pha
 interface PendingEntry { side: Side; cause: 'pivot' | 'phaze' }
 
 function execute(state: BattleState, side: Side, action: SearchAction, reply: SearchAction,
-	policy: DamagePolicy, cache?: DamageCache): PendingEntry | undefined {
+	policy: DamagePolicy, remaining: TurnCheckpoint['remaining'], startedActors: readonly string[],
+	cache?: DamageCache): PendingEntry | undefined {
 	if (action.switchTo) { switchIn(state, side, action.switchTo); return; }
 	let party = state[side], foeParty = state[other(side)];
 	let actor = party.active[0] as ProjectedPokemon, target = foeParty.active[0] as ProjectedPokemon;
@@ -585,8 +594,13 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 	}
 	if (['taunt', 'encore', 'leechseed'].includes(id) && !volatileEffectFailure(perspective, actor, target, move)) {
 		target.volatiles.add(id); target.projection ||= {};
-		if (id === 'taunt') target.projection.tauntTurns = 3;
-		if (id === 'encore') target.projection.encoreTurns = 3;
+		if (id === 'taunt' || id === 'encore') {
+			const control = id === 'taunt' ? 'taunt' : 'encore';
+			const duration = controlDuration(control, state.field,
+				remaining.some(q => q.action.move && q.actor === identity(target)),
+				!startedActors.includes(identity(target)));
+			if (duration !== undefined) (target.volatileTurns ||= {})[control] = duration;
+		}
 	}
 	if (id === 'wish' && !party.conditions.wishes[actor.slot]) {
 		party.conditions.wishes[actor.slot] = 2;
@@ -724,8 +738,14 @@ export function endTurn(state: BattleState, policy: DamagePolicy = 'mean', cache
 			p.projection.protect = false; p.projection.flinch = false;
 			delete p.projection.damageTaken; delete p.projection.damageCategory;
 			if (p.projection.roostTypes) { p.types = p.projection.roostTypes; delete p.projection.roostTypes; }
-			if (p.projection.tauntTurns && !--p.projection.tauntTurns) p.volatiles.delete('taunt');
-			if (p.projection.encoreTurns && !--p.projection.encoreTurns) p.volatiles.delete('encore');
+		}
+		if (p.volatiles.has('encore') && p.projection?.pp?.[p.lastMove] === 0) {
+			p.volatiles.delete('encore'); delete p.volatileTurns?.encore;
+		}
+		for (const effect of ['taunt', 'encore'] as const) {
+			if (p.volatileTurns?.[effect] && !--p.volatileTurns[effect]) {
+				p.volatiles.delete(effect); delete p.volatileTurns[effect];
+			}
 		}
 		for (let n = 0; n <= 3; n++) if (p.volatiles.has(`perish${n}`)) {
 			p.volatiles.delete(`perish${n}`); if (!n) hp(p, 0); else p.volatiles.add(`perish${n - 1}`); break;
@@ -757,6 +777,7 @@ export function endTurn(state: BattleState, policy: DamagePolicy = 'mean', cache
 /** A forkable turn continuation. Completed actions never run again after an entry choice. */
 export interface TurnCheckpoint {
 	state: BattleState;
+	startedActors: readonly string[];
 	pending?: PendingEntry;
 	remaining: { side: Side, actor: string, action: SearchAction, reply: SearchAction }[];
 	/** Voluntary switches precede Mega evolution and its entry abilities. */
@@ -798,7 +819,8 @@ export function beginTurn(state: BattleState, own: SearchAction, foe: SearchActi
 			next.self.conditions, next.opponent.conditions) > 0;
 	// Speed ties conservatively let the opponent act first; no random tie samples.
 	const order: Side[] = first ? ['self', 'opponent'] : ['opponent', 'self'];
-	return { state: next, megaPending: deferMega ? queued.filter(q => q.action.mega && q.action.move) : undefined,
+	return { state: next, startedActors: [identity(a), identity(b)],
+		megaPending: deferMega ? queued.filter(q => q.action.mega && q.action.move) : undefined,
 		remaining: order.map(side => ({ side,
 			actor: identity(side === 'self' ? a : b), action: side === 'self' ? own : foe,
 			reply: side === 'self' ? foe : own })) };
@@ -819,7 +841,8 @@ export function continueTurn(
 		const { side, actor, action, reply } = turn.remaining.shift()!;
 		// Phazing/pivots must not give the replacement the outgoing Pokemon's queued attack.
 		if (!action.switchTo && identity(next[side].active[0]) !== actor) continue;
-		const pending = execute(next, side, action, reply, policy, cache);
+		const pending = execute(next, side, action, reply, policy,
+			turn.remaining, turn.startedActors, cache);
 		if (pending && next[pending.side].reserve.some(p => !p.fainted && p.hp > 0)) {
 			turn.pending = pending; return undefined;
 		}

@@ -30,3 +30,11 @@ Mew 的 Taunt 使一个真实终点从未受控对照的 193.162 降到 68.519�
 公开日志可以还原固定控制时长时，搜索应正确模拟其自然结束；随机或未观察到开始的时长不能凭空补成确定值。计时正确性与静态长期估值校准是不同层次，不能用修好计时冒充已解决全部循环。
 
 原始材料：`/tmp/hard-016-calibration/REPORT.md`、`three-turn.json`、`three-turn.js`、`exact-state-diff.json`、`cross-control.json`。016 和 024 保留作后续校准与回归，不将这两例作为强制策略补丁的依据。
+
+## 公开控制计时验证
+
+`volatileTurns` 保存 Taunt／Encore 已知剩余残余结算次数。Tracker 依据公开开始／结束、行动、入场、回合和 upkeep 事件构造，不读取 PS 隐藏 duration 或已提交行动。预测转移复用格式的固定时长定义；Gen 5+ 后手施加多一回合，Taunt 对本回合新上场目标除外。真实与预测计时共用同一字段，克隆分支独立，换人清除；Encore 已知被锁招 PP 耗尽时提前解除。随机时长或未知年龄给出不支持推演的明确原因，不抽样、不猜确定值。
+
+`test/server/npc/control-durations.js` 的 22 项回归以 PS 公开协议和己方 request 对照固定世代、快慢顺序、换入、cant、upkeep、分支克隆、随机未知与 PP0。全部 NPC 回归 1705 passing、1 pending，TypeScript 与 diff 检查通过。修改后的 projection、move-effects 和新测试 ESLint 通过；state-builder、types、tracker 的既存 lint 错误已与 HEAD 基线核对，未新增错误。
+
+计时修复不等于解决静态长期控制估值，也不改变上面的三回合校准结论。复现和测试材料：`/tmp/hard-control-duration/`。

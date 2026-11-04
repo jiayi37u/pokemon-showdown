@@ -16,6 +16,7 @@ import { Dex, toID } from '../../../../../sim/dex';
 import { abilityStatModifier, effectiveAbility, formeAbility, hasNeutralizingGas, normalizeWeather } from './mechanics';
 import { defaultBoosts, type AIPokemon } from '../types';
 import { BattleEvidenceTracker } from './battle-evidence';
+import { controlDuration } from './move-effects';
 
 /** Only facts available in our request; never store inferred models or scoring state here. */
 type RequestPokemonFacts = Pick<AIPokemon, 'species' | 'types' | 'baseStats' | 'ability' | 'moves' | 'item'>;
@@ -118,6 +119,8 @@ interface IdentityMemory {
 
 /** Bounded to one stay, so an Illusion reveal can reassign observations without replaying the battle. */
 interface EntryObservations {
+	turn: number;
+	controlExpires?: AIPokemon['volatileTurns'];
 	species: string;
 	receivedHits?: number;
 	toxicTicks?: number;
@@ -168,6 +171,7 @@ export class BattleTracker {
 	private skipPrivateLine = false;
 	private acted = new Set<string>();
 	private actedThisTurn = new Set<string>();
+	private residualCompleted = false;
 	private slotEffects = new Map<string, { wish?: number, futuremove?: number, wishSource?: string,
 		futureAttack?: { source: string, move: string },
 		healingWish?: { move: 'healingwish' | 'lunardance', expires: number }, }>();
@@ -400,6 +404,7 @@ export class BattleTracker {
 			this.teamSizes.set(parts[1], Number(parts[2]));
 			break;
 		case 'turn':
+			this.residualCompleted = false;
 			this.actedThisTurn.clear();
 			this.currentAttack = undefined;
 			this.clearTransientEffects('turn');
@@ -574,6 +579,7 @@ export class BattleTracker {
 			break;
 		}
 		case 'upkeep':
+			this.residualCompleted = true;
 			this.currentAttack = undefined;
 			this.clearTransientEffects('turn');
 			break;
@@ -608,6 +614,7 @@ export class BattleTracker {
 		const outgoingEntry = this.entries.get(position);
 		if (outgoingEntry) this.identityMemory.set(outgoingEntry.ident, { ...outgoingEntry.memory });
 		const entry: EntryObservations = {
+			turn: this.turn,
 			species: parts[2].split(',')[0],
 			ident: sleepIdent, memory: { ...this.identityMemory.get(sleepIdent) }, memoryUpdates: {},
 			sleeping: !!parts[3]?.split(' ').includes('slp'), sleepChecks: 0, moves: new Set(),
@@ -1488,6 +1495,18 @@ export class BattleTracker {
 		// Record protocol facts for both teams, without adding any inferred effects.
 		const effect = toID((parts[2] || '').replace(/^(?:move|ability): /, ''));
 		if (command === '-end') this.transientEffects.get(position)?.delete(effect);
+		if (effect === 'taunt' || effect === 'encore') {
+			const control = effect === 'taunt' ? 'taunt' : 'encore';
+			const entry = this.entries.get(position);
+			if (entry) {
+				if (command === '-end') delete entry.controlExpires?.[control];
+				else if (this.formatId) {
+					const duration = controlDuration(control, { formatId: this.formatId },
+						!this.actedThisTurn.has(position), entry.turn === this.turn);
+					if (duration !== undefined) (entry.controlExpires ||= {})[control] = this.turn + duration;
+				}
+			}
+		}
 		if (effect === 'futuresight' || effect === 'doomdesire') {
 			// Start names the user, while end names the occupant of the target position.
 			if (command === '-end') this.setSlotEffect(position, 'futuremove', 0);
@@ -2123,6 +2142,17 @@ export class BattleTracker {
 
 	getTurnActions(): string[] { return [...this.actedThisTurn]; }
 
+	getVolatileTurns(position: string): AIPokemon['volatileTurns'] {
+		const expires = this.entries.get(position)?.controlExpires;
+		if (!expires) return undefined;
+		const remaining: NonNullable<AIPokemon['volatileTurns']> = {};
+		const elapsed = this.turn + Number(this.residualCompleted);
+		for (const effect of ['taunt', 'encore'] as const) {
+			if (expires[effect] !== undefined && expires[effect] > elapsed) remaining[effect] = expires[effect] - elapsed;
+		}
+		return remaining;
+	}
+
 	private setSlotEffect(position: string, effect: 'wish' | 'futuremove', expiry: number): void {
 		const effects = this.slotEffects.get(position) || {};
 		effects[effect] = expiry;
@@ -2361,6 +2391,7 @@ export class BattleTracker {
 
 	/** Reset tracker state for a new battle. */
 	reset(): void {
+		this.residualCompleted = false;
 		this.itemExchange = undefined;
 		this.opponentPreview = [];
 		this.evidence.reset();

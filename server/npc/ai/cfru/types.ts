@@ -139,6 +139,8 @@ export interface AIPokemon {
 	itemExchange?: { given: string, received: string };
 	/** Last move is cleared on entry, but a failed action still consumes Fake Out's first turn. */
 	activeMoveActions?: number;
+	/** Known remaining residual ticks; an absent control duration is unknown. */
+	volatileTurns?: { taunt?: number, encore?: number };
 
 	/** Known moves (only revealed moves for opponent) */
 	moves: string[];

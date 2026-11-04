@@ -288,6 +288,41 @@ describe('Hard singles matchup value', () => {
 		assert(exhausted.value < available.value);
 		assert.equal(exhausted.matrix[0][0].self.pressure, 0);
 	});
+	it('keeps HP-dependent sustain even when a matchup remains a guaranteed win', () => {
+		const f = fixture([mon('Mew', ['psychic'])], [mon('Machamp', ['closecombat'], { level: 1 })]);
+		const actor = f.state.self.active[0];
+		const full = f.evaluator.assess(f.state).matrix[0][0].self;
+		assert.equal(full.check, 1);
+		for (const fraction of [0.9, 0.8]) {
+			actor.hp = Math.floor(actor.maxHp * fraction); actor.hpPercent = 100 * actor.hp / actor.maxHp;
+			const result = f.evaluator.assess(f.state);
+			assert.equal(result.matrix[0][0].self.check, full.check);
+			assert(result.matrix[0][0].self.sustain < full.sustain);
+			assert.deepEqual(result, new MatchupEvaluator().assess(f.state));
+		}
+	});
+	it('retains every switch-in attack after an earlier move saturates the winning matchup', () => {
+		const f = fixture([mon('Mew', ['psychic', 'shadowball'])], [mon('Gengar', ['shadowball'], { level: 1 })]);
+		const matchup = f.evaluator.assess(f.state).matrix[0][0].self;
+		assert.equal(matchup.check, 1);
+		assert.equal(matchup.pressure, 1);
+		assert.equal(matchup.switchPressure.psychic, 1);
+		assert.equal(matchup.switchPressure.shadowball, 1);
+	});
+	it('recomputes HP-dependent priority while reusing non-HP combat facts', () => {
+		const f = fixture([mon('Talonflame', ['bravebird'], { ability: 'Gale Wings' })],
+			[mon('Greninja', ['hydropump'])]);
+		f.state.field.formatId = 'gen7customgame';
+		const actor = f.state.self.active[0], foe = f.state.opponent.active[0];
+		actor.baseStats.spe = 1; foe.baseStats.spe = 1000; foe.baseStats.spa = 1000;
+		foe.hp = 30; foe.hpPercent = 100 * foe.hp / foe.maxHp;
+		const full = f.evaluator.assess(f.state);
+		assert.equal(full.matrix[0][0].self.check, 1);
+		actor.hp--; actor.hpPercent = 100 * actor.hp / actor.maxHp;
+		const damaged = f.evaluator.assess(f.state);
+		assert.equal(damaged.matrix[0][0].self.check, 0);
+		assert.deepEqual(damaged, new MatchupEvaluator().assess(f.state));
+	});
 	it('invalidates cached values for state changes and hidden-profile weights', () => {
 		const f = fixture([mon('Mew', ['psychic', 'recover']), mon('Skarmory', ['bravebird'])],
 			[mon('Machamp', ['closecombat']), mon('Garchomp', ['earthquake'])]);

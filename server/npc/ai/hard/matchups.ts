@@ -35,10 +35,18 @@ export interface Matchup {
 }
 interface Pair { self: Matchup; opponent: Matchup }
 interface Assessment { value: number; self: number; opponent: number; matrix: Pair[][] }
+interface CombatantFacts {
+	moves: AIMove[];
+	attacks: AIMove[];
+	delays: Map<AIMove, number>;
+	delay: number;
+	recovery: number;
+}
 interface PairState extends BattleState {
 	evaluator: MatchupEvaluator;
 	/** Object-local lookup avoids serializing the same race participants for each hit. */
 	damageMemo: Map<AIPokemon, Map<AIPokemon, Map<string, number>>>;
+	factsMemo: Map<AIPokemon, CombatantFacts>;
 	/** Only lives during one read-only assessment; never memoize live mutable Pokemon by identity. */
 	keys: WeakMap<object, number>;
 }
@@ -53,8 +61,8 @@ const moveData = new Map<string, AIMove>();
 /** A value key, not an object/slot key: simulated branches cannot overwrite the real position.
  * Knowledge metadata does not affect a concrete hypothesis; its resolved stats/moves do.
  */
-function fingerprint(p: AIPokemon): string {
-	return JSON.stringify([p.species, p.level, p.hp, p.maxHp, p.types, p.status, p.ability, p.item,
+function fingerprint(p: AIPokemon, currentHP = true): string {
+	return JSON.stringify([p.species, p.level, currentHP ? p.hp : undefined, p.maxHp, p.types, p.status, p.ability, p.item,
 		p.itemLost, p.itemKnown, p.itemAssumed, p.baseStats, p.boosts, [...p.volatiles].sort(), p.moves,
 		p.lastMove, p.active, p.activeMoveActions, p.sleepTurns, p.toxicCounter, p.sleepSelfInflicted,
 		p.queuedSpeed, p.queuedPriorityAbility, p.abilityStatMod, p.terastallized, p.gender, p.fainted, p.ownerSide]);
@@ -113,9 +121,9 @@ function reverse<T extends BattleState>(state: T): T {
 	return { ...state, self: state.opponent, opponent: state.self };
 }
 
-function recovery(p: AIPokemon, state: BattleState): number {
+function recovery(p: AIPokemon, state: BattleState, choices: AIMove[]): number {
 	if (p.volatiles.has('healblock') || mustSkipMove(p, p.moves, state.field)) return 0;
-	return Math.max(0, ...moves(p, state.field).map(move => {
+	return Math.max(0, ...choices.map(move => {
 		// Rest/Wish spend additional turns; do not call them repeatable one-turn recovery.
 		if (move.id === 'rest') return directRecoveryAmount(p, move, state.field) / 3;
 		if (move.id === 'wish') return p.maxHp / 4;
@@ -136,36 +144,46 @@ export function actionDelay(p: AIPokemon, field: FieldConditions, move?: AIMove)
 		data?.flags.charge && !(move?.id === 'solarbeam' && field.weather === 'sun') ? 1 : 0;
 }
 
+function combatant(p: AIPokemon, state: PairState): CombatantFacts {
+	let facts = state.factsMemo.get(p);
+	if (!facts) {
+		facts = state.evaluator.combatant(p, state, state.keys);
+		state.factsMemo.set(p, facts);
+	}
+	return facts;
+}
+
 /** The same residual route exists before and after inflicting status. Recovery can stall
  * ordinary poison/burn, but escalating Toxic eventually exceeds repeatable recovery.
  */
-function attrition(target: AIPokemon, state: BattleState): boolean {
+function attrition(target: AIPokemon, state: PairState): boolean {
 	if (!['tox', 'psn', 'brn'].includes(target.status)) return false;
-	if (moves(target, state.field).some(m => ['rest', 'refresh', 'healbell', 'aromatherapy'].includes(m.id))) return false;
+	if (combatant(target, state).moves.some(m =>
+		['rest', 'refresh', 'healbell', 'aromatherapy'].includes(m.id))) return false;
 	if (['shedskin', 'naturalcure'].includes(effectiveAbility(target, state.field)) ||
 		effectiveAbility(target, state.field) === 'hydration' && state.field.weather === 'rain' ||
 		effectiveItem(target, state.field) === 'lumberry') return false;
 	const later = { ...hp(target, target.maxHp), toxicCounter: target.status === 'tox' ? 14 : target.toxicCounter };
 	const loss = later.hp - getEffectiveHpAfterSecondary(later, state.field.weather, '', state.field);
-	return loss > recovery(target, state);
+	return loss > combatant(target, state).recovery;
 }
 
 /** Attack race plus sustainable recovery. The two-turn search handles exact move effects;
  * this estimates the remaining assignment beyond its horizon using shared mechanics.
  */
-function outlook(actor: AIPokemon, target: AIPokemon, state: PairState, attackChoices?: AIMove[]): Matchup {
+function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup {
 	if (actor.hp <= 0 || target.hp <= 0 || actor.fainted || target.fainted) return zero();
 	const theirs = reverse(state);
-	const attacks = attackChoices || moves(actor, state.field).filter(m => m.category !== 'Status');
-	const responses = moves(target, state.field).filter(m => m.category !== 'Status');
+	const ownFacts = combatant(actor, state), foeFacts = combatant(target, state);
+	const attacks = ownFacts.attacks, responses = foeFacts.attacks;
 	const incoming = responses.map(move => ({ move, amount: damage(target, actor, move, theirs) }));
 	const worst = Math.max(0, ...incoming.map(r => r.amount));
 	const residual = Math.max(0, actor.hp - getEffectiveHpAfterSecondary(actor, state.field.weather,
 		effectiveAbility(target, state.field), state.field));
 	const targetResidual = target.hp - getEffectiveHpAfterSecondary(target, state.field.weather,
 		effectiveAbility(actor, state.field), state.field);
-	const healing = recovery(actor, state), targetHealing = recovery(target, theirs);
-	const delay = actionDelay(actor, state.field);
+	const healing = ownFacts.recovery, targetHealing = foeFacts.recovery;
+	const delay = ownFacts.delay;
 	const stable = healing > worst + residual && actor.hp > worst * 2 && !delay;
 	let check = 0, pressure = 0;
 	const switchPressure: Record<string, number> = {};
@@ -174,33 +192,38 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState, attackCh
 		const dealt = damage(actor, target, move, state);
 		if (!dealt) continue;
 		const accuracy = 1;
+		// These are upper bounds before accounting for the opponent's response.
+		const wall = targetHealing > dealt + targetResidual && target.hp > dealt * 2;
+		const breaking = wall ? clamp(dealt / Math.max(1, 2 * targetHealing)) : 1;
+		const maximumPressure = clamp(dealt / target.hp) * accuracy * breaking;
+		const ownDelay = ownFacts.delays.get(move)!;
+		if (!ownDelay && move.id !== 'suckerpunch') {
+			switchPressure[hardMoveId(move)] = maximumPressure;
+		}
+		// Other moves already provide both capabilities. Keep this move's switch-in
+		// pressure, but no response can improve either of the remaining maxima.
+		if (check >= breaking && pressure >= maximumPressure) continue;
 		const turns = Math.min(8, Math.ceil(target.hp / Math.max(1, dealt + targetResidual)));
 		let race = 1, opportunity = 1;
 		for (const response of incoming) {
 			const first = (compareActionOrder(actor, target, move, [response.move], state.field,
 				state.self.conditions, state.opponent.conditions) + 1) / 2;
-			const ownDelay = actionDelay(actor, state.field, move);
-			const foeDelay = actionDelay(target, state.field, response.move);
+			const foeDelay = foeFacts.delays.get(response.move)!;
 			const before = Math.max(0, turns - first + ownDelay - foeDelay) * response.amount +
 				Math.max(0, turns - 1 + ownDelay) * residual;
 			race = Math.min(race, actor.hp > before ? 1 : 0);
 			opportunity = Math.min(opportunity, clamp((actor.hp - Math.max(0, 1 - first + ownDelay - foeDelay) * response.amount) /
 				Math.max(1, actor.hp)));
-		}
-		// Repeated low damage cannot break a faster/reliably surviving recovery user.
-		const wall = targetHealing > dealt + targetResidual && target.hp > dealt * 2;
-		const breaking = wall ? clamp(dealt / Math.max(1, 2 * targetHealing)) : 1;
-		if (!actionDelay(actor, state.field, move) && move.id !== 'suckerpunch') {
-			switchPressure[hardMoveId(move)] = clamp(dealt / target.hp) * accuracy * breaking;
+			if (!race && !opportunity) break;
 		}
 		if (stable && !wall) race = Math.max(race, 0.9);
 		check = Math.max(check, race * breaking * accuracy ** Math.min(3, turns));
 		pressure = Math.max(pressure, clamp(dealt / target.hp) * opportunity * accuracy * breaking);
 	}
 	// Recovery plus poison/burn can be a real defensive answer without large direct damage.
-	if (stable) {
+	if (stable && (check < 0.75 || pressure < 0.35)) {
 		if (attrition(target, theirs)) { check = Math.max(check, 0.75); pressure = Math.max(pressure, 0.35); }
-		for (const move of moves(actor, state.field)) {
+		for (const move of ownFacts.moves) {
 			if (!['tox', 'psn', 'brn'].includes(move.status || '') || statusFailure(state, actor, target, move)) continue;
 			if (!attrition({ ...target, status: move.status!, toxicCounter: 0 }, theirs)) continue;
 			check = Math.max(check, 0.75);
@@ -216,7 +239,8 @@ function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Mat
 	const result = outlook(actor, target, state);
 	if (!actor.hp || !target.hp) return result;
 	let counter = result.check;
-	const options = moves(target, state.field).filter(m => !actionDelay(target, state.field, m));
+	const facts = combatant(target, state);
+	const options = facts.moves.filter(m => !facts.delays.get(m));
 	// The conceded entry action also advances sleep/recharge and residuals on the opponent.
 	const volatiles = new Set(target.volatiles); volatiles.delete('mustrecharge');
 	const afterEntry = { ...target, volatiles, sleepTurns: target.sleepTurns ? Math.max(1, target.sleepTurns -
@@ -230,6 +254,8 @@ function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Mat
 		effectiveAbility(target, state.field), state.field)), restedTarget, state);
 	counter = Math.min(counter, entry.check);
 	for (const move of options.filter(m => m.category === 'Status')) {
+		// Every remaining response can only lower these three bounded values.
+		if (!counter && !entry.pressure && !entry.sustain) break;
 		let defender = actor, attacker = restedTarget;
 		if (move.boosts && move.target === 'self') {
 			attacker = clonePokemon(restedTarget);
@@ -297,6 +323,7 @@ export class MatchupEvaluator {
 	private positions = new Map<string, Assessment>();
 	private advantages = new Map<string, boolean>();
 	private attacks = new Map<string, Map<string, AttackFacts>>();
+	private combatants = new Map<string, CombatantFacts>();
 	private tokens = new Map<string, number>();
 	private token(value: string): number {
 		let token = this.tokens.get(value);
@@ -313,6 +340,23 @@ export class MatchupEvaluator {
 	readonly damagePolicy: DamagePolicy;
 	constructor(damagePolicy: DamagePolicy = 'mean', damageCache = new DamageCache()) {
 		this.damagePolicy = damagePolicy; this.damageCache = damageCache;
+	}
+
+	/** These facts depend on maximum HP and combat state, never current HP.
+	 * Priority/order, damage and HP-dependent matchup values retain their own inputs.
+	 */
+	combatant(p: AIPokemon, state: BattleState, keys?: WeakMap<object, number>): CombatantFacts {
+		const context = this.inputKey(state.field, () => combatFieldKey(state.field), keys);
+		const key = `${context}:${this.token(fingerprint(p, false))}`;
+		let facts = this.combatants.get(key);
+		if (!facts) {
+			const choices = moves(p, state.field);
+			facts = { moves: choices, attacks: choices.filter(m => m.category !== 'Status'),
+				delays: new Map(choices.map(m => [m, actionDelay(p, state.field, m)])),
+				delay: actionDelay(p, state.field), recovery: recovery(p, state, choices) };
+			this.combatants.set(key, facts);
+		}
+		return facts;
 	}
 
 	/** Full-position verdicts belong to one decision; concrete pair and damage facts survive it. */
@@ -457,7 +501,7 @@ export class MatchupEvaluator {
 				if (result) this.stats.hits++;
 				else {
 					this.stats.misses++;
-					const pairState: PairState = { ...state, field, evaluator: this, damageMemo: new Map(), keys,
+					const pairState: PairState = { ...state, field, evaluator: this, damageMemo: new Map(), factsMemo: new Map(), keys,
 						self: { ...state.self, active: [a] }, opponent: { ...state.opponent, active: [b] } };
 					result = { self: directional(a, b, pairState), opponent: directional(b, a, reverse(pairState)) };
 					this.cache.set(key, result);

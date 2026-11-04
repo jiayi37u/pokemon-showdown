@@ -323,11 +323,12 @@ function coverage(values: number[]): number {
 
 const valueWeights = { member: 25, hp: 35, pressure: 15, check: 45, counter: 30, sustain: 10, active: 35 };
 
-function teamValue(party: AIPokemon[], foes: AIPokemon[], rows: Matchup[][], state: BattleState): number {
+function teamValue(
+	party: AIPokemon[], availableParty: AIPokemon[], availableFoes: AIPokemon[], rows: Matchup[][]
+): number {
 	let value = 0;
-	const availableFoes = foes.map(p => entered(p, state.opponent.conditions, state.field));
 	for (const [i, p] of party.entries()) {
-		const available = entered(p, state.self.conditions, state.field);
+		const available = availableParty[i];
 		if (!available.hp || p.fainted) continue;
 		value += valueWeights.member + valueWeights.hp * available.hp / p.maxHp;
 		// A wallbreaker can force progress on a free turn even when faster revenge killers
@@ -623,8 +624,10 @@ export class MatchupEvaluator {
 		const matrix = own.map((original, i) => foes.map((target, j) => cell(i, j)));
 		const selfRows = matrix.map(row => row.map(p => p.self));
 		const opponentRows = foes.map((foe, j) => own.map((actor, i) => matrix[i][j].opponent));
-		const self = teamValue(own, foes, selfRows, state);
-		const opponent = teamValue(foes, own, opponentRows, reverse(state));
+		const availableOwn = own.map(p => entered(p, state.self.conditions, state.field));
+		const availableFoes = foes.map(p => entered(p, state.opponent.conditions, state.field));
+		const self = teamValue(own, availableOwn, availableFoes, selfRows);
+		const opponent = teamValue(foes, availableFoes, availableOwn, opponentRows);
 		const assessment = { value: self - opponent, self, opponent, matrix };
 		this.positions.set(position, assessment); return assessment;
 	}

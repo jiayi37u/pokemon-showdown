@@ -9,6 +9,7 @@ const { hardMove, hardMoveId } = require('../../../dist/server/npc/ai/hard/oppon
 const { selectMoveCandidates } = require('../../../dist/server/npc/ai/cfru/scoring');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
 const { MatchupEvaluator } = require('../../../dist/server/npc/ai/hard/matchups');
+const { observationKey } = require('../../../dist/server/npc/ai/hard/candidates');
 const mon = (species, moves, rest = {}) => ({ species, moves, ...rest });
 const action = move => ({ id: `move ${move}`, move, prior: 100 });
 const battles = [];
@@ -30,6 +31,32 @@ const scoresFor = (search, state, moves, side = 'self') => Object.fromEntries(
 
 describe('Hard damage-based state search', () => {
 	afterEach(() => battles.splice(0).forEach(b => b.destroy()));
+	for (const effect of ['taunt', 'encore']) for (const affected of ['self', 'opponent']) {
+		it(`separates public ${effect} expiry on ${affected} in continuation observation groups`, () => {
+			const recipient = mon('Gengar', ['tackle', 'recover']);
+			const controller = mon('Sableye', ['tackle', effect], { ability: 'Keen Eye' });
+			const histories = [2, 3].map(controlTurn => {
+				const f = fixture(affected === 'self' ? [recipient] : [controller],
+					affected === 'self' ? [controller] : [recipient]);
+				let state = f.state;
+				for (let turn = 1; turn <= 4; turn++) {
+					const own = affected === 'opponent' && turn === controlTurn ? effect : 'tackle';
+					const foe = affected === 'self' && turn === controlTurn ? effect : 'tackle';
+					state = step(state, own, foe);
+					f.b.makeChoices(`move ${own === effect ? 2 : 1}`, `move ${foe === effect ? 2 : 1}`);
+				}
+				const actual = (affected === 'self' ? f.b.p1 : f.b.p2).active[0];
+				assert.equal(state[affected].active[0].volatileTurns[effect], actual.volatiles[effect].duration);
+				return state;
+			});
+			assert.deepEqual(histories.map(s => s[affected].active[0].volatileTurns[effect]), [1, 2]);
+			assert.notEqual(observationKey(histories[0]), observationKey(histories[1]),
+				'Publicly different expiry times must permit separate continuation and entry decisions');
+			const next = histories.map(s => step(s, 'tackle', 'tackle'));
+			assert(!next[0][affected].active[0].volatiles.has(effect));
+			assert(next[1][affected].active[0].volatiles.has(effect));
+		});
+	}
 	function compareBounded(f, actions, replacing = false) {
 		const run = prune => searchPosition(f.state, f.evaluator, actions.map(a => ({ ...a })), new Map(),
 			new MatchupEvaluator(), replacing, { prune });

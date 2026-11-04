@@ -5,7 +5,7 @@ const { Battle, Dex } = require('../../../dist/sim');
 const { HardAI } = require('../../../dist/server/npc/ai/hard');
 const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
-const { fightingStyle, hardMove, inferOpponent, predictOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
+const { fightingStyle, hardMove, inferOpponent, predictOpponent, searchOpponentModels } = require('../../../dist/server/npc/ai/hard/opponent-model');
 const { buildBattleStateWithTracker, buildPokemonFromRequest } = require('../../../dist/server/npc/ai/cfru/state-builder');
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 
@@ -739,6 +739,37 @@ describe('Hard generic opponent presets', () => {
 	function snapshot(game, format) {
 		return buildBattleStateWithTracker(battle.p2.activeRequest, null, game.ai.getTracker(), { formatId: format });
 	}
+
+	it('uses one search representative per family and item without losing mass or mutating public inference', () => {
+		const game = setup([mon('Garchomp', ['swordsdance'])], [mon('Mew', ['splash'])], { format: 'gen6ou' });
+		game.reveal();
+		const models = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou');
+		const before = structuredClone(models);
+		const selected = searchOpponentModels(models, 'gen6ou');
+		assert.equal(models.filter(m => m.name === 'Offensive Stealth Rock').length, 4);
+		assert.equal(selected.filter(m => m.name === 'Offensive Stealth Rock').length, 2, 'Keep both Lum Berry and Focus Sash');
+		assert.equal(selected.length, new Set(models.map(m => `${m.name}:${m.pokemon.item}`)).size);
+		for (const representative of selected) {
+			const family = models.filter(m => m.name === representative.name && m.pokemon.item === representative.pokemon.item);
+			assert.equal(representative.weight, family.reduce((sum, m) => sum + m.weight, 0));
+			assert.equal(representative.pokemon, family[0].pokemon, 'Equal weights retain catalogue order');
+			assert(representative.moves.some(m => m.id === 'swordsdance' && m.availability === 1));
+		}
+		assert.deepEqual(models, before);
+		assert.deepEqual(searchOpponentModels(models, 'gen9randombattle'), models, 'Random roles are not OU families');
+	});
+
+	it('selects search representatives from publicly compatible models with their surviving weights', () => {
+		const game = setup([mon('Garchomp', ['swordsdance'])], [mon('Mew', ['splash'])], { format: 'gen6ou' });
+		game.ai.getTracker().parseMessage('|-item|p1a: Garchomp|Focus Sash');
+		const models = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou')
+			.filter(m => m.name === 'Offensive Stealth Rock');
+		models[0].weight = 0.2; models[1].weight = 0.8;
+		const [selected] = searchOpponentModels(models, 'gen6ou');
+		assert.equal(selected.weight, 1);
+		assert.equal(selected.spread.nature, models[1].spread.nature);
+		assert.equal(selected.pokemon.item, 'Focus Sash');
+	});
 
 	for (const format of ['gen5pokemmoou', 'gen6ou', 'gen7ou', 'gen9nationaldex']) {
 		it(`uses default Fighting threats before Scrafty reveals a move in ${format}`, () => {

@@ -96,6 +96,23 @@ function strategyData(formatId: string): Record<string, StrategySet[]> {
 	return strategies.get(source)!;
 }
 
+/** Approximate detailed presets for search; public inference keeps the complete pools. */
+export function searchOpponentModels(models: readonly OpponentHypothesis[], formatId: string): OpponentHypothesis[] {
+	if (!strategyFormats[toID(formatId)]) return [...models];
+	const groups = new Map<string, { representative: OpponentHypothesis, weight: number }>();
+	for (const model of models) {
+		const key = JSON.stringify([model.name, toID(model.pokemon.item)]);
+		const group = groups.get(key);
+		if (!group) {
+			groups.set(key, { representative: model, weight: model.weight });
+		} else {
+			group.weight += model.weight;
+			if (model.weight > group.representative.weight) group.representative = model;
+		}
+	}
+	return [...groups.values()].map(({ representative, weight }) => ({ ...representative, weight }));
+}
+
 /** Legal stone-based forms, shared by catalogue lookup and the user-authorized team priors. */
 function megaPresetForms(speciesName: string, formatId: string) {
 	const dex = Dex.forFormat(formatId);

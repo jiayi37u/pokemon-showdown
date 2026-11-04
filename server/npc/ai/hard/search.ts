@@ -1,6 +1,7 @@
 /** Two-ply action search over AI knowledge snapshots; no simulator or complete-team samples. */
 import type { BattleState, OpponentModel } from '../cfru/types';
 import type { HardEvaluation } from './evaluation';
+import { searchOpponentModels } from './opponent-model';
 import { MatchupEvaluator } from './matchups';
 import { rulesDex } from '../cfru/util/mechanics';
 import { CandidateSelector, observationKey, perspective } from './candidates';
@@ -596,7 +597,7 @@ function runSearch(
 	}
 	for (const p of root.opponent.team) {
 		const original = [...state.opponent.team, ...(state.opponent.preview || [])].find(q => identity(p) === identity(q))!;
-		if (!p.fainted) p.presetModels = [...evaluator.opponentModels(original)];
+		if (!p.fainted) p.presetModels = searchOpponentModels(evaluator.opponentModels(original), evaluator.formatId);
 	}
 	Object.assign(root.self.active[0], { projection: { pp: Object.fromEntries(ownPP) } });
 	snapshotPosition(root);

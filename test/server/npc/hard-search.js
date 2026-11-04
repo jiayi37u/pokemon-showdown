@@ -115,6 +115,48 @@ describe('Hard damage-based state search', () => {
 		})));
 		compareBounded(f, ['calmmind', 'icebeam', 'recover'].map(action));
 	});
+	it('bounds prepared endpoints without evaluating them and keeps checkpoints unresolved', () => {
+		const f = fixture([mon('Mew', ['psychic'])], [mon('Machamp', ['splash'])]);
+		const search = new Search(new MatchupEvaluator());
+		const response = { config: 0, profile: { weight: 1 }, action: action('splash') };
+		const work = { response, frontier: [
+			{ node: { state: f.state, weight: 0.5, entries: [] } },
+			{ node: { weight: 0.5, entries: [], expand: () => { throw new Error('Unresolved entry was expanded'); } } },
+		] };
+		const bounds = search.responseBounds(work);
+		assert(Number.isFinite(bounds[0].value));
+		assert(bounds[0].value >= search.value(f.state, false) - 1e-9);
+		assert.equal(bounds[1].value, Infinity);
+		assert.equal(search.nodes, 0);
+	});
+	it('uses terminal scores before matchup bounds, including draws', () => {
+		const f = fixture([mon('Mew', ['psychic'])], [mon('Machamp', ['splash'])]);
+		const matchups = new MatchupEvaluator(), search = new Search(matchups);
+		matchups.upperBound = () => { throw new Error('Terminal position needs no matchup bound'); };
+		const bound = state => search.responseBounds({
+			response: { config: 0, profile: { weight: 1 }, action: action('splash') },
+			frontier: [{ node: { state, weight: 1, entries: [] } }],
+		})[0].value;
+		const won = clonePosition(f.state); hp(won.opponent.active[0], 0);
+		assert.equal(bound(won), 10000);
+		const lost = clonePosition(f.state); hp(lost.self.active[0], 0);
+		assert.equal(bound(lost), -10000);
+		hp(lost.opponent.active[0], 0);
+		assert.equal(bound(lost), 0);
+	});
+	it('bounds future-attack settlement without inventing a second terminal check', () => {
+		const f = fixture([mon('Mew', ['futuresight'])], [mon('Machamp', ['splash'])]);
+		const state = step(f.state, 'futuresight', 'splash'); hp(state.opponent.active[0], 1);
+		assert(Object.values(state.self.conditions.futureMoves).some(n => n > 0) ||
+			Object.values(state.opponent.conditions.futureMoves).some(n => n > 0));
+		const search = new Search(new MatchupEvaluator());
+		const upper = search.responseBounds({
+			response: { config: 0, profile: { weight: 1 }, action: action('splash') },
+			frontier: [{ node: { state, weight: 1, entries: [] } }],
+		})[0].value;
+		assert(upper < 10000 && upper >= search.value(state, false) - 1e-9);
+		assert.equal(state.opponent.active[0].hp, 1, 'A bound cannot mutate the projected world');
+	});
 	it('resumes a partial continuation without treating its upper bound as an exact cached value', () => {
 		const f = fixture([mon('Mew', ['icebeam'])], [mon('Garchomp', ['earthquake', 'dragonclaw']),
 			mon('Blissey', ['seismictoss'])]);

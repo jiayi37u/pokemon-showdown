@@ -43,6 +43,7 @@ interface TransitionNode {
 	weight: number;
 	entries: EntryDecision[];
 	state?: BattleState;
+	upper?: number;
 	/** A checkpoint owns its state; children clone it only when visited. */
 	expand?: () => TransitionNode[];
 }
@@ -315,7 +316,8 @@ export class Search extends CandidateSelector {
 		if (work.leaves) return work.leaves;
 		const { config, profile, action } = work.response;
 		return work.frontier.map(({ node, branch }) => branch || { config, configWeight: profile.weight,
-			reply: action.id, weight: node.weight, entries: node.entries, value: Infinity });
+			reply: action.id, weight: node.weight, entries: node.entries,
+			value: node.expand ? Infinity : (node.upper ??= terminalValue(node.state!) ?? this.matchups.upperBound(node.state!)) });
 	}
 
 	private advanceResponse(work: ResponseWork, retainPosition: boolean): void {
@@ -511,6 +513,7 @@ function* resolveContinuations(
 	if (pruning) options.sort((a, b) =>
 		search.expansionCost(group[0].state, 'self', a.action) - search.expansionCost(group[0].state, 'self', b.action) ||
 		b.action.prior - a.action.prior || a.rank - b.rank);
+	const sharedEntries = new Set<string>();
 	let best = -Infinity, bestRank = Infinity, chosen: number[] | undefined;
 	while (true) {
 		let next: typeof options[number] | undefined;
@@ -525,6 +528,16 @@ function* resolveContinuations(
 		if (!next) return chosen;
 		const works = next.works ||= group.map(b => search.continuation(b.state, next.action, pruning));
 		const independent = pruning ? next.independent ||= independentEntries(search, works) : undefined;
+		if (pruning && best > -Infinity) {
+			// Prepared endpoints can rule out an action without calculating every matchup.
+			// Unresolved/shared entries retain the conservative entryBound relaxation.
+			for (const work of works) if (!work.leaves && work.pending[0]) {
+				search.prepareResponse(work, work.pending[0]);
+			}
+			next.uppers = works.map(w => search.continuationUpper(w, independent || sharedEntries));
+			next.upper = optimisticValue(group.map((b, i) => ({ ...b, value: next.uppers[i] })));
+			if (next.upper < best - 1e-9) continue;
+		}
 		// Keep all hidden worlds represented. Each response includes its complete chance outcomes.
 		for (const work of works) if (!work.leaves) search.advanceContinuation(work, independent);
 		next.uppers = works.map(w => independent ? search.continuationUpper(w, independent) : w.upper);

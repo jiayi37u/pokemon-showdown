@@ -293,33 +293,37 @@ function coverage(values: number[]): number {
 	return clamp((sorted[0] || 0) + 0.2 * (sorted[1] || 0));
 }
 
+const valueWeights = { member: 25, hp: 35, pressure: 15, check: 45, counter: 30, sustain: 10, active: 35 };
+
 function teamValue(party: AIPokemon[], foes: AIPokemon[], rows: Matchup[][], state: BattleState): number {
 	let value = 0;
 	const availableFoes = foes.map(p => entered(p, state.opponent.conditions, state.field));
 	for (const [i, p] of party.entries()) {
 		const available = entered(p, state.self.conditions, state.field);
 		if (!available.hp || p.fainted) continue;
-		value += 25 + 35 * available.hp / p.maxHp;
+		value += valueWeights.member + valueWeights.hp * available.hp / p.maxHp;
 		// A wallbreaker can force progress on a free turn even when faster revenge killers
 		// prevent a sweep. Require one common move to threaten every remaining switch-in.
 		const defense = rows[i].filter((_, j) => availableFoes[j].hp && !availableFoes[j].fainted);
 		const attacks = new Set(defense.flatMap(m => Object.keys(m.switchPressure)));
 		const pressure = Math.max(0, ...[...attacks].map(id =>
 			Math.min(...defense.map(m => m.switchPressure[id] || 0))));
-		value += 15 * (defense.length ? pressure : 1);
+		value += valueWeights.pressure * (defense.length ? pressure : 1);
 	}
 	for (const [j, foe] of availableFoes.entries()) {
 		if (!foe.hp || foe.fainted) continue;
 		const matchups = rows.map((row, i) => party[i].hp && !party[i].fainted ? row[j] : zero());
 		// Penalize uncovered threats, rather than rewarding the continued existence of an
 		// opponent we can answer. Removing an opposing threat must not remove our reward.
-		value -= 45 * (1 - coverage(matchups.map(m => m.check))) +
-			30 * (1 - coverage(matchups.map(m => m.counter))) +
-			10 * (1 - coverage(matchups.map(m => m.counter * m.sustain)));
+		value -= valueWeights.check * (1 - coverage(matchups.map(m => m.check))) +
+			valueWeights.counter * (1 - coverage(matchups.map(m => m.counter))) +
+			valueWeights.sustain * (1 - coverage(matchups.map(m => m.counter * m.sustain)));
 		// A reserve check needs a free entry. Against the current threat, only the active
 		// member can act immediately; a reserve must survive the conceded entry action.
 		// This values an executable answer, rather than a rotation toward another paper check.
-		if (foe.active) value -= 35 * (1 - coverage(matchups.map((m, i) => party[i].active ? m.check : m.counter)));
+		if (foe.active) {
+			value -= valueWeights.active * (1 - coverage(matchups.map((m, i) => party[i].active ? m.check : m.counter)));
+		}
 	}
 	return value;
 }
@@ -429,6 +433,27 @@ export class MatchupEvaluator {
 	/** Candidate membership needs particular matchups, not a complete team valuation. */
 	pairs(state: BattleState, coordinates: [number, number][]): Pair[] {
 		return coordinates.length ? this.evaluate(state, coordinates) : [];
+	}
+
+	/** Optimistic static value without computing matchups. Terminal outcomes belong to Search. */
+	upperBound(state: BattleState): number {
+		if ([state.self, state.opponent].some(s => Object.values(s.conditions.futureMoves).some(n => n > 0))) {
+			state = clonePosition(state); settleFutureAttacks(state, this.damagePolicy, true, this.damageCache);
+		}
+		let upper = 0;
+		for (const side of ['self', 'opponent'] as const) {
+			for (const pokemon of state[side].team) {
+				const available = entered(pokemon, state[side].conditions, state.field);
+				if (!available.hp || pokemon.fainted) continue;
+				const material = valueWeights.member + valueWeights.hp * available.hp / pokemon.maxHp;
+				if (side === 'opponent') { upper -= material; continue; }
+				// Our offense may be maximal and their coverage of every own member absent;
+				// our uncovered-threat penalties and their offensive pressure are at best zero.
+				upper += material + valueWeights.pressure + valueWeights.check + valueWeights.counter +
+					valueWeights.sustain + (available.active ? valueWeights.active : 0);
+			}
+		}
+		return upper;
 	}
 
 	/** At most 36 cells per concrete singles world. Content keys also survive switches/turns. */

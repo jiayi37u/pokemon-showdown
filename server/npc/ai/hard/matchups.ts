@@ -192,18 +192,26 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		const dealt = damage(actor, target, move, state);
 		if (!dealt) continue;
 		const accuracy = 1;
-		// These are upper bounds before accounting for the opponent's response.
-		const wall = targetHealing > dealt + targetResidual && target.hp > dealt * 2;
-		const breaking = wall ? clamp(dealt / Math.max(1, 2 * targetHealing)) : 1;
-		const maximumPressure = clamp(dealt / target.hp) * accuracy * breaking;
+		// Immediate damage into a switch is distinct from repeatable progress.
+		const directWall = targetHealing > dealt + targetResidual && target.hp > dealt * 2;
+		const directBreaking = directWall ? clamp(dealt / Math.max(1, 2 * targetHealing)) : 1;
 		const ownDelay = ownFacts.delays.get(move)!;
 		if (!ownDelay && move.id !== 'suckerpunch') {
-			switchPressure[hardMoveId(move)] = maximumPressure;
+			switchPressure[hardMoveId(move)] = clamp(dealt / target.hp) * accuracy * directBreaking;
 		}
+		const afterHit = hp(target, target.hp - dealt);
+		// Residual recovery follows damage, and cannot rescue a first-hit KO. The
+		// resulting constant net rate remains an estimate of subsequent exchanges.
+		const progress = dealt >= target.hp ? target.hp : target.hp - getEffectiveHpAfterSecondary(
+			afterHit, state.field.weather, effectiveAbility(actor, state.field), state.field);
+		if (progress <= 0) continue;
+		const wall = targetHealing > progress && target.hp > dealt * 2;
+		const breaking = wall ? clamp(dealt / Math.max(1, 2 * targetHealing)) : 1;
+		const maximumPressure = clamp(progress / target.hp) * accuracy * breaking;
 		// Other moves already provide both capabilities. Keep this move's switch-in
 		// pressure, but no response can improve either of the remaining maxima.
 		if (check >= breaking && pressure >= maximumPressure) continue;
-		const turns = Math.min(8, Math.ceil(target.hp / Math.max(1, dealt + targetResidual)));
+		const turns = Math.ceil(target.hp / progress);
 		let race = 1, opportunity = 1;
 		for (const response of incoming) {
 			const first = (compareActionOrder(actor, target, move, [response.move], state.field,
@@ -218,7 +226,7 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		}
 		if (stable && !wall) race = Math.max(race, 0.9);
 		check = Math.max(check, race * breaking * accuracy ** Math.min(3, turns));
-		pressure = Math.max(pressure, clamp(dealt / target.hp) * opportunity * accuracy * breaking);
+		pressure = Math.max(pressure, maximumPressure * opportunity);
 	}
 	// Recovery plus poison/burn can be a real defensive answer without large direct damage.
 	if (stable && (check < 0.75 || pressure < 0.35)) {

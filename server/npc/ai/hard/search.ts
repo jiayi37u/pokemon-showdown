@@ -539,7 +539,15 @@ function* resolveContinuations(
 			if (next.upper < best - 1e-9) continue;
 		}
 		// Keep all hidden worlds represented. Each response includes its complete chance outcomes.
-		for (const work of works) if (!work.leaves) search.advanceContinuation(work, independent);
+		for (const [index, work] of works.entries()) if (!work.leaves) {
+			search.advanceContinuation(work, independent);
+			// One world's tighter bound can reject the common action before advancing the others.
+			if (pruning && best > -Infinity && index + 1 < works.length) {
+				const uppers = works.map(w => independent ? search.continuationUpper(w, independent) : w.upper);
+				const upper = optimisticValue(group.map((b, i) => ({ ...b, value: uppers[i] })));
+				if (upper < best - 1e-9) break;
+			}
+		}
 		next.uppers = works.map(w => independent ? search.continuationUpper(w, independent) : w.upper);
 		next.upper = optimisticValue(group.map((b, i) => ({ ...b, value: next.uppers[i] })));
 		if (works.every(w => w.leaves)) {

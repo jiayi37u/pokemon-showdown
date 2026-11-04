@@ -4,7 +4,7 @@
  */
 import type { AIPokemon, AIMove, BattleState, FieldConditions, SideConditions } from '../cfru/types';
 import { hardMove, hardMoveId } from './opponent-model';
-import { getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
+import { getEffectiveHpAfterSecondary, residualEvents } from '../cfru/util/damage-calc';
 import { calculateDamage, selectDamage, DamageCache, type DamagePolicy } from './damage';
 import { modelsFor, clonePosition, settleFutureAttacks, bindOpponent,
 	positionKey, usableMove, hasMovePP, clonePokemon, projectEntry, boosts, status,
@@ -41,6 +41,7 @@ interface CombatantFacts {
 	delays: Map<AIMove, number>;
 	delay: number;
 	recovery: number;
+	residuals: Map<string, ReturnType<typeof residualEvents>>;
 }
 interface PairState extends BattleState {
 	evaluator: MatchupEvaluator;
@@ -168,6 +169,18 @@ function attrition(target: AIPokemon, state: PairState): boolean {
 	return loss > combatant(target, state).recovery;
 }
 
+/** Ordered effects are HP-independent for Hard's positive maxHp inputs. Apply their
+ * caps and earlier KOs separately at every current or post-hit HP. Static races have no Wish.
+ */
+function residualHP(pokemon: AIPokemon, opponentAbility: string, facts: CombatantFacts, state: PairState): number {
+	let events = facts.residuals.get(opponentAbility);
+	if (!events) {
+		events = residualEvents(pokemon, state.field.weather, opponentAbility, state.field);
+		facts.residuals.set(opponentAbility, events);
+	}
+	return getEffectiveHpAfterSecondary(pokemon, state.field.weather, opponentAbility, state.field, Infinity, 0, events);
+}
+
 /** Attack race plus sustainable recovery. The two-turn search handles exact move effects;
  * this estimates the remaining assignment beyond its horizon using shared mechanics.
  */
@@ -178,10 +191,8 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 	const attacks = ownFacts.attacks, responses = foeFacts.attacks;
 	const incoming = responses.map(move => ({ move, amount: damage(target, actor, move, theirs) }));
 	const worst = Math.max(0, ...incoming.map(r => r.amount));
-	const residual = Math.max(0, actor.hp - getEffectiveHpAfterSecondary(actor, state.field.weather,
-		effectiveAbility(target, state.field), state.field));
-	const targetResidual = target.hp - getEffectiveHpAfterSecondary(target, state.field.weather,
-		effectiveAbility(actor, state.field), state.field);
+	const residual = Math.max(0, actor.hp - residualHP(actor, effectiveAbility(target, state.field), ownFacts, state));
+	const targetResidual = target.hp - residualHP(target, effectiveAbility(actor, state.field), foeFacts, state);
 	const healing = ownFacts.recovery, targetHealing = foeFacts.recovery;
 	const delay = ownFacts.delay;
 	const stable = healing > worst + residual && actor.hp > worst * 2 && !delay;
@@ -202,8 +213,8 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		const afterHit = hp(target, target.hp - dealt);
 		// Residual recovery follows damage, and cannot rescue a first-hit KO. The
 		// resulting constant net rate remains an estimate of subsequent exchanges.
-		const progress = dealt >= target.hp ? target.hp : target.hp - getEffectiveHpAfterSecondary(
-			afterHit, state.field.weather, effectiveAbility(actor, state.field), state.field);
+		const progress = dealt >= target.hp ? target.hp : target.hp -
+			residualHP(afterHit, effectiveAbility(actor, state.field), foeFacts, state);
 		if (progress <= 0) continue;
 		const wall = targetHealing > progress && target.hp > dealt * 2;
 		const breaking = wall ? clamp(dealt / Math.max(1, 2 * targetHealing)) : 1;
@@ -365,7 +376,7 @@ export class MatchupEvaluator {
 			const choices = moves(p, state.field);
 			facts = { moves: choices, attacks: choices.filter(m => m.category !== 'Status'),
 				delays: new Map(choices.map(m => [m, actionDelay(p, state.field, m)])),
-				delay: actionDelay(p, state.field), recovery: recovery(p, state, choices) };
+				delay: actionDelay(p, state.field), recovery: recovery(p, state, choices), residuals: new Map() };
 			this.combatants.set(key, facts);
 		}
 		return facts;

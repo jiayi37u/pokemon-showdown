@@ -6,6 +6,7 @@ const { DamageCache, calculateDamage } = require('../../../dist/server/npc/ai/ha
 const { hardMove } = require('../../../dist/server/npc/ai/hard/opponent-model');
 const { MatchupEvaluator } = require('../../../dist/server/npc/ai/hard/matchups');
 const { HardEvaluation } = require('../../../dist/server/npc/ai/hard/evaluation');
+const { residualEvents, getEffectiveHpAfterSecondary } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { advancePosition, clonePosition, snapshotPosition, modelsFor } = require('../../../dist/server/npc/ai/hard/projection');
 
 describe('Hard battle calculation caches', () => {
@@ -24,6 +25,36 @@ describe('Hard battle calculation caches', () => {
 			});
 		return { state, cache, hit };
 	}
+	it('reuses residual effects while preserving HP caps and an earlier weather KO', () => {
+		const { state } = fixture();
+		const actor = state.self.active[0];
+		Object.assign(actor, { hp: 160, maxHp: 160, hpPercent: 100, item: 'leftovers', status: 'psn' });
+		const events = residualEvents(actor, 'sand', '', state.field);
+		const hpAfter = hp => getEffectiveHpAfterSecondary({ ...actor, hp, hpPercent: hp / 1.6 },
+			'sand', '', state.field, Infinity, 0, events);
+		assert.equal(hpAfter(160), 140);
+		assert.equal(hpAfter(80), 60);
+		assert.equal(hpAfter(10), 0, 'Leftovers cannot revive an earlier sandstorm KO');
+		assert.equal(hpAfter(0), 0);
+		const healthy = { ...actor, status: '' };
+		const healing = residualEvents(healthy, '', '', state.field);
+		assert.equal(getEffectiveHpAfterSecondary(healthy, '', '', state.field, Infinity, 0, healing), 160);
+		assert.equal(getEffectiveHpAfterSecondary({ ...healthy, hp: 155 }, '', '', state.field, Infinity, 0, healing), 160);
+	});
+	it('keeps the opposing ability in residual facts across repeated matchup queries', () => {
+		const { state } = fixture();
+		state.self.active[0].status = 'slp';
+		const foe = state.opponent.active[0], evaluator = new MatchupEvaluator();
+		const sustain = ability => {
+			foe.ability = ability;
+			const result = evaluator.pairs(state, [[0, 0]])[0];
+			assert.deepEqual(result, new MatchupEvaluator().pairs(state, [[0, 0]])[0]);
+			return result.self.sustain;
+		};
+		assert.equal(sustain('noguard'), 1);
+		assert(sustain('baddreams') < 1);
+		assert.equal(sustain('noguard'), 1);
+	});
 	it('reuses rolls across target HP and public history changes but recalculates KO flags', () => {
 		const { state, cache, hit } = fixture();
 		const before = hit(), misses = cache.stats.misses;

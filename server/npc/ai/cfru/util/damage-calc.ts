@@ -1555,7 +1555,7 @@ export function getSecondaryEffectDamage(
 }
 
 /** Signed HP changes in simulator residual order; healing cannot revive an earlier KO. */
-function residualEvents(pokemon: AIPokemon, weather: string, opponentAbility: string, field?: FieldConditions,
+export function residualEvents(pokemon: AIPokemon, weather: string, opponentAbility: string, field?: FieldConditions,
 	wishRecovery = 0) {
 	const dex = rulesDex(field || {});
 	const ability = effectiveAbility(pokemon, field);
@@ -1661,11 +1661,13 @@ export function getEffectiveHpAfterSecondary(
 	/** Stop before this residual order when checking whether an effect's source survives. */
 	beforeOrder = Infinity,
 	/** Recovery due this turn, inserted at the ruleset's Wish residual order. */
-	wishRecovery = 0
+	wishRecovery = 0,
+	/** Reuse only when all residual inputs except current HP match. */
+	preparedEvents?: ReturnType<typeof residualEvents>
 ): number {
 	if (defender.hp <= 0 || beforeOrder === Infinity && defender.volatiles.has('perish0')) return 0;
 	let hp = defender.hp;
-	for (const event of residualEvents(defender, weather, attackerAbility, field, wishRecovery)) {
+	for (const event of preparedEvents || residualEvents(defender, weather, attackerAbility, field, wishRecovery)) {
 		if (event.order >= beforeOrder) break;
 		hp = Math.min(defender.maxHp || 100, hp - event.damage);
 		if (hp <= 0) return 0;

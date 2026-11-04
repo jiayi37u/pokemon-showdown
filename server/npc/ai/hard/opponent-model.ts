@@ -96,18 +96,38 @@ function strategyData(formatId: string): Record<string, StrategySet[]> {
 	return strategies.get(source)!;
 }
 
-function representativesBy(models: readonly OpponentHypothesis[], keyFor: (model: OpponentHypothesis) => string) {
-	const groups = new Map<string, { representative: OpponentHypothesis, weight: number }>();
+function representativesBy(models: readonly OpponentHypothesis[], keyFor: (model: OpponentHypothesis) => string,
+	combineMoves = false) {
+	const groups = new Map<string, { representative: OpponentHypothesis, weight: number, members: OpponentHypothesis[] }>();
 	for (const model of models) {
 		const key = keyFor(model), group = groups.get(key);
 		if (!group) {
-			groups.set(key, { representative: model, weight: model.weight });
+			groups.set(key, { representative: model, weight: model.weight, members: [model] });
 		} else {
 			group.weight += model.weight;
+			group.members.push(model);
 			if (model.weight > group.representative.weight) group.representative = model;
 		}
 	}
-	return [...groups.values()].map(({ representative, weight }) => ({ ...representative, weight }));
+	return [...groups.values()].map(({ representative, weight, members }) => {
+		const selected = members.length === 1 ? representative : { ...representative, weight };
+		if (!combineMoves || members.length === 1) return selected;
+		const knowledge = representative.pokemon.moveKnowledge!;
+		const availability = new Map(representative.moves.map(move => [move.id, 0]));
+		for (const model of members) for (const move of model.moves) {
+			availability.set(move.id, (availability.get(move.id) || 0) + model.weight * move.availability);
+		}
+		const moves = [...availability].map(([id, mass]) => ({
+			id, availability: knowledge.revealedMoves.includes(id) ? 1 : mass / weight,
+		}));
+		if (moves.length === representative.moves.length && moves.every((move, i) =>
+			move.id === representative.moves[i].id && move.availability === representative.moves[i].availability)) {
+			return selected;
+		}
+		return { ...selected, moves, pokemon: { ...representative.pokemon, moveKnowledge: { ...knowledge,
+			presetCandidates: moves.map(move => move.id).filter(id => !knowledge.revealedMoves.includes(id)),
+		} } };
+	});
 }
 
 /** Approximate already filtered detailed presets; public inference keeps the complete pools. */
@@ -118,7 +138,9 @@ export function searchOpponentModels(models: readonly OpponentHypothesis[], form
 	return representativesBy(families, model => {
 		const evs = model.spread?.evs;
 		// Unknown investment and Choice-item families remain independent.
-		if (!evs || dex.items.get(model.pokemon.item).isChoice) return JSON.stringify(['family', model.name]);
+		if (!evs || model.presetInvestment === undefined || dex.items.get(model.pokemon.item).isChoice) {
+			return JSON.stringify(['family', model.name]);
+		}
 		const offense = (evs.atk || 0) + (evs.spa || 0);
 		const defense = (evs.hp || 0) + (evs.def || 0) + (evs.spd || 0);
 		const moves = model.moves.map(move => dex.moves.get(move.id));
@@ -128,8 +150,8 @@ export function searchOpponentModels(models: readonly OpponentHypothesis[], form
 			fightingStyle(model.pokemon, formatId),
 			dex.natures.get(model.spread?.nature || model.pokemon.statSpread?.nature || '').plus || '',
 			moves.some(move => move.category === 'Physical'), moves.some(move => move.category === 'Special'),
-			Math.sign(offense - defense), recovery]);
-	});
+			model.presetInvestment, Math.sign(offense - defense), recovery]);
+	}, true);
 }
 
 /** Legal stone-based forms, shared by catalogue lookup and the user-authorized team priors. */
@@ -263,6 +285,8 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 				if (species.baseStats.hp === 1) stats.hp = 1;
 				variants.push({
 					name: set.name, matched: true, weight: 0, moves,
+					presetInvestment: Math.sign((evs.atk || 0) + (evs.spa || 0) -
+						(evs.hp || 0) - (evs.def || 0) - (evs.spd || 0)),
 					spread: { nature: dex.natures.get(nature).name, evs, ivs },
 					pokemon: { ...opponent, baseStats: stats, maxHp: stats.hp,
 						moveKnowledge: { revealedMoves: revealed, presetCandidates: moves.map(m => m.id).filter(id =>

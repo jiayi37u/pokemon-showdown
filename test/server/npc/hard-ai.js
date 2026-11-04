@@ -770,8 +770,10 @@ describe('Hard generic opponent presets', () => {
 		assert.equal(selected.length, 1);
 		assert.equal(selected[0].weight, 1);
 		assert.equal(selected[0].name, defensive.name, 'The larger family wins, not the largest individual variant');
-		assert.equal(selected[0].pokemon, defensive.pokemon);
-		assert.equal(selected[0].moves, defensive.moves, 'Keep a real loadout rather than combining candidate moves');
+		assert.equal(selected[0].pokemon.baseStats, defensive.pokemon.baseStats);
+		assert.equal(selected[0].pokemon.item, defensive.pokemon.item);
+		assert.deepEqual(new Set(selected[0].moves.map(m => m.id)),
+			new Set([...defensive.moves, ...utility.moves].map(m => m.id)));
 		assert.deepEqual(models, before);
 	});
 
@@ -787,6 +789,62 @@ describe('Hard generic opponent presets', () => {
 					moveKnowledge: { revealedMoves: [], presetCandidates: moves, remainingSlots: 4 } } };
 		};
 	}
+
+	it('preserves original Tornadus investment directions after fitted spreads become defensive', () => {
+		const game = setup([mon('Tornadus-Therian', ['hurricane'])], [mon('Mew', ['splash'])], { format: 'gen7ou' });
+		const models = inferOpponent(snapshot(game, 'gen7ou').opponent.active[0], 'gen7ou')
+			.filter(m => m.pokemon.item === 'flyiniumz');
+		assert.deepEqual(models.map(m => m.presetInvestment), [-1, 1]);
+		const fitted = models.map(m => ({ ...m, spread: { ...m.spread, evs: { hp: 248, spd: 240, spe: 20 } } }));
+		assert.equal(searchOpponentModels(fitted, 'gen7ou').length, 2);
+		assert.equal(searchOpponentModels(fitted.map(m => ({ ...m, presetInvestment: undefined })), 'gen7ou').length, 2);
+	});
+
+	it('retains weighted attack candidates from both compatible families in prediction and matchup knowledge', () => {
+		const model = celebiHypotheses();
+		const models = ['energyball', 'shadowball'].map((move, i) => {
+			const m = model(move, { moves: ['calmmind', 'psychic', move, 'recover'] });
+			return { ...m, presetInvestment: 1, weight: i ? 0.75 : 0.25,
+				moves: m.moves.map(candidate => ({ ...candidate, availability: candidate.id === move ? 0.8 : 1 })),
+				pokemon: { ...m.pokemon, moves: ['psychic'], moveKnowledge: {
+					revealedMoves: ['psychic'], presetCandidates: ['calmmind', move, 'recover'], remainingSlots: 3,
+				} } };
+		});
+		const before = structuredClone(models);
+		const [selected] = searchOpponentModels(models, 'gen6ou');
+		assert.equal(selected.name, 'shadowball');
+		assert.equal(selected.weight, 1);
+		assert.deepEqual(selected.moves.map(m => m.id), ['calmmind', 'psychic', 'shadowball', 'recover', 'energyball']);
+		assert.equal(selected.pokemon.baseStats, models[1].pokemon.baseStats);
+		assert.deepEqual(selected.pokemon.moves, ['psychic']);
+		assert.equal(selected.moves.find(m => m.id === 'psychic').availability, 1);
+		assert.equal(selected.moves.find(m => m.id === 'energyball').availability, 0.2);
+		assert(Math.abs(selected.moves.find(m => m.id === 'shadowball').availability - 0.6) < 1e-12);
+		const { knownMoves } = require('../../../dist/server/npc/ai/hard/projection');
+		assert(knownMoves(selected.pokemon).includes('energyball'));
+		assert(knownMoves(selected.pokemon).includes('shadowball'));
+		battle.destroy();
+		const game = setup([mon('Celebi', ['psychic'])], [mon('Mew', ['splash'])], { format: 'gen6ou' });
+		const state = snapshot(game, 'gen6ou');
+		const actions = predictOpponent(state, state.opponent.active[0], state.self.active[0], 'gen6ou',
+			(s, actor, moves) => moves.map(move => ({ move, score: 100, flags: {} })), [selected]);
+		assert(actions.some(a => a.move?.id === 'energyball'));
+		assert(actions.some(a => a.move?.id === 'shadowball'));
+		assert.deepEqual(models, before);
+	});
+
+	it('does not add a fifth candidate after four public moves occupy every slot', () => {
+		const game = setup([mon('Rotom-Wash', ['hydropump', 'voltswitch', 'willowisp', 'painsplit'])],
+			[mon('Mew', ['splash'])], { format: 'gen6ou' });
+		game.reveal();
+		const models = inferOpponent(snapshot(game, 'gen6ou').opponent.active[0], 'gen6ou');
+		for (const selected of searchOpponentModels(models, 'gen6ou')) {
+			assert.equal(selected.moves.length, 4);
+			assert(selected.moves.every(m => m.availability === 1));
+			assert.equal(selected.pokemon.moveKnowledge.remainingSlots, 0);
+			assert.deepEqual(selected.pokemon.moveKnowledge.presetCandidates, []);
+		}
+	});
 
 	it('keeps offensive, defensive and balanced investment families and separate Choice families', () => {
 		const model = celebiHypotheses();

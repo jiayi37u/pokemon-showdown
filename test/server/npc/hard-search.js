@@ -289,6 +289,96 @@ describe('Hard damage-based state search', () => {
 		assert.equal(full.nodes, 6, 'All three responses are evaluated for both attacks');
 		assert.equal(bounded.nodes, 4, 'One drawing response already bounds Explosion below the guaranteed win');
 	});
+	function switchCoverageFixture(entrant = mon('Heatran', ['protect'], { ability: 'Flash Fire' })) {
+		const f = fixture([mon('Rotom-Wash', ['hydropump'], { ability: 'Levitate' }), entrant],
+			[mon('Charizard-Mega-X', ['earthquake', 'flareblitz', 'dragonclaw', 'roost'], { ability: 'Tough Claws' })]);
+		f.state.opponent.active[0].boosts.atk = 4;
+		const search = new Search(new MatchupEvaluator(), f.state);
+		const own = { id: 'switch 2', switchTo: f.state.self.reserve[0], prior: 100 };
+		return { ...f, search, own };
+	}
+	it('covers an otherwise immune attack that uniquely knocks out a retained switch at both search plies', () => {
+		const { state, search, own } = switchCoverageFixture();
+		assert(!search.choices(state, 'opponent').some(a => a.move === 'earthquake'));
+		const hasEarthquake = replies => replies.some(r => r.action.move === 'earthquake');
+		assert(!hasEarthquake(search.responses(state, false, [])), 'Unretained bench targets do not expand responses');
+		assert(hasEarthquake(search.responses(state, false, [own])));
+		assert(hasEarthquake(search.continuation(state, action('hydropump'), false, [own]).responses));
+		assert(!hasEarthquake(search.continuation(state, action('hydropump'), false, []).responses),
+			'Continuation caches distinguish different retained switch sets');
+	});
+	it('does not restore a redundant attack when retained attacks already knock out the switch', () => {
+		const { state, search, own } = switchCoverageFixture(mon('Magikarp', ['splash']));
+		assert(!search.responses(state, false, [own]).some(r => r.action.move === 'earthquake'));
+	});
+	it('does not restore an attack against an immune or Focus Sash protected switch', () => {
+		for (const entrant of [mon('Heatran', ['protect'], { ability: 'Flash Fire', item: 'Air Balloon' }),
+			mon('Heatran', ['protect'], { ability: 'Flash Fire', item: 'Focus Sash' })]) {
+			const { state, search, own } = switchCoverageFixture(entrant);
+			assert(!search.responses(state, false, [own]).some(r => r.action.move === 'earthquake'));
+		}
+	});
+	it('uses entry hazard damage when a retained switch loses its Focus Sash protection', () => {
+		const { state, search, own } = switchCoverageFixture(
+			mon('Heatran', ['protect'], { ability: 'Flash Fire', item: 'Focus Sash' }));
+		state.self.conditions.stealthrock = true;
+		assert(search.responses(state, false, [own]).some(r => r.action.move === 'earthquake'));
+	});
+	for (const restriction of ['pp', 'choice', 'encore', 'imprison', 'mustrecharge']) {
+		it(`does not restore an attack blocked by ${restriction} before the switch`, () => {
+			const { state, search, own } = switchCoverageFixture();
+			const foe = state.opponent.active[0];
+			if (restriction === 'pp') foe.projection = { pp: { earthquake: 0 } };
+			if (restriction === 'choice') { foe.item = 'choiceband'; foe.lastMove = 'flareblitz'; }
+			if (restriction === 'encore') { foe.volatiles.add('encore'); foe.lastMove = 'flareblitz'; }
+			if (restriction === 'mustrecharge') foe.volatiles.add('mustrecharge');
+			if (restriction === 'imprison') {
+				state.self.active[0].volatiles.add('imprison'); state.self.active[0].moves.push('earthquake');
+			}
+			assert(!search.responses(state, false, [own]).some(r => r.action.move === 'earthquake'));
+		});
+	}
+	it('covers other attack immunities without expanding every reserve target', () => {
+		const f = fixture([mon('Garchomp', ['splash']), mon('Gyarados', ['splash']), mon('Mew', ['splash'])],
+			[mon('Magnezone', ['thunderbolt', 'flashcannon'])]);
+		const search = new Search(new MatchupEvaluator(), f.state);
+		const own = { id: 'switch 2', switchTo: f.state.self.reserve[0], prior: 100 };
+		assert(!search.choices(f.state, 'opponent').some(a => a.move === 'thunderbolt'));
+		assert(search.responses(f.state, false, [own]).some(r => r.action.move === 'thunderbolt'));
+	});
+	it('keeps Mega weather changes in the no-attack control for switch coverage', () => {
+		const f = fixture([mon('Gengar', ['splash'], { ability: 'Levitate' }),
+			mon('Arcanine', ['splash'], { ability: 'Flash Fire' })],
+		[mon('Charizard', ['earthquake', 'flamethrower'], { item: 'Charizardite Y', ability: 'Blaze' })]);
+		f.state.field.weather = 'sand'; f.state.field.weatherTurns = 4;
+		const target = f.state.self.reserve[0]; target.hp = 1; target.hpPercent = 100 / target.maxHp;
+		const search = new Search(new MatchupEvaluator(), f.state);
+		const own = { id: 'switch 2', switchTo: target, prior: 100 };
+		assert(search.responses(f.state, false, [own]).some(r => r.action.move === 'earthquake'));
+	});
+	it('does not assume a pending pivot has already resolved its replacement and residual damage', () => {
+		const f = fixture([mon('Rotom-Wash', ['splash'], { ability: 'Levitate' }),
+			mon('Heatran', ['splash'], { ability: 'Flash Fire' })],
+		[mon('Mew', ['uturn', 'earthquake']), mon('Magikarp', ['splash'])]);
+		const target = f.state.self.reserve[0]; target.status = 'brn';
+		target.hp = Math.floor(target.maxHp / 8) + 1; target.hpPercent = target.hp * 100 / target.maxHp;
+		const own = { id: 'switch 2', switchTo: target, prior: 100 };
+		const turn = beginTurn(f.state, own, action('uturn'));
+		assert.equal(continueTurn(turn), undefined);
+		assert(!turn.state.self.active[0].fainted);
+		switchIn(turn.state, 'opponent', turn.state.opponent.reserve[0]);
+		turn.pending = undefined; continueTurn(turn);
+		assert(turn.state.self.active[0].fainted, 'Residual KO needs a separate pivot replacement decision');
+		const search = new Search(new MatchupEvaluator(), f.state);
+		assert(search.coverSwitches(f.state, [own], [action('uturn')]).some(a => a.move === 'earthquake'));
+	});
+	it('retains an omitted pivot whose hit already knocks out the retained switch', () => {
+		const f = fixture([mon('Garchomp', ['splash']), mon('Gyarados', ['splash'])],
+			[mon('Magnezone', ['voltswitch', 'flashcannon']), mon('Magikarp', ['splash'])]);
+		const search = new Search(new MatchupEvaluator(), f.state);
+		const own = { id: 'switch 2', switchTo: f.state.self.reserve[0], prior: 100 };
+		assert(search.responses(f.state, false, [own]).some(r => r.action.move === 'voltswitch'));
+	});
 	it('reuses opposing responses across own actions without mutating their bound snapshots', () => {
 		const f = fixture([mon('Mew', ['psychic', 'icebeam'])], [mon('Machamp', ['closecombat', 'knockoff'])]);
 		const search = new Search(new MatchupEvaluator());

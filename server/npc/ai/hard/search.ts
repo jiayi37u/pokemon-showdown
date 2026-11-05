@@ -7,7 +7,7 @@ import { rulesDex } from '../cfru/util/mechanics';
 import { CandidateSelector, observationKey, perspective } from './candidates';
 import {
 	actionOutcomes, beginTurn, continueTurn, bindOpponent, clonePosition, endTurn, identity, modelsFor, positionKey,
-	supportsMove, switchIn, transitionSupported, snapshotPosition, clonePokemon,
+	supportsMove, switchIn, transitionSupported, snapshotPosition, clonePokemon, knownMoves, usableMove, moveAction,
 	type SearchAction, type Side, type TurnCheckpoint,
 } from './projection';
 export type { SearchAction } from './projection';
@@ -124,11 +124,14 @@ export class Search extends CandidateSelector {
 	}
 
 	/** Retain partial work, never cache an optimistic bound as an exact continuation value. */
-	continuation(state: BattleState, action: SearchAction, reorder = false): Continuation {
-		const key = `${positionKey(state)}:${action.id}:${!!action.mega}`;
+	continuation(state: BattleState, action: SearchAction, reorder = false,
+		ownActions = this.choices(state, 'self')): Continuation {
+		const switches = ownActions.filter(a => a.switchTo);
+		const coverage = JSON.stringify(switches.map(a => identity(a.switchTo!)).sort());
+		const key = `${positionKey(state)}:${action.id}:${!!action.mega}:${coverage}`;
 		const cached = this.continuations.get(key);
 		if (cached) { this.reused.continuations++; return cached; }
-		const responses = this.responses(state), pending = [...responses];
+		const responses = this.responses(state, false, switches), pending = [...responses];
 		if (reorder) pending.sort((a, b) =>
 			this.expansionCost(a.state, 'opponent', a.action) - this.expansionCost(b.state, 'opponent', b.action) ||
 			b.action.prior - a.action.prior);
@@ -273,8 +276,41 @@ export class Search extends CandidateSelector {
 		return this.transitionTree(start, own, reply, replacing).flatMap(finish);
 	}
 
-	responses(state: BattleState, replacing = false): Response[] {
-		const key = `${positionKey(state)}:${replacing}`, cached = this.responseCache.get(key);
+	/** A low score against the active target must not hide a lethal answer to a retained switch. */
+	private coverSwitches(state: BattleState, switches: SearchAction[], replies: SearchAction[]): SearchAction[] {
+		if (!switches.length) return replies;
+		const dex = rulesDex(state.field);
+		const attacks = replies.filter(a => a.move && dex.moves.get(a.move).category !== 'Status');
+		const omitted = knownMoves(state.opponent.active[0]).filter(id =>
+			dex.moves.get(id).category !== 'Status' && usableMove(state, 'opponent', id) && supportsMove(state, id) &&
+			!attacks.some(a => a.move === id)).map(id => moveAction(state, 'opponent', id));
+		if (!omitted.length) return replies;
+		const added = new Set<SearchAction>();
+		for (const own of switches) {
+			const target = identity(own.switchTo!);
+			const knockedOut = (reply: SearchAction, pass = false) => {
+				const turn = beginTurn(state, own, reply);
+				// Keep queued Mega entry effects when testing the same turn without attack damage.
+				if (pass) for (const queued of turn.remaining) {
+					if (queued.side === 'opponent') queued.action = { id: 'pass', prior: 0 };
+				}
+				// A pending pivot is only decisive if its hit already KOed; do not invent its next entrant.
+				continueTurn(turn, this.matchups.damagePolicy, this.matchups.damageCache);
+				return turn.state.self.team.find(p => identity(p) === target)!.fainted;
+			};
+			// Entry hazards or existing residual damage alone do not give an attack a new purpose.
+			if (attacks.some(attack => knockedOut(attack))) continue;
+			for (const attack of omitted) {
+				if (!added.has(attack) && !knockedOut(attack, true) && knockedOut(attack)) added.add(attack);
+			}
+		}
+		return added.size ? [...replies, ...added] : replies;
+	}
+
+	responses(state: BattleState, replacing = false, ownActions?: SearchAction[]): Response[] {
+		const switches = replacing ? [] : (ownActions || this.choices(state, 'self')).filter(a => a.switchTo);
+		const coverage = JSON.stringify(switches.map(a => identity(a.switchTo!)).sort());
+		const key = `${positionKey(state)}:${replacing}:${coverage}`, cached = this.responseCache.get(key);
 		if (cached) { this.reused.responses++; return cached; }
 		const active = state.opponent.active[0];
 		const profiles = active.fainted ?
@@ -282,7 +318,8 @@ export class Search extends CandidateSelector {
 		const responses = profiles.flatMap((profile, config) => {
 			const bound = clonePosition(state); bindOpponent(bound, active, profile);
 			snapshotPosition(bound);
-			const replies = replacing ? [{ id: 'pass', prior: 0 }] : this.choices(bound, 'opponent');
+			const replies = replacing ? [{ id: 'pass', prior: 0 }] :
+				this.coverSwitches(bound, switches, this.choices(bound, 'opponent'));
 			return replies.map(action => ({ config, profile, state: bound, action }));
 		});
 		this.responseCache.set(key, responses); return responses;
@@ -506,7 +543,8 @@ function* resolveContinuations(
 	for (const branch of group) for (const action of search.choices(branch.state, 'self')) {
 		alternatives.set(action.id, action);
 	}
-	const options = [...alternatives.values()].map((action, rank) => ({
+	const ownActions = [...alternatives.values()];
+	const options = ownActions.map((action, rank) => ({
 		action, rank, upper: Infinity, uppers: group.map(() => Infinity),
 		works: undefined as Continuation[] | undefined, independent: undefined as Set<string> | undefined,
 		done: false, rejected: false,
@@ -527,7 +565,8 @@ function* resolveContinuations(
 			if (!next || pruning && option.upper > next.upper) next = option;
 		}
 		if (!next) return chosen;
-		const works = next.works ||= group.map(b => search.continuation(b.state, next.action, pruning));
+		const works = next.works ||= group.map(b =>
+			search.continuation(b.state, next.action, pruning, ownActions));
 		const independent = pruning ? next.independent ||= independentEntries(search, works) : undefined;
 		if (pruning && best > -Infinity) {
 			// Prepared endpoints can rule out an action without calculating every matchup.
@@ -610,7 +649,7 @@ function runSearch(
 	const playable = candidates.filter(a => a.id !== 'pass');
 	if (pruning && playable.length === 1) return { choice: playable[0].id, values: [], nodes: 0,
 		reason: `${replacing ? 'Replacement search' : 'Two-turn search'} (0 nodes, damage-only): only retained action ${playable[0].id}; no value search needed` };
-	const responses = search.responses(root, replacing);
+	const responses = search.responses(root, replacing, candidates);
 	const roots = playable.map(action => {
 		// An unresolved response retains its configuration mass. In particular, an
 		// unvisited rare profile must not disappear from either bound.

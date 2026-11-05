@@ -730,6 +730,10 @@ export function actionOutcomes(state: BattleState, side: Side, action: SearchAct
 }
 
 export function endTurn(state: BattleState, policy: DamagePolicy = 'mean', cache?: DamageCache): void {
+	// Weather expires before its residual effects and before due future attacks.
+	if (state.field.weatherTurns > 0 && !--state.field.weatherTurns) {
+		state.field.weather = ''; state.field.weatherId = '';
+	}
 	settleFutureAttacks(state, policy, false, cache);
 	state.field = fieldWithActivePokemon(state.field, [...state.self.active, ...state.opponent.active]);
 	const active = [...state.self.active, ...state.opponent.active] as ProjectedPokemon[];
@@ -785,9 +789,6 @@ export function endTurn(state: BattleState, policy: DamagePolicy = 'mean', cache
 			if (party.conditions[id]) party.conditions[id]--;
 		}
 		party.reserve = party.team.filter(p => !p.active && !p.fainted);
-	}
-	if (state.field.weatherTurns > 0 && !--state.field.weatherTurns) {
-		state.field.weather = ''; state.field.weatherId = '';
 	}
 	if (state.field.terrainTurns > 0 && !--state.field.terrainTurns) state.field.terrain = '';
 	if (state.field.trickroomTurns > 0 && !--state.field.trickroomTurns) state.field.trickroom = false;

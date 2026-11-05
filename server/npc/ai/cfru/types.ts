@@ -53,8 +53,6 @@ export interface OpponentMoveKnowledge {
 }
 
 export interface OpponentModel {
-	/** Catalogue investment direction, preserved when public evidence fits the spread. */
-	presetInvestment?: number;
 	/** Open-format prior, retained so observations can adjust EVs without inventing new sets. */
 	spread?: { nature?: string, evs?: Partial<AIPokemon['baseStats']>, ivs?: Partial<AIPokemon['baseStats']> };
 	/** Marginal stat bounds at the estimated HP; these are not independent simultaneous maxima. */

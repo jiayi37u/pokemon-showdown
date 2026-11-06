@@ -98,6 +98,12 @@ function hasDelayedEffects(state: BattleState): boolean {
 		!!Object.keys(state[side].conditions.futureAttacks || {}).length);
 }
 
+function entryConditionsChanged(before: BattleState, after: BattleState): boolean {
+	return (['self', 'opponent'] as const).some(side =>
+		(['stealthrock', 'spikes', 'toxicspikes', 'stickyweb'] as const)
+			.some(key => before[side].conditions[key] !== after[side].conditions[key]));
+}
+
 /** Extend unsettled endpoints using the same public hypotheses and damage cache as search. */
 function needsContinuation(state: BattleState, search: Search): boolean {
 	const actors = [state.self.active[0], state.opponent.active[0]] as ReturnType<typeof clonePokemon>[];
@@ -715,7 +721,11 @@ function runSearch(
 		let pending = [...groups.values()];
 		if (!replacing && !hasDelayedEffects(root)) pending = pending.filter(group => {
 			// Hidden hypotheses sharing an observation must also share the depth decision.
-			if (group.some(branch => needsContinuation(branch.state, search))) return true;
+			// Side-condition investments need an opposing action opportunity, just like boosts.
+			// The own move also catches clearing and replacing the same hazard in one turn.
+			if (candidate.action.move && rulesDex(root.field).moves.get(candidate.action.move).sideCondition ||
+				group.some(branch => entryConditionsChanged(root, branch.state) ||
+					needsContinuation(branch.state, search))) return true;
 			for (const branch of group) {
 				// Exact for the selective-depth objective, not a bound on full two-ply search.
 				candidate.lower.set(branch, branch.value); candidate.upper.set(branch, branch.value);

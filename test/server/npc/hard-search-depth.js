@@ -8,22 +8,23 @@ const { Search, searchPosition } = require('../../../dist/server/npc/ai/hard/sea
 const { observationKey } = require('../../../dist/server/npc/ai/hard/candidates');
 const battles = [];
 const action = move => ({ id: `move ${move}`, move, prior: 100 });
-function fixture(ownMoves = ['splash', 'tackle'], foeMoves = ['splash'], reserves = []) {
+function fixture(ownMoves = ['splash', 'tackle'], foeMoves = ['splash'], reserves = [], foeReserves = []) {
 	const battle = new Battle({ formatid: 'gen6customgame', seed: '1,2,3,4',
 		p1: { name: 'Own', team: [{ species: 'Mew', moves: ownMoves }, ...reserves] },
-		p2: { name: 'Foe', team: [{ species: 'Mew', moves: foeMoves }] } });
+		p2: { name: 'Foe', team: [{ species: 'Mew', moves: foeMoves }, ...foeReserves] } });
 	battles.push(battle); battle.makeChoices();
 	const state = projectedState(battle), evaluator = new HardEvaluation(state, 'gen6customgame');
-	const foe = state.opponent.active[0];
-	evaluator.models = new Map([[foe, [{ name: 'observed', pokemon: foe, weight: 1, matched: true,
-		moves: foe.moves.map(id => ({ id, availability: 1 })) }]]]);
+	evaluator.models = new Map(state.opponent.team.map(foe => [foe,
+		[{ name: 'observed', pokemon: foe, weight: 1, matched: true,
+			moves: foe.moves.map(id => ({ id, availability: 1 })) }]]));
 	return { state, evaluator };
 }
 function run(f, actions = [action('splash')], replacing = false, prune = false, pp = new Map()) {
 	const continuations = [], original = Search.prototype.continuation;
 	Search.prototype.continuation = function (state, ...args) {
 		continuations.push({ observation: observationKey(state), atk: state.opponent.active[0].baseStats.atk,
-			pendingWish: Object.values(state.self.conditions.wishes).some(n => n > 0) });
+			pendingWish: Object.values(state.self.conditions.wishes).some(n => n > 0),
+			foeSpikes: state.opponent.conditions.spikes });
 		return original.call(this, state, ...args);
 	};
 	try {
@@ -46,6 +47,23 @@ describe('Hard selective search depth', () => {
 	it('extends a positive boost even without an immediate knockout', () => {
 		const f = fixture(['swordsdance', 'tackle']);
 		assert(run(f, [action('swordsdance')]).continuations.length > 0);
+	});
+	it('lets the opponent respond after establishing entry hazards', () => {
+		const f = fixture(['stealthrock', 'tackle'], ['splash'], [], [{ species: 'Pidgey', moves: ['splash'] }]);
+		assert(run(f, [action('stealthrock')]).continuations.length > 0);
+	});
+	it('extends an observed hazard removal instead of treating it as settled', () => {
+		const f = fixture(['splash'], ['rapidspin']);
+		f.state.opponent.conditions.stealthrock = true;
+		assert(run(f).continuations.length > 0);
+	});
+	it('extends clearing and replacing a hazard even when the final layer count is unchanged', () => {
+		const f = fixture(['spikes', 'tackle'], ['rapidspin'], [], [{ species: 'Pidgey', moves: ['splash'] }]);
+		f.state.self.active[0].baseStats.spe = 100;
+		f.state.opponent.conditions.spikes = 1;
+		const result = run(f, [action('spikes')]);
+		assert(result.continuations.length > 0);
+		assert(result.continuations.every(c => c.foeSpikes === 1));
 	});
 	it('preserves a root Wish commitment after the first turn consumes it', () => {
 		const f = fixture();

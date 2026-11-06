@@ -268,7 +268,12 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 				Math.max(1, actor.hp)));
 			if (!race && !opportunity) break;
 		}
-		if (canFinish && stable && !wall) race = Math.max(race, 0.9);
+		// Recovery turns also let the foe recover. Even an ideal healing rhythm must
+		// leave enough attacks to exceed its passive recovery before claiming a win.
+		const attackFraction = healing ? clamp(1 - Math.max(0, worst - ownEffects.change) / healing) : 0;
+		if (canFinish && stable && !wall && dealt * attackFraction > foeEffects.change) {
+			race = Math.max(race, 0.9);
+		}
 		const answer = race * breaking * accuracy ** Math.min(3, turns);
 		check = Math.max(check, answer);
 		if (needsAnswer) answerValue = Math.max(answerValue, clamp(answer - firstLoss));

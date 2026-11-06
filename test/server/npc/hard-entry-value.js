@@ -60,6 +60,28 @@ describe('Hard executable matchup answers', () => {
 		assert.equal(result.entryAnswerValue, 1 - 2 * hit(state, target, actor) / actor.maxHp);
 		assert(result.entryAnswerValue < result.answerValue);
 	});
+	for (const example of [
+		{ name: 'cannot break passive recovery with weak attacks between heals', dealt: 80, item: 'Leftovers', check: 0 },
+		{ name: 'can progress against a target without passive recovery', dealt: 80, item: '', check: 0.9 },
+		{ name: 'can break passive recovery with stronger attacks', dealt: 200, item: 'Leftovers', check: 0.9 },
+		{ name: 'can attack twice before healing instead of alternating every turn', dealt: 100, item: 'Leftovers', check: 0.9 },
+		{ name: 'uses its own passive recovery to spend more turns attacking', dealt: 80,
+			item: 'Leftovers', ownItem: 'Leftovers', check: 0.9 },
+		{ name: 'keeps an immediate knockout without needing sustainable recovery', dealt: 120,
+			item: 'Leftovers', targetHP: 100, check: 1 },
+	]) {
+		it(example.name, () => {
+			const { state, actor, target } = fixture(['tackle', 'recover']);
+			Object.assign(actor, { hp: 600, maxHp: 600, hpPercent: 100, item: example.ownItem || '' });
+			Object.assign(target, { hp: example.targetHP || 1000, maxHp: 1000,
+				hpPercent: example.targetHP ? 10 : 100, item: example.item });
+			// Isolate recovery cadence: 300 HP per recovery, 100 HP incoming per turn,
+			// and 62 HP passive healing on the target, independent of damage rolls.
+			const evaluator = new MatchupEvaluator();
+			evaluator.attack = (view, source) => ({ damage: source.ownerSide === 'p1' ? example.dealt : 100, delay: 0 });
+			assert.equal(evaluator.assess(state).matrix[0][0].self.check, example.check);
+		});
+	}
 	for (const faster of [false, true]) {
 		it(`values established poison plus ${faster ? 'faster' : 'slower'} recovery by its net HP cost`, () => {
 			const { state, actor, target } = fixture(['recover']);

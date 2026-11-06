@@ -271,7 +271,8 @@ export class BattleEvidenceTracker {
 		if (['turn', 'upkeep', 'win', 'tie', 'move', 'switch', 'drag'].includes(event)) this.flush();
 		if (['replace', '-transform', 'detailschange', '-formechange'].includes(event)) {
 			// Disguises and changed base stats cannot be attributed to the previous apparent configuration.
-			this.history = this.history.filter(e => !e.opponent.startsWith(ident.slice(0, 2)));
+			const changed = this.positions.get(ident.split(':')[0])?.ident;
+			this.history = this.history.filter(e => e.opponent !== changed);
 		}
 		if (['turn', 'upkeep', 'switch', 'drag', 'replace', 'swap', 'faint', '-transform', 'detailschange', '-formechange',
 			'-boost', '-unboost', '-setboost', '-clearboost', '-clearallboost', '-clearpositiveboost', '-clearnegativeboost',

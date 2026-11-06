@@ -58,3 +58,20 @@ describe('Hard public response probabilities in live T3', () => {
 		assert.deepEqual(distributions[0], distributions[2]);
 	});
 });
+
+describe('Public evidence across the live battle Mega Evolution', () => {
+	it('keeps Tornadus observations when its teammate Metagross changes form', () => {
+		const { BattleEvidenceTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-evidence');
+		const state = position(), tracker = new BattleEvidenceTracker();
+		tracker.begin(state);
+		tracker.observe(['move', 'p1a: Tornadus', 'Taunt', 'p2a: Rotom']);
+		const observations = tracker.getHistory();
+		assert(observations.some(e => e.opponent === 'p1:Tornadus' && e.move === 'taunt'));
+		const metagross = state.opponent.team.find(p => p.species === 'Metagross');
+		metagross.slot = 1;
+		state.opponent.active = [metagross];
+		tracker.begin(state);
+		tracker.observe(['detailschange', 'p1a: Metagross', 'Metagross-Mega']);
+		assert.deepEqual(tracker.getHistory(), observations);
+	});
+});

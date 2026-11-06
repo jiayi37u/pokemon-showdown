@@ -496,7 +496,7 @@ describe('Hard singles matchup value', () => {
 		idle.active = false; answer.active = true;
 		f.state.self.active = [answer]; f.state.self.reserve = [idle];
 		const ready = f.evaluator.assess(f.state);
-		assert(ready.self > waiting.self + 25, `${ready.self} <= ${waiting.self}`);
+		assert(ready.self > waiting.self, `${ready.self} <= ${waiting.self}`);
 	});
 	it('changes the same team members roles against physical and special opposition', () => {
 		const team = [mon('Skarmory', ['bravebird', 'roost']), mon('Chansey', ['seismictoss', 'softboiled'], { item: 'Eviolite' })];

@@ -34,6 +34,9 @@ export interface Matchup {
 	/** Pressure and sustain after conceding the entry action, shared with entry pruning. */
 	entryPressure: number;
 	entrySustain: number;
+	/** Executable answer after paying the first exchange, with or without an entry action. */
+	answerValue: number;
+	entryAnswerValue: number;
 }
 interface Pair { self: Matchup; opponent: Matchup }
 interface Assessment { value: number; self: number; opponent: number; matrix: Pair[][] }
@@ -56,7 +59,7 @@ interface PairState extends BattleState {
 }
 export interface AttackFacts { damage: number; delay: number }
 const zero = (): Matchup => ({ check: 0, counter: 0, pressure: 0, switchPressure: {}, sustain: 0,
-	entryPressure: 0, entrySustain: 0 });
+	entryPressure: 0, entrySustain: 0, answerValue: 0, entryAnswerValue: 0 });
 const emptyPair: Pair = { self: zero(), opponent: zero() };
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const hp = (p: AIPokemon, value: number): AIPokemon => ({ ...p, hp: Math.max(0, value),
@@ -209,7 +212,12 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 	const healing = ownFacts.recovery, targetHealing = foeFacts.recovery;
 	const delay = ownFacts.delay;
 	const stable = healing > worst + residual && actor.hp > worst * 2 && !delay;
-	let check = 0, pressure = 0;
+	// Only a current-threat row or column consumes executable-answer value.
+	const needsAnswer = actor.active || target.active;
+	let check = 0, pressure = 0, answerValue = 0;
+	const lossAfter = (amount: number) => clamp((actor.hp -
+		getEffectiveHpAfterSecondary(hp(actor, actor.hp - amount), state.field.weather, foeAbility,
+			state.field, Infinity, 0, ownEffects)) / actor.maxHp);
 	const switchPressure: Record<string, number> = {};
 	for (const move of attacks) {
 		if (conditionalAttackDiscouraged(state, actor, target, move)) continue;
@@ -232,12 +240,12 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		const wall = targetHealing > progress && target.hp > dealt * 2;
 		const breaking = wall ? clamp(dealt / Math.max(1, 2 * targetHealing)) : 1;
 		const maximumPressure = clamp(progress / target.hp) * accuracy * breaking;
-		// Other moves already provide both capabilities. Keep this move's switch-in
-		// pressure, but no response can improve either of the remaining maxima.
-		if (check >= breaking && pressure >= maximumPressure) continue;
+		// Other moves already provide all three capabilities. Keep this move's switch-in
+		// pressure, but no response can improve any of the remaining maxima.
+		if (check >= breaking && pressure >= maximumPressure && (!needsAnswer || answerValue >= breaking)) continue;
 		const turns = target.volatiles.has('perish0') ? 1 : fixedDamageKnockoutTurns(target.hp, dealt, foeEffects);
 		const canFinish = turns !== Infinity;
-		let race = Number(canFinish), opportunity = 1;
+		let race = Number(canFinish), opportunity = 1, firstLoss = needsAnswer ? lossAfter(0) : 0;
 		const ownPriority = incoming.length ? effectivePriority(actor, move, state.field) : 0;
 		for (const response of incoming) {
 			const responsePriority = response.priority ??= effectivePriority(target, response.move, state.field);
@@ -245,6 +253,12 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 				(speedOrder ??= compareSpeedOrder(actor, target, state.field, state.self.conditions, state.opponent.conditions));
 			const first = (order + 1) / 2;
 			const foeDelay = foeFacts.delays.get(response.move)!;
+			// Moving first prevents retaliation only when this attack actually knocks the foe out.
+			if (needsAnswer) {
+				const retaliation = foeDelay ? 0 : response.amount *
+					(!ownDelay && dealt >= target.hp ? 1 - first : 1);
+				firstLoss = Math.max(firstLoss, lossAfter(retaliation));
+			}
 			if (canFinish) {
 				const before = Math.max(0, turns - first + ownDelay - foeDelay) * response.amount +
 					Math.max(0, turns - 1 + ownDelay) * residual;
@@ -255,22 +269,35 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 			if (!race && !opportunity) break;
 		}
 		if (canFinish && stable && !wall) race = Math.max(race, 0.9);
-		check = Math.max(check, race * breaking * accuracy ** Math.min(3, turns));
+		const answer = race * breaking * accuracy ** Math.min(3, turns);
+		check = Math.max(check, answer);
+		if (needsAnswer) answerValue = Math.max(answerValue, clamp(answer - firstLoss));
 		pressure = Math.max(pressure, maximumPressure * opportunity);
 	}
 	// Recovery plus poison/burn can be a real defensive answer without large direct damage.
-	if (stable && (check < 0.75 || pressure < 0.35)) {
-		if (attrition(target, theirs)) { check = Math.max(check, 0.75); pressure = Math.max(pressure, 0.35); }
+	if (stable && (check < 0.75 || pressure < 0.35 || needsAnswer && answerValue < 0.75)) {
+		if (attrition(target, theirs)) {
+			check = Math.max(check, 0.75); pressure = Math.max(pressure, 0.35);
+			// The existing stable recovery route can keep progressing through residual damage.
+			if (needsAnswer) {
+				const order = compareSpeedOrder(actor, target, state.field, state.self.conditions, state.opponent.conditions);
+				const before = (order + 1) / 2;
+				const recovered = Math.min(actor.maxHp, actor.hp - (1 - before) * worst + healing) - before * worst;
+				answerValue = Math.max(answerValue, clamp(0.75 - lossAfter(actor.hp - recovered)));
+			}
+		}
 		for (const move of ownFacts.moves) {
 			if (!['tox', 'psn', 'brn'].includes(move.status || '') || statusFailure(state, actor, target, move)) continue;
 			if (!attrition({ ...target, status: move.status!, toxicCounter: 0 }, theirs)) continue;
 			check = Math.max(check, 0.75);
 			pressure = Math.max(pressure, 0.35);
+			if (needsAnswer) answerValue = Math.max(answerValue, clamp(0.75 - lossAfter(worst)));
 		}
 	}
 	const sustain = clamp((actor.hp - worst - residual) / actor.maxHp +
 		(healing > worst + residual ? 0.5 : 0));
-	return { check, counter: 0, pressure, switchPressure, sustain, entryPressure: 0, entrySustain: 0 };
+	return { check, counter: 0, pressure, switchPressure, sustain,
+		entryPressure: 0, entrySustain: 0, answerValue, entryAnswerValue: 0 };
 }
 
 function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup {
@@ -288,12 +315,16 @@ function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Mat
 	const entryDamage = Math.max(0, ...options.filter(m => m.category !== 'Status').map(m =>
 		damage(target, actor, m, reverse(state))));
 	const damaged = hp(actor, actor.hp - entryDamage);
-	const entry = outlook(hp(damaged, getEffectiveHpAfterSecondary(damaged, state.field.weather,
-		effectiveAbility(target, state.field), state.field)), restedTarget, state);
+	const enteredActor = hp(damaged, getEffectiveHpAfterSecondary(damaged, state.field.weather,
+		effectiveAbility(target, state.field), state.field));
+	const entry = outlook(enteredActor, restedTarget, state);
+	const entryValue = (answer: Matchup, defender: AIPokemon) =>
+		clamp(answer.answerValue - Math.max(0, actor.hp - defender.hp) / actor.maxHp);
+	let entryAnswerValue = Math.min(result.answerValue, entryValue(entry, enteredActor));
 	counter = Math.min(counter, entry.check);
 	for (const move of options.filter(m => m.category === 'Status')) {
-		// Every remaining response can only lower these three bounded values.
-		if (!counter && !entry.pressure && !entry.sustain) break;
+		// Every remaining response can only lower these bounded values.
+		if (!counter && !entry.pressure && !entry.sustain && !entryAnswerValue) break;
 		let defender = actor, attacker = restedTarget;
 		if (move.boosts && move.target === 'self') {
 			attacker = clonePokemon(restedTarget);
@@ -313,8 +344,9 @@ function directional(actor: AIPokemon, target: AIPokemon, state: PairState): Mat
 		counter = Math.min(counter, response.check);
 		entry.pressure = Math.min(entry.pressure, response.pressure);
 		entry.sustain = Math.min(entry.sustain, response.sustain);
+		entryAnswerValue = Math.min(entryAnswerValue, entryValue(response, defender));
 	}
-	return { ...result, counter, entryPressure: entry.pressure, entrySustain: entry.sustain };
+	return { ...result, counter, entryPressure: entry.pressure, entrySustain: entry.sustain, entryAnswerValue };
 }
 
 /** Diminishing redundancy: the first reliable answer matters much more than a backup. */
@@ -353,7 +385,8 @@ function teamValue(
 		// member can act immediately; a reserve must survive the conceded entry action.
 		// This values an executable answer, rather than a rotation toward another paper check.
 		if (foe.active) {
-			value -= valueWeights.active * (1 - coverage(matchups.map((m, i) => party[i].active ? m.check : m.counter)));
+			const answer = Math.max(0, ...matchups.map((m, i) => party[i].active ? m.answerValue : m.entryAnswerValue));
+			value -= valueWeights.active * (1 - answer);
 		}
 	}
 	return value;
@@ -629,7 +662,8 @@ export class MatchupEvaluator {
 			const weightedPair = this.pairInputs.get(weighted);
 			if (weightedPair) return weightedPair;
 			const sum: Pair = { self: zero(), opponent: zero() };
-			const metrics = ['check', 'counter', 'pressure', 'sustain', 'entryPressure', 'entrySustain'] as const;
+			const metrics = ['check', 'counter', 'pressure', 'sustain',
+				'entryPressure', 'entrySustain', 'answerValue', 'entryAnswerValue'] as const;
 			let mass = 0;
 			for (const ownModel of ownPool) for (const model of foePool) {
 				const weight = ownModel.weight * model.weight, result = pair(ownModel, model);

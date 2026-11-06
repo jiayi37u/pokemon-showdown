@@ -277,24 +277,6 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	}];
 }
 
-/** Build a trainer's model of our member exclusively from public observations and presets. */
-export function publicTargetModels(pokemon: AIPokemon, formatId: string): OpponentHypothesis[] {
-	const facts = pokemon.publicKnowledge;
-	if (!facts) return pokemon.presetModels || [{ name: 'public', weight: 1, matched: true, pokemon,
-		moves: [...new Set([...pokemon.moves, ...(pokemon.moveKnowledge?.presetCandidates || [])])]
-			.map(id => ({ id, availability: 1 })) }];
-	const publicPokemon = { ...pokemon, moves: facts.moves, item: facts.item || '',
-		itemKnown: facts.item !== undefined, itemLost: facts.item === '', originalItem: facts.originalItem,
-		itemChanged: facts.itemChanged, itemAssumed: false, ability: facts.ability || '',
-		observedAbility: facts.originalAbility || (facts.abilityChanged ? '' : facts.ability || ''),
-		abilityChanged: facts.abilityChanged,
-		statSpread: undefined, moveKnowledge: undefined, presetModels: undefined, publicKnowledge: undefined,
-		queuedSpeed: undefined, queuedPriorityAbility: undefined, hpPercent: Math.ceil(pokemon.hpPercent),
-		projection: undefined,
-	};
-	return searchOpponentModels(inferOpponent(publicPokemon, formatId), formatId);
-}
-
 export interface PredictedAction {
 	move: AIMove | null;
 	/** The selected action can call a different move (for example, Sleep Talk). */

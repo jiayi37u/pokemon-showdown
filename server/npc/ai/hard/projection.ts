@@ -17,7 +17,7 @@ import {
 	boostsCanChange, boostChanges, statusFailure, protectionMoves, volatileEffectFailure, moveSelectionFailure,
 	pendingWishRecovery, controlDuration,
 } from '../cfru/util/move-effects';
-import { getMoveInteraction, getEffectiveAbilityTypeImmunity } from '../cfru/util/type-calc';
+import { getMoveInteraction } from '../cfru/util/type-calc';
 import { itemMoveFailure, itemRemovalFailure } from '../cfru/util/items';
 
 export interface SearchAction {
@@ -54,27 +54,9 @@ export function hp(p: AIPokemon, amount: number): void {
 	p.fainted = p.hp <= 0;
 }
 
-function revealItem(pokemon: AIPokemon, lost = false): void {
-	const facts = pokemon.publicKnowledge;
-	if (!facts) return;
-	if (!facts.originalItem && !facts.itemChanged) facts.originalItem = pokemon.item;
-	facts.item = lost ? '' : pokemon.item;
-}
-
-function revealAbility(pokemon: AIPokemon): void {
-	if (pokemon.publicKnowledge) {
-		const facts = pokemon.publicKnowledge;
-		if (!pokemon.abilityChanged) facts.originalAbility = pokemon.ability;
-		else if (!facts.abilityChanged) facts.originalAbility ||= facts.ability;
-		pokemon.publicKnowledge.ability = pokemon.ability;
-		pokemon.publicKnowledge.abilityChanged = pokemon.abilityChanged;
-	}
-}
-
 function triggerHealthItem(pokemon: AIPokemon, state: BattleState): void {
 	if (!pokemon.fainted && effectiveItem(pokemon, state.field) === 'sitrusberry' && pokemon.hp <= pokemon.maxHp / 2) {
-		hp(pokemon, pokemon.hp + Math.floor(pokemon.maxHp / 4)); revealItem(pokemon, true);
-		pokemon.item = ''; pokemon.itemLost = true;
+		hp(pokemon, pokemon.hp + Math.floor(pokemon.maxHp / 4)); pokemon.item = ''; pokemon.itemLost = true;
 	}
 }
 
@@ -85,7 +67,6 @@ export function clonePokemon(p: ProjectedPokemon): ProjectedPokemon {
 	const projection = p.projection;
 	return { ...p, boosts: { ...p.boosts }, volatiles: new Set(p.volatiles),
 		volatileTurns: p.volatileTurns && { ...p.volatileTurns },
-		publicKnowledge: p.publicKnowledge && { ...p.publicKnowledge, moves: [...p.publicKnowledge.moves] },
 		projection: projection && { ...projection,
 			pp: projection.pp && { ...projection.pp }, nativePP: projection.nativePP && { ...projection.nativePP },
 			roostTypes: projection.roostTypes && [...projection.roostTypes],
@@ -231,7 +212,6 @@ function entryAbility(state: BattleState, side: Side): void {
 	if (!actor || actor.fainted) return;
 	const copied = tracedAbility(actor, state[other(side)].active, state.field);
 	if (copied) {
-		revealAbility(actor);
 		actor.observedAbility ||= actor.ability;
 		actor.ability = copied; actor.abilityChanged = true;
 	}
@@ -241,7 +221,6 @@ function entryAbility(state: BattleState, side: Side): void {
 		drought: 'sunnyday', drizzle: 'raindance', sandstream: 'sandstorm', snowwarning: 'hail',
 	};
 	if (weather[ability]) { state.field.weatherId = weather[ability]; state.field.weatherTurns = 5; }
-	if (copied || ability === 'intimidate' || weather[ability]) revealAbility(actor);
 	state.field = fieldWithActivePokemon(state.field, [...state.self.active, ...state.opponent.active]);
 }
 
@@ -276,10 +255,6 @@ export function switchIn(state: BattleState, side: Side, selected: AIPokemon): v
 		}
 		if (outgoing.abilityChanged && outgoing.observedAbility) {
 			outgoing.ability = outgoing.observedAbility; outgoing.abilityChanged = false;
-		}
-		if (outgoing.publicKnowledge?.abilityChanged) {
-			outgoing.publicKnowledge.ability = outgoing.publicKnowledge.originalAbility;
-			outgoing.publicKnowledge.abilityChanged = false;
 		}
 		projected.projection = { pp: projected.projection?.pp };
 		// Preserve identities while moving the recipient into the vacated field position.
@@ -357,7 +332,6 @@ export function status(
 	if (effectiveItem(target, state.field) === 'lumberry' ||
 		condition === 'slp' && effectiveItem(target, state.field) === 'chestoberry') {
 		target.status = ''; target.sleepTurns = 0;
-		revealItem(target, true);
 		target.item = ''; target.itemLost = true;
 	}
 }
@@ -445,9 +419,6 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 	const previous = actor.lastMove;
 	const actionActor = { ...actor, lastMove: previous, activeMoveActions: actor.activeMoveActions || 0 };
 	actor.lastMove = selected.id; actor.activeMoveActions = (actor.activeMoveActions || 0) + 1;
-	if (actor.publicKnowledge && selected.id !== 'struggle') {
-		actor.publicKnowledge.moves = [...new Set([...actor.publicKnowledge.moves, selected.id])];
-	}
 	if (!actor.projection.chargingMove && actor.projection.pp?.[selected.id] !== undefined) {
 		actor.projection.pp[selected.id]--;
 	}
@@ -475,7 +446,6 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 	if (['solarbeam', 'bounce'].includes(id) && !actor.projection.chargingMove &&
 		!(id === 'solarbeam' && state.field.weather === 'sun')) {
 		if (effectiveItem(actor, state.field) === 'powerherb') {
-			revealItem(actor, true);
 			actor.item = ''; actor.itemLost = true;
 		} else {
 			actor.projection.chargingMove = id;
@@ -518,7 +488,6 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		if (ability === 'motordrive') boosts(target, { spe: 1 }, state);
 		if (ability === 'sapsipper') boosts(target, { atk: 1 }, state);
 		if (ability === 'flashfire') target.volatiles.add('flashfire');
-		if (getEffectiveAbilityTypeImmunity(actionActor, target, move, state.field).immune) revealAbility(target);
 		return;
 	}
 	let dealt = 0;
@@ -545,17 +514,13 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 			if (target.hp === target.maxHp && (effectiveItem(target, state.field) === 'focussash' ||
 				defensiveAbility(actor, target, move, state.field) === 'sturdy') && !move.multihit) {
 				if (dealt >= target.hp && effectiveItem(target, state.field) === 'focussash') {
-					revealItem(target, true);
 					target.item = ''; target.itemLost = true;
 				}
 				dealt = Math.min(dealt, target.hp - 1);
 			}
 			dealt = Math.min(dealt, target.hp); hp(target, target.hp - dealt);
 			target.projection ||= {}; target.projection.damageTaken = dealt; target.projection.damageCategory = data.category;
-			if (target.item === 'airballoon') {
-				revealItem(target, true);
-				target.item = ''; target.itemLost = true;
-			}
+			if (target.item === 'airballoon') { target.item = ''; target.itemLost = true; }
 			triggerHealthItem(target, state);
 		}
 		if (data.drain) hp(actor, actor.hp + Math.floor(dealt * data.drain[0] / data.drain[1]));
@@ -611,18 +576,14 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		actor.species = target.species; actor.originalTypes ||= actor.types; actor.types = [...target.types];
 		actor.baseStats = { ...target.baseStats, hp: actor.maxHp }; actor.boosts = { ...target.boosts };
 		actor.ability = target.ability; actor.abilityChanged = true;
-		revealAbility(actor);
 		actor.moves = knownMoves(target); actor.moveKnowledge = target.moveKnowledge;
 		actor.projection ||= {};
 		actor.volatiles.add('transform'); actor.projection.pp = Object.fromEntries(actor.moves.map(m => [m, 5]));
 	}
 	if (id === 'skillswap' && ![actor, target].some(p =>
 		rulesDex(state.field).abilities.get(p.ability).flags?.failskillswap)) {
-		revealAbility(actor); revealAbility(target);
 		[actor.ability, target.ability] = [target.ability, actor.ability];
-		actor.abilityChanged = target.abilityChanged = true;
-		revealAbility(actor); revealAbility(target);
-		entryAbility(state, side); entryAbility(state, other(side));
+		actor.abilityChanged = target.abilityChanged = true; entryAbility(state, side); entryAbility(state, other(side));
 	}
 	if (id === 'magnetrise' && !state.field.gravity) actor.volatiles.add('magnetrise');
 	if (id === 'fairylock') state.field.fairylockTurns = 2;
@@ -702,16 +663,12 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		for (const key of Object.keys(p.boosts) as (keyof AIPokemon['boosts'])[]) p.boosts[key] = 0;
 	}
 	if (id === 'knockoff' && !itemRemovalFailure(actor, target, move, state.field)) {
-		revealItem(target, true);
 		target.item = ''; target.itemLost = true;
 	}
 	if (['trick', 'switcheroo'].includes(id) && !itemMoveFailure(actor, target, move, state.field)) {
 		const item = actor.item;
 		actor.itemExchange = { given: toID(item), received: toID(target.item) };
 		actor.item = target.item; target.item = item;
-		for (const p of [actor, target]) if (p.publicKnowledge) {
-			p.publicKnowledge.item = p.item; p.publicKnowledge.itemChanged = true;
-		}
 		actor.itemChanged = target.itemChanged = true; actor.itemLost = !actor.item; target.itemLost = !target.item;
 	}
 	if (['healbell', 'aromatherapy'].includes(id)) for (const p of party.team) { p.status = ''; p.sleepTurns = 0; }
@@ -757,10 +714,7 @@ export function settleFutureAttacks(
 					if (target.hp === target.maxHp && dealt >= target.hp &&
 						(effectiveItem(target, state.field) === 'focussash' || effectiveAbility(target, state.field) === 'sturdy')) {
 						dealt = target.hp - 1;
-						if (effectiveItem(target, state.field) === 'focussash') {
-							revealItem(target, true);
-							target.item = ''; target.itemLost = true;
-						}
+						if (effectiveItem(target, state.field) === 'focussash') { target.item = ''; target.itemLost = true; }
 					}
 					hp(target, target.hp - dealt);
 				}
@@ -811,17 +765,8 @@ export function endTurn(state: BattleState, policy: DamagePolicy = 'mean', cache
 		const seeded = p.volatiles.has('leechseed') && effectiveAbility(p, state.field) !== 'magicguard';
 		const drained = seeded ? Math.min(p.hp, Math.floor(p.maxHp / 8)) : 0;
 		const party = state.self.active.includes(p) ? state.self : state.opponent;
-		const residualHP = (pokemon: AIPokemon) => getEffectiveHpAfterSecondary(pokemon, state.field.weather,
-			foe?.ability || '', state.field, Infinity, pendingWishRecovery(state, party, p));
-		const remainingHP = residualHP(p);
-		if (p.publicKnowledge) {
-			const item = effectiveItem(p, state.field), ability = effectiveAbility(p, state.field);
-			if (['leftovers', 'blacksludge', 'stickybarb'].includes(item) &&
-				remainingHP !== residualHP({ ...p, item: '' })) revealItem(p);
-			if (['raindish', 'dryskin', 'icebody', 'solarpower', 'poisonheal'].includes(ability) &&
-				remainingHP !== residualHP({ ...p, ability: '' })) revealAbility(p);
-		}
-		hp(p, remainingHP);
+		hp(p, getEffectiveHpAfterSecondary(p, state.field.weather, foe?.ability || '', state.field, Infinity,
+			pendingWishRecovery(state, party, p)));
 		if (drained && foe?.hp) hp(foe, foe.hp + drained);
 		if (p.status === 'tox') p.toxicCounter++;
 		p.queuedSpeed = undefined; p.queuedPriorityAbility = undefined;

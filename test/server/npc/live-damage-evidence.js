@@ -46,3 +46,27 @@ describe('Live battle damage evidence after public state changes', () => {
 		assert.deepEqual(replay(frame, events), []);
 	});
 });
+
+describe('Public evidence across the live battle Mega Evolution', () => {
+	it('keeps Tornadus observations when its teammate Metagross changes form', () => {
+		const frame = require('./fixtures/gen6-live-t3-public.json');
+		const { BattleEvidenceTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-evidence');
+		const source = createBattleTracker('p2');
+		source.setFormat(frame.format);
+		source.parseMessage(frame.protocol.join('\n'));
+		const state = buildBattleStateFromRequests([{ side: 'p2', request: frame.request }], source,
+			{ ...DEFAULT_AI_CONFIG, formatId: frame.format }, frame.turn);
+		state.opponent.team.push(...state.opponent.preview);
+		const tracker = new BattleEvidenceTracker();
+		tracker.begin(state);
+		tracker.observe(['move', 'p1a: Tornadus', 'Taunt', 'p2a: Rotom']);
+		const observations = tracker.getHistory();
+		assert(observations.some(e => e.opponent === 'p1:Tornadus' && e.move === 'taunt'));
+		const metagross = state.opponent.team.find(p => p.species === 'Metagross');
+		metagross.slot = 1;
+		state.opponent.active = [metagross];
+		tracker.begin(state);
+		tracker.observe(['detailschange', 'p1a: Metagross', 'Metagross-Mega']);
+		assert.deepEqual(tracker.getHistory(), observations);
+	});
+});

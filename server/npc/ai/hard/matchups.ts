@@ -8,9 +8,9 @@ import {
 	getEffectiveHpAfterSecondary, prepareResidualEffects, fixedDamageKnockoutTurns, type ResidualEffects,
 } from '../cfru/util/damage-calc';
 import { calculateDamage, selectDamage, DamageCache, type DamagePolicy } from './damage';
-import { modelsFor, clonePosition, settleFutureAttacks, bindOpponent,
+import { modelsFor, knownMoves, isTrapped, clonePosition, settleFutureAttacks, bindOpponent,
 	positionKey, usableMove, hasMovePP, clonePokemon, projectEntry, boosts, status, isSnapshotPokemon,
-	applyRecovery, type Side } from './projection';
+	applyRecovery, type Side, type ProjectedPokemon } from './projection';
 import { compareSpeedOrder, type ActionOrder } from '../cfru/util/speed';
 import { getMoveInteraction } from '../cfru/util/type-calc';
 import { directRecoveryAmount } from '../cfru/util/turn-outcome';
@@ -363,9 +363,9 @@ function coverage(values: number[]): number {
 export const valueWeights = { member: 25, hp: 35, pressure: 15, check: 45, counter: 30, sustain: 10, active: 35 };
 
 function teamValue(
-	party: AIPokemon[], availableParty: AIPokemon[], availableFoes: AIPokemon[], rows: Matchup[][]
+	party: AIPokemon[], availableParty: AIPokemon[], availableFoes: AIPokemon[], rows: Matchup[][], reachableFoes: number[]
 ): number {
-	let value = 0;
+	let value = 0, immediateRisk = 0;
 	for (const [i, p] of party.entries()) {
 		const available = availableParty[i];
 		if (!available.hp || p.fainted) continue;
@@ -391,10 +391,13 @@ function teamValue(
 		// This values an executable answer, rather than a rotation toward another paper check.
 		if (foe.active) {
 			const answer = Math.max(0, ...matchups.map((m, i) => party[i].active ? m.answerValue : m.entryAnswerValue));
-			value -= valueWeights.active * (1 - answer);
+			immediateRisk = Math.max(immediateRisk, 1 - answer);
+		} else {
+			const answer = coverage(matchups.map((m, i) => party[i].active ? m.check : m.counter));
+			immediateRisk = Math.max(immediateRisk, reachableFoes[j] * (1 - answer));
 		}
 	}
-	return value;
+	return value - valueWeights.active * immediateRisk;
 }
 
 export class MatchupEvaluator {
@@ -403,6 +406,7 @@ export class MatchupEvaluator {
 	private pairInputs = new Map<string, Pair>();
 	private positions = new Map<string, Assessment>();
 	private profilePools = new Map<string, Profile[]>();
+	private pivotEscapes = new Map<string, boolean>();
 	private profileModels = new WeakMap<OpponentModel, number>();
 	private profileModelCount = 0;
 	private advantages = new Map<string, boolean>();
@@ -546,6 +550,8 @@ export class MatchupEvaluator {
 			.map(p => [p.ownerSide, !!p.sleepSelfInflicted]);
 		const ownActive = own.findIndex(p => p.active && p.hp > 0 && !p.fainted);
 		const foeActive = foes.findIndex(p => p.active && p.hp > 0 && !p.fainted);
+		const charging = [own[ownActive], foes[foeActive]].map(p =>
+			(p as ProjectedPokemon | undefined)?.projection?.chargingMove);
 		// Partial queries need their coordinates and the active pair's stranded-boost verdict.
 		const ownNeeded = coordinates && new Set([ownActive, ...coordinates.map(([i]) => i)]);
 		const foeNeeded = coordinates && new Set([foeActive, ...coordinates.map(([, j]) => j)]);
@@ -578,7 +584,7 @@ export class MatchupEvaluator {
 		if (!coordinates) {
 			const context = JSON.stringify([state.field, state.self.conditions, state.opponent.conditions,
 				// Sleep-clause eligibility is the one team-wide status dependency of pair evaluation.
-				sleepers(own), sleepers(foes)]);
+				sleepers(own), sleepers(foes), charging]);
 			const prefix = this.token(context + JSON.stringify(this.damagePolicy));
 			// Cache evaluation inputs, not search history. Exhausted moves alter profiles;
 			// positive PP counts, pending choices and reveal bookkeeping do not alter this value.
@@ -696,8 +702,71 @@ export class MatchupEvaluator {
 		const opponentRows = foes.map((foe, j) => own.map((actor, i) => matrix[i][j].opponent));
 		const availableOwn = own.map(p => entered(p, state.self.conditions, state.field));
 		const availableFoes = foes.map(p => entered(p, state.opponent.conditions, state.field));
-		const self = teamValue(own, availableOwn, availableFoes, selfRows);
-		const opponent = teamValue(foes, availableFoes, availableOwn, opponentRows);
+		// Only prospective voluntary entries need this test; a real current foe remains a threat.
+		const receiverWeights = (side: Side): number[] => {
+			const ownSide = side === 'self', view = ownSide ? state : reverse(state);
+			const actorIndex = ownSide ? ownActive : foeActive, currentIndex = ownSide ? foeActive : ownActive;
+			const activeModels = ownSide ? ownPotential : foePotential;
+			const receiverPools = ownSide ? profiles : actors;
+			const receivers = ownSide ? availableFoes : availableOwn;
+			if (actorIndex < 0 || currentIndex < 0) return receivers.map(() => 0);
+			const hasReserve = view.self.team.some(p => !p.active && !p.fainted && p.hp > 0);
+			const switching = new Map<Profile, number>();
+			for (const actorModel of activeModels) {
+				let mass = 0, legal = 0;
+				for (const currentModel of receiverPools[currentIndex]) {
+					const actor = actorModel.pokemon, current = currentModel.pokemon;
+					const currentState = { ...view, field: fieldWithActivePokemon(state.field, [actor, current]),
+						self: { ...view.self, active: [actor] }, opponent: { ...view.opponent, active: [current] } };
+					mass += currentModel.weight;
+					if (!current.volatiles.has('trapped') && !isTrapped(currentState, 'opponent')) legal += currentModel.weight;
+				}
+				switching.set(actorModel, mass ? legal / mass : 0);
+			}
+			return receivers.map((receiver, j) => {
+				if (j === currentIndex || !receiver.hp || receiver.fainted) return 0;
+				let mass = 0, reachable = 0;
+				for (const actorModel of activeModels) for (const receiverModel of receiverPools[j]) {
+					const weight = actorModel.weight * receiverModel.weight;
+					mass += weight;
+					const legal = switching.get(actorModel)!;
+					if (!legal) continue;
+					const counter = (ownSide ? pair(actorModel, receiverModel).opponent :
+						pair(receiverModel, actorModel).self).counter;
+					if (!counter) continue;
+					let escape = false;
+					if (hasReserve) {
+						const pivotKey = `${inputs}:${side}:${actorModel.key}:${receiverModel.key}:${charging[ownSide ? 0 : 1] || ''}`;
+						const cached = this.pivotEscapes.get(pivotKey);
+						if (cached !== undefined) escape = cached;
+						else {
+							let actor = actorModel.pokemon;
+							let field = fieldWithActivePokemon(state.field, [actor, receiverModel.pokemon]);
+							let target = entered(receiverModel.pokemon, view.opponent.conditions, field);
+							const ownCopy = tracedAbility(actor, [target], field), foeCopy = tracedAbility(target, [actor], field);
+							if (ownCopy) actor = { ...actor, ability: ownCopy };
+							if (foeCopy) target = { ...target, ability: foeCopy };
+							if (ownCopy || foeCopy) field = fieldWithActivePokemon(field, [actor, target]);
+							const next = { ...view, field, self: { ...view.self, active: [actor] },
+								opponent: { ...view.opponent, active: [target] } };
+							escape = knownMoves(actor).some(id => {
+								const move = hardMove(id, 1, state.field.formatId || '');
+								if (!rulesDex(field).moves.get(id).selfSwitch || !usableMove(next, 'self', id) ||
+									mustSkipMove(actor, actor.moves, field) || actionDelay(actor, field, move)) return false;
+								const interaction = getMoveInteraction(actor, target, move, field);
+								return !interaction.failed && (move.category === 'Status' ?
+									!interaction.blockedBy : interaction.effectiveness > 0);
+							});
+							this.pivotEscapes.set(pivotKey, escape);
+						}
+					}
+					if (!escape) reachable += weight * legal * counter;
+				}
+				return mass ? reachable / mass : 0;
+			});
+		};
+		const self = teamValue(own, availableOwn, availableFoes, selfRows, receiverWeights('self'));
+		const opponent = teamValue(foes, availableFoes, availableOwn, opponentRows, receiverWeights('opponent'));
 		const assessment = { value: self - opponent, self, opponent, matrix };
 		this.positions.set(position, assessment); return assessment;
 	}

@@ -1,8 +1,9 @@
-/** Two-ply action search over AI knowledge snapshots; no simulator or complete-team samples. */
+/** Selective search up to two plies over AI knowledge snapshots; no simulator or complete-team samples. */
 import type { BattleState, OpponentModel } from '../cfru/types';
 import type { HardEvaluation } from './evaluation';
-import { searchOpponentModels } from './opponent-model';
-import { MatchupEvaluator } from './matchups';
+import { hardMove, searchOpponentModels } from './opponent-model';
+import { actionDelay, MatchupEvaluator } from './matchups';
+import { getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { rulesDex } from '../cfru/util/mechanics';
 import { CandidateSelector, observationKey, perspective } from './candidates';
 import {
@@ -87,6 +88,36 @@ export function positionValue(state: BattleState, matchups = new MatchupEvaluato
 class UnsupportedTransition extends Error {
 	readonly nodes: number;
 	constructor(move: string, nodes: number) { super(`transition unavailable: ${move}`); this.nodes = nodes; }
+}
+
+/** Preserve commitments that can disappear at the first-turn boundary. */
+function hasDelayedEffects(state: BattleState): boolean {
+	return (['self', 'opponent'] as const).some(side =>
+		Object.values(state[side].conditions.wishes).some(n => n > 0) ||
+		Object.values(state[side].conditions.futureMoves).some(n => n > 0) ||
+		!!Object.keys(state[side].conditions.futureAttacks || {}).length);
+}
+
+/** Extend unsettled endpoints using the same public hypotheses and damage cache as search. */
+function needsContinuation(state: BattleState, search: Search): boolean {
+	const actors = [state.self.active[0], state.opponent.active[0]] as ReturnType<typeof clonePokemon>[];
+	if (actors.some(p => !p || p.fainted || p.hp <= 0 || Object.values(p.boosts).some(n => n > 0) ||
+		p.volatiles.size || p.projection?.chargingMove) || hasDelayedEffects(state)) return true;
+	if ([state.field.weatherTurns, state.field.terrainTurns, state.field.trickroomTurns, state.field.fairylockTurns]
+		.some(n => n === 1) || (['self', 'opponent'] as const).some(side =>
+		(['reflect', 'lightscreen', 'auroraveil', 'tailwind', 'safeguard', 'mist'] as const)
+			.some(key => state[side].conditions[key] === 1))) return true;
+	for (const side of ['self', 'opponent'] as const) {
+		const view = perspective(state, side), actor = view.self.active[0], target = view.opponent.active[0];
+		if (getEffectiveHpAfterSecondary(actor, state.field.weather, target.ability, state.field) <= 0) return true;
+		for (const id of knownMoves(actor)) {
+			if (!usableMove(state, side, id)) continue;
+			const move = hardMove(id, 1, state.field.formatId || '');
+			if (move.category === 'Status' || actionDelay(actor, state.field, move)) continue;
+			if (search.matchups.attack(view, actor, target, move).damage >= target.hp) return true;
+		}
+	}
+	return false;
 }
 
 export class Search extends CandidateSelector {
@@ -674,6 +705,15 @@ function runSearch(
 			groups.get(key)!.push(branch);
 		}
 		let pending = [...groups.values()];
+		if (!replacing && !hasDelayedEffects(root)) pending = pending.filter(group => {
+			// Hidden hypotheses sharing an observation must also share the depth decision.
+			if (group.some(branch => needsContinuation(branch.state, search))) return true;
+			for (const branch of group) {
+				// Exact for the selective-depth objective, not a bound on full two-ply search.
+				candidate.lower.set(branch, branch.value); candidate.upper.set(branch, branch.value);
+			}
+			return false;
+		});
 		if (pruning) {
 			pending.sort((a, b) => aggregate(a) - aggregate(b));
 			// An unvisited positive-weight configuration keeps the upper bound infinite.

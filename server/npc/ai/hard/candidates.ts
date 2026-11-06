@@ -4,10 +4,10 @@ import { hardMove } from './opponent-model';
 import { HardEvaluation } from './evaluation';
 import { actionDelay, valueWeights, type MatchupEvaluator } from './matchups';
 import { megaEvolutionState } from '../cfru/util/forms';
-import { effectiveAbility, effectiveItem, grounded, rulesDex } from '../cfru/util/mechanics';
+import { rulesDex } from '../cfru/util/mechanics';
 import { selectMoveCandidates } from '../cfru/scoring';
 import { bindOpponent, clonePosition, identity, knownMoves, modelsFor, moveAction, positionKey, switchIn,
-	usableMove, projectEntry, snapshotPosition,
+	usableMove, projectEntry, snapshotPosition, isTrapped,
 	type SearchAction, type Side } from './projection';
 
 export function perspective(state: BattleState, side: Side): BattleState {
@@ -77,7 +77,7 @@ export class CandidateSelector {
 			return [actor, ...new Set([...this.entryChoices(state, side, 'exposed'),
 				...this.entryChoices(state, side, 'free')])];
 		}
-		if (actor.volatiles.has('trapped') || this.trapped(state, side)) return [actor];
+		if (actor.volatiles.has('trapped') || isTrapped(state, side)) return [actor];
 		const switches = this.switchChoices(state, side, reserves.map(p =>
 			({ id: `switch ${p.slot}`, switchTo: p, prior: 0 })));
 		return [actor, ...switches.map(a => a.switchTo!)];
@@ -253,7 +253,7 @@ export class CandidateSelector {
 		const known = knownMoves(actor).filter(id => usableMove(state, side, id));
 		let actions: SearchAction[] = supplied || [
 			...known.map(move => moveAction(state, side, move)),
-			...(!actor.volatiles.has('trapped') && !this.trapped(state, side) ? view.self.reserve.filter(p => !p.fainted)
+			...(!actor.volatiles.has('trapped') && !isTrapped(state, side) ? view.self.reserve.filter(p => !p.fainted)
 				.map(p => ({ id: `switch ${p.slot}`, switchTo: p, prior: 0 })) : []),
 		];
 		actions = actions.filter(action => {
@@ -270,17 +270,6 @@ export class CandidateSelector {
 		const result = selected.length ? selected : [{ id: 'pass', prior: 0 }];
 		if (!supplied) this.choicesCache.set(key, result);
 		return result;
-	}
-
-	trapped(state: BattleState, side: Side): boolean {
-		const actor = state[side].active[0], foe = state[side === 'self' ? 'opponent' : 'self'].active[0];
-		if (!foe || actor.types.includes('Ghost') && rulesDex(state.field).gen >= 6 ||
-			effectiveItem(actor, state.field) === 'shedshell') return false;
-		if (state.field.fairylockTurns) return true;
-		if (actor.volatiles.has('partiallytrapped')) return true;
-		const ability = effectiveAbility(foe, state.field);
-		return ability === 'magnetpull' && actor.types.includes('Steel') || ability === 'shadowtag' &&
-			effectiveAbility(actor, state.field) !== 'shadowtag' || ability === 'arenatrap' && grounded(actor, state.field);
 	}
 }
 

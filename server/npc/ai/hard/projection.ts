@@ -30,7 +30,7 @@ export interface SearchAction {
 	prior: number;
 }
 export type Side = 'self' | 'opponent';
-interface ProjectedPokemon extends AIPokemon {
+export interface ProjectedPokemon extends AIPokemon {
 	projection?: { pp?: Record<string, number>, substituteHp?: number, protect?: boolean, flinch?: boolean,
 		startHp?: number, roostTypes?: string[],
 		chargingMove?: string, damageTaken?: number, damageCategory?: string,
@@ -168,6 +168,17 @@ export function knownMoves(p: AIPokemon): string[] {
 /** Canonical move IDs use current known PP; an absent entry remains unknown. */
 export function hasMovePP(p: AIPokemon, id: string): boolean {
 	return (p as ProjectedPokemon).projection?.pp?.[id] !== 0;
+}
+
+export function isTrapped(state: BattleState, side: Side): boolean {
+	const actor = state[side].active[0], foe = state[side === 'self' ? 'opponent' : 'self'].active[0];
+	if (!foe || actor.types.includes('Ghost') && rulesDex(state.field).gen >= 6 ||
+		effectiveItem(actor, state.field) === 'shedshell') return false;
+	if (state.field.fairylockTurns) return true;
+	if (actor.volatiles.has('partiallytrapped')) return true;
+	const ability = effectiveAbility(foe, state.field);
+	return ability === 'magnetpull' && actor.types.includes('Steel') || ability === 'shadowtag' &&
+		effectiveAbility(actor, state.field) !== 'shadowtag' || ability === 'arenatrap' && grounded(actor, state.field);
 }
 
 export function usableMove(state: BattleState, side: Side, id: string): boolean {

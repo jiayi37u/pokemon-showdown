@@ -1276,6 +1276,8 @@ describe('Hard damage-based state search', () => {
 	});
 	it('weights indistinguishable configurations when choosing the second-turn continuation', () => {
 		const f = fixture([mon('Mew', ['protect', 'energyball', 'tackle'])], [mon('Mew', ['splash'])]);
+		// Preserve an offensive setup window that requires a continuation under selective depth.
+		f.state.self.active[0].boosts.spa = 1;
 		const p = f.state.opponent.active[0]; p.itemKnown = false; p.observedAbility = '';
 		const value = weight => {
 			const models = [['waterabsorb', weight], ['sapsipper', 1 - weight]].map(([ability, mass]) => ({

@@ -1,5 +1,7 @@
 # NPC AI 实战模拟 Runner
 
+用户指定局面和标准答案的独立评测见 [Hard AI 人工标注评测集](../decision-eval/README.md)。只由用户选题和标注，行动不匹配即判错。
+
 直接在进程内跑一局 PS 对战，一方由"策略玩家"（max-damage / random / mirror-npc / scripted / interactive）控制，另一方由本仓库的 NPC AI 控制。目标是让 AI 的真实运行时轨迹可观察、可复现，不用启服务器 + 浏览器 + 复制聊天日志。
 
 默认使用正式 `TeamValidator` 校验队伍，并保留 Mega 等战斗形态的规范化结果。`--allow-illegal-teams` 仅用于明确需要非法配置的机制测试。

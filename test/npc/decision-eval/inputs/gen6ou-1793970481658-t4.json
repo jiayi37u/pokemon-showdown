@@ -1,0 +1,982 @@
+{
+  "format": "gen6ou",
+  "side": "p2",
+  "turn": 4,
+  "seed": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "lastSwitchTurn": [
+    [
+      1,
+      3
+    ]
+  ],
+  "reconstruction": {
+    "sourceBattle": "gen6ou-1793970481658",
+    "source": "Own p2 configuration and public protocol only; no original request capture.",
+    "requests": "Reconstructed with replay-audit OwnRequest using the Gen 6 simulator for initial own stats and PP. Earlier turn requests retain evidence context. Public preview supplies own genders. The engine applies the recorded own team-preview choice to restore party order.",
+    "teamPreviewChoice": "team 2",
+    "seed": "Fixed evaluation seed; live AI seed unavailable.",
+    "hp": [
+      {
+        "ident": "p2: Landorus",
+        "selected": 381,
+        "possibleRange": [
+          381,
+          381
+        ]
+      },
+      {
+        "ident": "p2: Medicham",
+        "selected": 261,
+        "possibleRange": [
+          261,
+          261
+        ]
+      },
+      {
+        "ident": "p2: Rotom",
+        "selected": 304,
+        "possibleRange": [
+          304,
+          304
+        ]
+      },
+      {
+        "ident": "p2: Tyranitar",
+        "selected": 353,
+        "possibleRange": [
+          353,
+          353
+        ]
+      },
+      {
+        "ident": "p2: Excadrill",
+        "selected": 361,
+        "possibleRange": [
+          361,
+          361
+        ]
+      },
+      {
+        "ident": "p2: Tornadus",
+        "selected": 324,
+        "possibleRange": [
+          324,
+          324
+        ]
+      }
+    ],
+    "uncertainty": "All own Pokemon are at exact full HP."
+  },
+  "protocol": [
+    "|t:|1793970481",
+    "|gametype|singles",
+    "|player|p1|jiayi37u|102|",
+    "|player|p2|g6ou-26|acetrainer-gen6|",
+    "|gen|6",
+    "|tier|[Gen 6] OU",
+    "|rule|Sleep Clause Mod: Limit one foe put to sleep",
+    "|rule|Species Clause: Limit one of each Pokémon",
+    "|rule|OHKO Clause: OHKO moves are banned",
+    "|rule|Moody Clause: Moody is banned",
+    "|rule|Evasion Items Clause: Evasion items are banned",
+    "|rule|Evasion Moves Clause: Evasion moves are banned",
+    "|rule|Endless Battle Clause: Forcing endless battles is banned",
+    "|rule|HP Percentage Mod: HP is shown in percentages",
+    "|rule|Evasion Abilities Clause: Evasion abilities are banned",
+    "|rule|Swagger Clause: Swagger is banned",
+    "|clearpoke",
+    "|poke|p1|Metagross|item",
+    "|poke|p1|Rotom-Wash|item",
+    "|poke|p1|Serperior, M|item",
+    "|poke|p1|Excadrill, M|item",
+    "|poke|p1|Tornadus-Therian, M|item",
+    "|poke|p1|Volcanion|item",
+    "|poke|p2|Medicham, F|item",
+    "|poke|p2|Rotom-Wash|item",
+    "|poke|p2|Landorus-Therian, M|item",
+    "|poke|p2|Tyranitar, F|item",
+    "|poke|p2|Excadrill, F|item",
+    "|poke|p2|Tornadus-Therian, M|item",
+    "|teampreview",
+    "|",
+    "|t:|1793970584",
+    "|teamsize|p1|6",
+    "|teamsize|p2|6",
+    "|start",
+    "|switch|p1a: Volcanion|Volcanion|100/100",
+    "|switch|p2a: Rotom|Rotom-Wash|100/100",
+    "|turn|1",
+    "|",
+    "|t:|1793970593",
+    "|move|p1a: Volcanion|Protect|p1a: Volcanion",
+    "|-singleturn|p1a: Volcanion|Protect",
+    "|move|p2a: Rotom|Volt Switch|p1a: Volcanion",
+    "|-activate|p1a: Volcanion|move: Protect",
+    "|",
+    "|upkeep",
+    "|turn|2",
+    "|",
+    "|t:|1793970616",
+    "|switch|p1a: Excadrill|Excadrill, M|100/100",
+    "|-ability|p1a: Excadrill|Mold Breaker",
+    "|move|p2a: Rotom|Volt Switch|p1a: Excadrill",
+    "|-immune|p1a: Excadrill",
+    "|",
+    "|upkeep",
+    "|turn|3",
+    "|",
+    "|t:|1793970667",
+    "|switch|p2a: Landorus|Landorus-Therian, M|100/100",
+    "|-ability|p2a: Landorus|Intimidate|boost",
+    "|-unboost|p1a: Excadrill|atk|1",
+    "|move|p1a: Excadrill|Stealth Rock|p2a: Landorus",
+    "|-sidestart|p2: g6ou-26|move: Stealth Rock",
+    "|",
+    "|upkeep",
+    "|turn|4"
+  ],
+  "requests": [
+    {
+      "turn": 1,
+      "request": {
+        "side": {
+          "id": "p2",
+          "pokemon": [
+            {
+              "ident": "p2: Rotom",
+              "details": "Rotom-Wash",
+              "condition": "304/304",
+              "active": true,
+              "stats": {
+                "atk": 121,
+                "def": 310,
+                "spa": 246,
+                "spd": 250,
+                "spe": 240
+              },
+              "moves": [
+                "voltswitch",
+                "hydropump",
+                "willowisp",
+                "painsplit"
+              ],
+              "baseAbility": "levitate",
+              "item": "leftovers",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Medicham",
+              "details": "Medicham, F",
+              "condition": "261/261",
+              "active": false,
+              "stats": {
+                "atk": 240,
+                "def": 186,
+                "spa": 140,
+                "spd": 187,
+                "spe": 259
+              },
+              "moves": [
+                "highjumpkick",
+                "zenheadbutt",
+                "fakeout",
+                "bulletpunch"
+              ],
+              "baseAbility": "purepower",
+              "item": "medichamite",
+              "pokeball": "pokeball",
+              "statSpread": {
+                "nature": "Adamant",
+                "evs": {
+                  "hp": 0,
+                  "atk": 252,
+                  "def": 0,
+                  "spa": 0,
+                  "spd": 4,
+                  "spe": 252
+                },
+                "ivs": {
+                  "hp": 31,
+                  "atk": 31,
+                  "def": 31,
+                  "spa": 31,
+                  "spd": 31,
+                  "spe": 31
+                }
+              }
+            },
+            {
+              "ident": "p2: Landorus",
+              "details": "Landorus-Therian, M",
+              "condition": "381/381",
+              "active": false,
+              "stats": {
+                "atk": 327,
+                "def": 305,
+                "spa": 246,
+                "spd": 196,
+                "spe": 196
+              },
+              "moves": [
+                "earthquake",
+                "hiddenpowerice60",
+                "uturn",
+                "stealthrock"
+              ],
+              "baseAbility": "intimidate",
+              "item": "rockyhelmet",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Tyranitar",
+              "details": "Tyranitar, F",
+              "condition": "353/353",
+              "active": false,
+              "stats": {
+                "atk": 403,
+                "def": 256,
+                "spa": 203,
+                "spd": 236,
+                "spe": 210
+              },
+              "moves": [
+                "pursuit",
+                "crunch",
+                "stoneedge",
+                "firepunch"
+              ],
+              "baseAbility": "sandstream",
+              "item": "choiceband",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Excadrill",
+              "details": "Excadrill, F",
+              "condition": "361/361",
+              "active": false,
+              "stats": {
+                "atk": 405,
+                "def": 156,
+                "spa": 122,
+                "spd": 167,
+                "spe": 275
+              },
+              "moves": [
+                "earthquake",
+                "rapidspin",
+                "ironhead",
+                "swordsdance"
+              ],
+              "baseAbility": "sandrush",
+              "item": "leftovers",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Tornadus",
+              "details": "Tornadus-Therian, M",
+              "condition": "324/324",
+              "active": false,
+              "stats": {
+                "atk": 211,
+                "def": 195,
+                "spa": 295,
+                "spd": 216,
+                "spe": 375
+              },
+              "moves": [
+                "hurricane",
+                "heatwave",
+                "uturn",
+                "hiddenpowerice60"
+              ],
+              "baseAbility": "regenerator",
+              "item": "assaultvest",
+              "pokeball": "pokeball"
+            }
+          ]
+        },
+        "active": [
+          {
+            "moves": [
+              {
+                "move": "Volt Switch",
+                "id": "voltswitch",
+                "pp": 32,
+                "maxpp": 32,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Hydro Pump",
+                "id": "hydropump",
+                "pp": 8,
+                "maxpp": 8,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Will-O-Wisp",
+                "id": "willowisp",
+                "pp": 24,
+                "maxpp": 24,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Pain Split",
+                "id": "painsplit",
+                "pp": 32,
+                "maxpp": 32,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              }
+            ],
+            "trapped": false,
+            "canMegaEvo": false
+          }
+        ]
+      }
+    },
+    {
+      "turn": 2,
+      "request": {
+        "side": {
+          "id": "p2",
+          "pokemon": [
+            {
+              "ident": "p2: Rotom",
+              "details": "Rotom-Wash",
+              "condition": "304/304",
+              "active": true,
+              "stats": {
+                "atk": 121,
+                "def": 310,
+                "spa": 246,
+                "spd": 250,
+                "spe": 240
+              },
+              "moves": [
+                "voltswitch",
+                "hydropump",
+                "willowisp",
+                "painsplit"
+              ],
+              "baseAbility": "levitate",
+              "item": "leftovers",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Medicham",
+              "details": "Medicham, F",
+              "condition": "261/261",
+              "active": false,
+              "stats": {
+                "atk": 240,
+                "def": 186,
+                "spa": 140,
+                "spd": 187,
+                "spe": 259
+              },
+              "moves": [
+                "highjumpkick",
+                "zenheadbutt",
+                "fakeout",
+                "bulletpunch"
+              ],
+              "baseAbility": "purepower",
+              "item": "medichamite",
+              "pokeball": "pokeball",
+              "statSpread": {
+                "nature": "Adamant",
+                "evs": {
+                  "hp": 0,
+                  "atk": 252,
+                  "def": 0,
+                  "spa": 0,
+                  "spd": 4,
+                  "spe": 252
+                },
+                "ivs": {
+                  "hp": 31,
+                  "atk": 31,
+                  "def": 31,
+                  "spa": 31,
+                  "spd": 31,
+                  "spe": 31
+                }
+              }
+            },
+            {
+              "ident": "p2: Landorus",
+              "details": "Landorus-Therian, M",
+              "condition": "381/381",
+              "active": false,
+              "stats": {
+                "atk": 327,
+                "def": 305,
+                "spa": 246,
+                "spd": 196,
+                "spe": 196
+              },
+              "moves": [
+                "earthquake",
+                "hiddenpowerice60",
+                "uturn",
+                "stealthrock"
+              ],
+              "baseAbility": "intimidate",
+              "item": "rockyhelmet",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Tyranitar",
+              "details": "Tyranitar, F",
+              "condition": "353/353",
+              "active": false,
+              "stats": {
+                "atk": 403,
+                "def": 256,
+                "spa": 203,
+                "spd": 236,
+                "spe": 210
+              },
+              "moves": [
+                "pursuit",
+                "crunch",
+                "stoneedge",
+                "firepunch"
+              ],
+              "baseAbility": "sandstream",
+              "item": "choiceband",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Excadrill",
+              "details": "Excadrill, F",
+              "condition": "361/361",
+              "active": false,
+              "stats": {
+                "atk": 405,
+                "def": 156,
+                "spa": 122,
+                "spd": 167,
+                "spe": 275
+              },
+              "moves": [
+                "earthquake",
+                "rapidspin",
+                "ironhead",
+                "swordsdance"
+              ],
+              "baseAbility": "sandrush",
+              "item": "leftovers",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Tornadus",
+              "details": "Tornadus-Therian, M",
+              "condition": "324/324",
+              "active": false,
+              "stats": {
+                "atk": 211,
+                "def": 195,
+                "spa": 295,
+                "spd": 216,
+                "spe": 375
+              },
+              "moves": [
+                "hurricane",
+                "heatwave",
+                "uturn",
+                "hiddenpowerice60"
+              ],
+              "baseAbility": "regenerator",
+              "item": "assaultvest",
+              "pokeball": "pokeball"
+            }
+          ]
+        },
+        "active": [
+          {
+            "moves": [
+              {
+                "move": "Volt Switch",
+                "id": "voltswitch",
+                "pp": 31,
+                "maxpp": 32,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Hydro Pump",
+                "id": "hydropump",
+                "pp": 8,
+                "maxpp": 8,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Will-O-Wisp",
+                "id": "willowisp",
+                "pp": 24,
+                "maxpp": 24,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Pain Split",
+                "id": "painsplit",
+                "pp": 32,
+                "maxpp": 32,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              }
+            ],
+            "trapped": false,
+            "canMegaEvo": false
+          }
+        ]
+      }
+    },
+    {
+      "turn": 3,
+      "request": {
+        "side": {
+          "id": "p2",
+          "pokemon": [
+            {
+              "ident": "p2: Rotom",
+              "details": "Rotom-Wash",
+              "condition": "304/304",
+              "active": true,
+              "stats": {
+                "atk": 121,
+                "def": 310,
+                "spa": 246,
+                "spd": 250,
+                "spe": 240
+              },
+              "moves": [
+                "voltswitch",
+                "hydropump",
+                "willowisp",
+                "painsplit"
+              ],
+              "baseAbility": "levitate",
+              "item": "leftovers",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Medicham",
+              "details": "Medicham, F",
+              "condition": "261/261",
+              "active": false,
+              "stats": {
+                "atk": 240,
+                "def": 186,
+                "spa": 140,
+                "spd": 187,
+                "spe": 259
+              },
+              "moves": [
+                "highjumpkick",
+                "zenheadbutt",
+                "fakeout",
+                "bulletpunch"
+              ],
+              "baseAbility": "purepower",
+              "item": "medichamite",
+              "pokeball": "pokeball",
+              "statSpread": {
+                "nature": "Adamant",
+                "evs": {
+                  "hp": 0,
+                  "atk": 252,
+                  "def": 0,
+                  "spa": 0,
+                  "spd": 4,
+                  "spe": 252
+                },
+                "ivs": {
+                  "hp": 31,
+                  "atk": 31,
+                  "def": 31,
+                  "spa": 31,
+                  "spd": 31,
+                  "spe": 31
+                }
+              }
+            },
+            {
+              "ident": "p2: Landorus",
+              "details": "Landorus-Therian, M",
+              "condition": "381/381",
+              "active": false,
+              "stats": {
+                "atk": 327,
+                "def": 305,
+                "spa": 246,
+                "spd": 196,
+                "spe": 196
+              },
+              "moves": [
+                "earthquake",
+                "hiddenpowerice60",
+                "uturn",
+                "stealthrock"
+              ],
+              "baseAbility": "intimidate",
+              "item": "rockyhelmet",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Tyranitar",
+              "details": "Tyranitar, F",
+              "condition": "353/353",
+              "active": false,
+              "stats": {
+                "atk": 403,
+                "def": 256,
+                "spa": 203,
+                "spd": 236,
+                "spe": 210
+              },
+              "moves": [
+                "pursuit",
+                "crunch",
+                "stoneedge",
+                "firepunch"
+              ],
+              "baseAbility": "sandstream",
+              "item": "choiceband",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Excadrill",
+              "details": "Excadrill, F",
+              "condition": "361/361",
+              "active": false,
+              "stats": {
+                "atk": 405,
+                "def": 156,
+                "spa": 122,
+                "spd": 167,
+                "spe": 275
+              },
+              "moves": [
+                "earthquake",
+                "rapidspin",
+                "ironhead",
+                "swordsdance"
+              ],
+              "baseAbility": "sandrush",
+              "item": "leftovers",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Tornadus",
+              "details": "Tornadus-Therian, M",
+              "condition": "324/324",
+              "active": false,
+              "stats": {
+                "atk": 211,
+                "def": 195,
+                "spa": 295,
+                "spd": 216,
+                "spe": 375
+              },
+              "moves": [
+                "hurricane",
+                "heatwave",
+                "uturn",
+                "hiddenpowerice60"
+              ],
+              "baseAbility": "regenerator",
+              "item": "assaultvest",
+              "pokeball": "pokeball"
+            }
+          ]
+        },
+        "active": [
+          {
+            "moves": [
+              {
+                "move": "Volt Switch",
+                "id": "voltswitch",
+                "pp": 30,
+                "maxpp": 32,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Hydro Pump",
+                "id": "hydropump",
+                "pp": 8,
+                "maxpp": 8,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Will-O-Wisp",
+                "id": "willowisp",
+                "pp": 24,
+                "maxpp": 24,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Pain Split",
+                "id": "painsplit",
+                "pp": 32,
+                "maxpp": 32,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              }
+            ],
+            "trapped": false,
+            "canMegaEvo": false
+          }
+        ]
+      }
+    },
+    {
+      "turn": 4,
+      "request": {
+        "side": {
+          "id": "p2",
+          "pokemon": [
+            {
+              "ident": "p2: Landorus",
+              "details": "Landorus-Therian, M",
+              "condition": "381/381",
+              "active": true,
+              "stats": {
+                "atk": 327,
+                "def": 305,
+                "spa": 246,
+                "spd": 196,
+                "spe": 196
+              },
+              "moves": [
+                "earthquake",
+                "hiddenpowerice60",
+                "uturn",
+                "stealthrock"
+              ],
+              "baseAbility": "intimidate",
+              "item": "rockyhelmet",
+              "pokeball": "pokeball",
+              "ability": "intimidate"
+            },
+            {
+              "ident": "p2: Medicham",
+              "details": "Medicham, F",
+              "condition": "261/261",
+              "active": false,
+              "stats": {
+                "atk": 240,
+                "def": 186,
+                "spa": 140,
+                "spd": 187,
+                "spe": 259
+              },
+              "moves": [
+                "highjumpkick",
+                "zenheadbutt",
+                "fakeout",
+                "bulletpunch"
+              ],
+              "baseAbility": "purepower",
+              "item": "medichamite",
+              "pokeball": "pokeball",
+              "statSpread": {
+                "nature": "Adamant",
+                "evs": {
+                  "hp": 0,
+                  "atk": 252,
+                  "def": 0,
+                  "spa": 0,
+                  "spd": 4,
+                  "spe": 252
+                },
+                "ivs": {
+                  "hp": 31,
+                  "atk": 31,
+                  "def": 31,
+                  "spa": 31,
+                  "spd": 31,
+                  "spe": 31
+                }
+              }
+            },
+            {
+              "ident": "p2: Rotom",
+              "details": "Rotom-Wash",
+              "condition": "304/304",
+              "active": false,
+              "stats": {
+                "atk": 121,
+                "def": 310,
+                "spa": 246,
+                "spd": 250,
+                "spe": 240
+              },
+              "moves": [
+                "voltswitch",
+                "hydropump",
+                "willowisp",
+                "painsplit"
+              ],
+              "baseAbility": "levitate",
+              "item": "leftovers",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Tyranitar",
+              "details": "Tyranitar, F",
+              "condition": "353/353",
+              "active": false,
+              "stats": {
+                "atk": 403,
+                "def": 256,
+                "spa": 203,
+                "spd": 236,
+                "spe": 210
+              },
+              "moves": [
+                "pursuit",
+                "crunch",
+                "stoneedge",
+                "firepunch"
+              ],
+              "baseAbility": "sandstream",
+              "item": "choiceband",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Excadrill",
+              "details": "Excadrill, F",
+              "condition": "361/361",
+              "active": false,
+              "stats": {
+                "atk": 405,
+                "def": 156,
+                "spa": 122,
+                "spd": 167,
+                "spe": 275
+              },
+              "moves": [
+                "earthquake",
+                "rapidspin",
+                "ironhead",
+                "swordsdance"
+              ],
+              "baseAbility": "sandrush",
+              "item": "leftovers",
+              "pokeball": "pokeball"
+            },
+            {
+              "ident": "p2: Tornadus",
+              "details": "Tornadus-Therian, M",
+              "condition": "324/324",
+              "active": false,
+              "stats": {
+                "atk": 211,
+                "def": 195,
+                "spa": 295,
+                "spd": 216,
+                "spe": 375
+              },
+              "moves": [
+                "hurricane",
+                "heatwave",
+                "uturn",
+                "hiddenpowerice60"
+              ],
+              "baseAbility": "regenerator",
+              "item": "assaultvest",
+              "pokeball": "pokeball"
+            }
+          ]
+        },
+        "active": [
+          {
+            "moves": [
+              {
+                "move": "Earthquake",
+                "id": "earthquake",
+                "pp": 16,
+                "maxpp": 16,
+                "target": "allAdjacent",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Hidden Power",
+                "id": "hiddenpower",
+                "pp": 24,
+                "maxpp": 24,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "U-turn",
+                "id": "uturn",
+                "pp": 32,
+                "maxpp": 32,
+                "target": "normal",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              },
+              {
+                "move": "Stealth Rock",
+                "id": "stealthrock",
+                "pp": 32,
+                "maxpp": 32,
+                "target": "foeSide",
+                "disabled": false,
+                "disabledSource": "",
+                "used": false
+              }
+            ],
+            "trapped": false,
+            "canMegaEvo": false
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "id": "gen6ou-1793970481658-t4",
+    "battle": "gen6ou-1793970481658",
+    "turn": 4,
+    "actor": "Landorus-Therian",
+    "input": "inputs/gen6ou-1793970481658-t4.json",
+    "expectedMove": "stealthrock",
+    "approvedBy": "user",
+    "approvedOn": "2026-11-06"
+  },
+  {
+    "id": "gen6ou-1793951888921-t3",
+    "battle": "gen6ou-1793951888921",
+    "turn": 3,
+    "actor": "Rotom-Wash",
+    "input": "inputs/gen6ou-1793951888921-t3.json",
+    "expectedMove": "voltswitch",
+    "approvedBy": "user",
+    "approvedOn": "2026-11-06"
+  }
+]

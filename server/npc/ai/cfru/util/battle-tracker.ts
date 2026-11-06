@@ -190,6 +190,7 @@ export class BattleTracker {
 	private currentAttack?: { source: string, damaging: boolean, stellarType?: string, hits: Map<string, number> };
 	private transformations = new Map<string, TrackedTransformation>();
 	private ownPublic = new Map<string, NonNullable<AIPokemon['publicKnowledge']>>();
+	private evidenceTeam = new Map<string, AIPokemon>();
 	private ourPokemon = new Map<string, { ident: string, pokemon: RequestPokemonFacts }>();
 	private activeAbilities = new Map<string, string>();
 
@@ -378,6 +379,7 @@ export class BattleTracker {
 		}
 		this.trackItemExchange(parts);
 		this.evidence.observe(parts);
+		this.observeOwnCondition(parts);
 		this.handleAbilityEvent(parts);
 		this.recordAttackHit(parts);
 		if (this.currentAttack?.stellarType &&
@@ -457,6 +459,11 @@ export class BattleTracker {
 		case '-item':
 		case '-enditem':
 			this.handleItem(parts);
+			break;
+		case '-sethp':
+			for (let i = 1; i + 1 < parts.length; i += 2) {
+				this.handleHPChange(['-sethp', parts[i], parts[i + 1]]);
+			}
 			break;
 		case '-damage':
 		case '-heal':
@@ -663,7 +670,12 @@ export class BattleTracker {
 			this.ourActiveBoosts.set(boostKey, transfer.boosts);
 			// Reset lastMove (CFRU: switching resets gDisableStructs)
 			this.ourLastMove.set(boostKey, '');
-			return; // Don't need to track our own Pokemon details
+			const known = this.evidenceTeam.get(sleepIdent);
+			if (known) {
+				known.ability = known.observedAbility || known.ability;
+				this.rememberOurPokemon(position, sleepIdent, known);
+			}
+			return; // Opponent tracking below uses only public facts.
 		}
 
 		// Only track opponent details below (for multi: p1 AND p3)
@@ -948,6 +960,66 @@ export class BattleTracker {
 	/** Unsuppressed identity; older requests expose only the native ability. */
 	getCurrentAbility(position: string): string | undefined {
 		return this.activeAbilities.get(position);
+	}
+
+	/** Authorized own stats, with HP/status subsequently updated only by public protocol. */
+	rememberEvidenceTeam(team: AIPokemon[]): void {
+		this.evidenceTeam = new Map(team.map(p => [this.publicIdentity(p.ident!), structuredClone(p)]));
+	}
+
+	getEvidenceSelf(): { position: string, pokemon: AIPokemon }[] | undefined {
+		const result: { position: string, pokemon: AIPokemon }[] = [];
+		for (const [position, ident] of this.activeIdentities) {
+			if (!this.isOurTeamSide(position.slice(0, 2))) continue;
+			const known = this.evidenceTeam.get(ident);
+			// A new form needs authorized stats; do not use the previous form's stats.
+			if (!known || this.getTransformation(position) ||
+				(this.getForme(position) && this.getForme(position) !== known.species)) return;
+			if (known.hpPercent <= 0) continue;
+			const current = this.ourPokemon.get(position)?.pokemon;
+			const pokemon = structuredClone(known);
+			pokemon.active = true;
+			pokemon.slot = this.getFieldSlot(position);
+			pokemon.item = current?.item ?? pokemon.item;
+			pokemon.ability = this.getCurrentAbility(position) || current?.ability || pokemon.ability;
+			pokemon.boosts = this.getOurActiveBoosts(position);
+			pokemon.abilityStatMod = this.getOurAbilityStatMod(position);
+			pokemon.volatiles = this.getVolatiles(position);
+			pokemon.lastMove = this.getOurLastMove(position);
+			result.push({ position, pokemon });
+		}
+		return result;
+	}
+
+	private observeOwnCondition(parts: string[]): void {
+		const [event, ident = ''] = parts;
+		if (event === '-sethp') {
+			for (let i = 1; i + 1 < parts.length; i += 2) {
+				this.observeOwnCondition(['-heal', parts[i], parts[i + 1]]);
+			}
+			return;
+		}
+		const known = this.evidenceTeam.get(this.publicIdentity(ident));
+		if (event === '-cureteam') {
+			for (const p of this.evidenceTeam.values()) {
+				if (p.ownerSide === ident.slice(0, 2)) p.status = '';
+			}
+		}
+		if (!known) return;
+		const condition = ['switch', 'drag', 'replace'].includes(event) ? parts[3] :
+			['-damage', '-heal'].includes(event) ? parts[2] : undefined;
+		if (condition) {
+			const [health, status = ''] = condition.split(' ');
+			const [hp, max] = health.split('/').map(Number);
+			known.hpPercent = max ? hp / max * 100 : 0;
+			known.hp = Math.floor(known.maxHp * known.hpPercent / 100);
+			known.status = status === 'fnt' ? '' : status;
+		}
+		if (event === 'faint') known.hp = known.hpPercent = 0;
+		if (event === '-status') known.status = parts[2];
+		if (event === '-curestatus') known.status = '';
+		if (event === '-item') known.item = toID(parts[2]);
+		if (event === '-enditem') known.item = '';
 	}
 
 	rememberOurPokemon(position: string, ident: string, pokemon: RequestPokemonFacts): void {
@@ -2444,6 +2516,7 @@ export class BattleTracker {
 		this.lastMoveSource = '';
 		this.transformations.clear();
 		this.ourPokemon.clear();
+		this.evidenceTeam.clear();
 		this.ownPublic.clear();
 		this.activeAbilities.clear();
 		this.activeVolatiles.clear();

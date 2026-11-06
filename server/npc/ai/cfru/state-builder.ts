@@ -247,7 +247,19 @@ export function buildBattleStateFromRequests(
 				trackedPokemonToAIPokemon(tracked, +slot, false, formatId).maxHp / 2);
 		}
 	}
-	tracker.evidence.begin(state);
+	tracker.rememberEvidenceTeam(state.self.team);
+	tracker.evidence.begin(state, () => {
+		const known = tracker.getEvidenceSelf();
+		if (!known) return;
+		const self = known.map(({ position, pokemon }) => applyPublicMechanics(pokemon, position, tracker, formatId));
+		const opponents = tracker.getActiveOpponents().map(({ position, pokemon }) =>
+			applyPublicMechanics(trackedPokemonToAIPokemon(pokemon, tracker.getFieldSlot(position), true, formatId),
+				position, tracker, formatId));
+		return { self, opponents, isDoubles,
+			field: fieldWithActivePokemon({ ...buildFieldConditionsFromTracker(tracker), formatId }, [...self, ...opponents]),
+			selfConditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(),
+				futureMoves: tracker.getFutureMoves() }, opponentConditions: buildOpponentConditionsFromTracker(tracker) };
+	});
 	state.opponentEvidence = tracker.evidence.getHistory();
 	state.actedThisTurn = tracker.getTurnActions();
 	return state;

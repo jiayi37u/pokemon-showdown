@@ -60,6 +60,7 @@ function preservesActionOrder(event: string, effect: string): boolean {
 export class BattleEvidenceTracker {
 	private history: BattleEvidence[] = [];
 	private context?: EvidenceContext;
+	private refreshContext?: () => EvidenceContext | undefined;
 	private speedContext?: EvidenceContext;
 	private positions = new Map<string, AIPokemon>();
 	private attack?: Attack;
@@ -74,30 +75,36 @@ export class BattleEvidenceTracker {
 	/** Historical requests can be reconstructed by the offline audit, without future observations. */
 	restore(history: readonly BattleEvidence[]): void { this.history = structuredClone([...history]); }
 
-	begin(state: BattleState): void {
+	begin(state: BattleState, refreshContext?: () => EvidenceContext | undefined): void {
+		this.refreshContext = refreshContext;
 		this.flush();
 		this.leftovers = undefined;
 		this.turn = state.turn;
+		this.setContext({ self: state.self.active, opponents: state.opponent.active, field: state.field,
+			selfConditions: state.self.conditions, opponentConditions: state.opponent.conditions, isDoubles: state.isDoubles });
+		// Action order stays anchored before any action changes the state.
+		this.speedContext = structuredClone(this.context);
+		this.order = [];
+		this.recordEntryOrder();
+	}
+
+	private setContext(source: EvidenceContext): void {
 		// Public opponents carry no guessed stats, items, abilities or move pools in evidence.
-		const opponents = state.opponent.active.map(p => ({ ...p, presetModels: undefined, moveKnowledge: undefined,
+		const opponents = source.opponents.map(p => ({ ...p, presetModels: undefined, moveKnowledge: undefined,
 			baseStats: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 }, maxHp: 0, hp: 0,
 			item: p.itemKnown ? p.item : '', ability: p.observedAbility || p.abilityChanged ? p.ability : '',
 		}));
-		this.context = structuredClone({ self: state.self.active, opponents, field: state.field,
-			selfConditions: state.self.conditions, opponentConditions: state.opponent.conditions, isDoubles: state.isDoubles });
-		// Keep the order snapshot immutable as damage/healing updates the damage snapshot's HP.
-		this.speedContext = structuredClone(this.context);
+		this.context = structuredClone({ self: source.self, opponents, field: source.field,
+			selfConditions: source.selfConditions, opponentConditions: source.opponentConditions, isDoubles: source.isDoubles });
 		this.positions.clear();
 		for (const p of [...this.context.self, ...this.context.opponents]) {
 			if (!p.ident || !p.ownerSide) continue;
 			// PS emits global letters in Multi (p3b/p4b); adapters can also use the player's local 'a'.
 			const multi = Number(p.ownerSide.slice(1)) > 2 ||
-				[...state.self.active, ...state.opponent.active].some(mon => Number(mon.ownerSide?.slice(1)) > 2);
+				[...source.self, ...source.opponents].some(mon => Number(mon.ownerSide?.slice(1)) > 2);
 			this.positions.set(`${p.ownerSide}${String.fromCharCode(96 + p.slot)}`, p);
 			if (multi) this.positions.set(`${p.ownerSide}a`, p);
 		}
-		this.order = [];
-		this.recordEntryOrder();
 	}
 
 	private recordEntryOrder(): void {
@@ -255,6 +262,10 @@ export class BattleEvidenceTracker {
 
 	observe(parts: string[]): void {
 		const [event, ident = '', effect = ''] = parts;
+		if ((!this.context && event === 'move') || !event) {
+			const refreshed = this.refreshContext?.();
+			if (refreshed) this.setContext(refreshed);
+		}
 		// PS brackets residual processing with an empty protocol line and upkeep. Empty
 		// lines before ordinary actions are cancelled by the ensuing move/cant instead.
 		if (!event) this.beginResidual();
@@ -280,7 +291,7 @@ export class BattleEvidenceTracker {
 			'-status', '-curestatus', '-cureteam', '-item', '-enditem', '-ability', '-endability', '-terastallize',
 			'-weather', '-fieldstart', '-fieldend', '-sidestart', '-sideend', '-start', '-end', '-activate', '-sethp',
 		].includes(event)) {
-			// A fresh request rearms recording. Do not reconstruct mid-turn mechanics a second time here.
+			// Refresh damage context from the tracker before the next attack; never reconstruct mechanics here.
 			this.context = undefined;
 			if (event !== '-weather' || !parts.includes('[upkeep]')) this.leftovers = undefined;
 			if (!preservesActionOrder(event, effect)) {
@@ -292,7 +303,7 @@ export class BattleEvidenceTracker {
 			this.attack.invalid = true;
 		}
 		const pokemon = this.positions.get(ident.split(':')[0]);
-		const context = this.speedContext || this.context;
+		const context = this.context || this.speedContext;
 		if (event === 'move' && context && pokemon) {
 			const data = Dex.forFormat(context.field.formatId || 'gen9customgame').moves.get(effect);
 			if (['round', 'firepledge', 'waterpledge', 'grasspledge'].includes(data.id)) {
@@ -345,6 +356,7 @@ export class BattleEvidenceTracker {
 	reset(): void {
 		this.history = []; this.context = undefined; this.speedContext = undefined;
 		this.attack = undefined;
+		this.refreshContext = undefined;
 		this.leftovers = undefined;
 		this.entry = undefined;
 		this.order = []; this.positions.clear(); this.selections.clear();

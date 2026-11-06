@@ -576,7 +576,7 @@ describe('Hard inference from observed battle outcomes', () => {
 	});
 
 	for (const move of ['swordsdance', 'stealthrock', 'roost', 'recover']) {
-		it(`records ${move} before an attack without reusing its invalidated damage snapshot`, () => {
+		it(`records ${move} before an attack with a refreshed damage snapshot`, () => {
 			const set = { nature: 'Timid', evs: { spe: 252 }, ability: 'Levitate' };
 			const g = game({ species: 'Garchomp', nature: 'Jolly', evs: { hp: 252, spe: 252 }, moves: ['tackle'] },
 				{ species: 'Hydreigon', ...set, item: 'Choice Scarf', moves: [move] });
@@ -589,7 +589,7 @@ describe('Hard inference from observed battle outcomes', () => {
 			const result = refine({ ...state, opponentEvidence: speed },
 				[{ ...set, name: 'ordinary' }, { ...set, item: 'Choice Scarf', name: 'scarf' }]);
 			assert.deepEqual(result.models.map(m => m.name), ['scarf']);
-			if (move !== 'recover') assert(!state.opponentEvidence.some(e => e.kind === 'damage'));
+			assert(state.opponentEvidence.some(e => e.kind === 'damage'));
 		});
 	}
 

@@ -496,13 +496,17 @@ function entryBound(branches: Leaf[], upper: boolean,
 	independentOpponent: boolean | ((entry: EntryDecision) => boolean)): number {
 	if (!branches.some(b => b.entries.length)) return aggregateLeaves(branches);
 	const envelope = () => (upper ? Math.max : Math.min)(...branches.map(b => b.value));
-	let remaining = branches.filter(b => b.weight > 0);
-	const events = new Map<string, EntryDecision>();
-	for (const branch of remaining) for (const entry of branch.entries) events.set(entry.key, entry);
+	const remaining = new Set(branches.filter(b => b.weight > 0));
+	const events = new Map<string, { decision: EntryDecision, members: Set<Leaf> }>();
+	for (const branch of remaining) for (const entry of branch.entries) {
+		if (!events.has(entry.key)) events.set(entry.key, { decision: entry, members: new Set() });
+		events.get(entry.key)!.members.add(branch);
+	}
 	// Collapse descendants first. Each collapsed choice keeps its original chance mass
 	// and ancestor path, so consecutive entries never become a flat best/worst leaf.
-	for (const event of [...events.values()].sort((a, b) => b.depth - a.depth)) {
-		const members = remaining.filter(b => b.entries.some(e => e.key === event.key));
+	for (const indexed of [...events.values()].sort((a, b) => b.decision.depth - a.decision.depth)) {
+		const event = indexed.decision;
+		const members = [...indexed.members].filter(b => remaining.has(b));
 		const cells = new Map<string, Map<string, Leaf[]>>();
 		for (const branch of members) {
 			const cell = JSON.stringify([branch.config, branch.reply]);
@@ -529,10 +533,14 @@ function entryBound(branches: Leaf[], upper: boolean,
 			collapsed.push({ ...representative, weight: mass, value,
 				entries: representative.entries.filter(e => e.key !== event.key) });
 		}
-		const removed = new Set(members);
-		remaining = [...remaining.filter(b => !removed.has(b)), ...collapsed];
+		for (const branch of members) remaining.delete(branch);
+		for (const branch of collapsed) {
+			remaining.add(branch);
+			// Ancestor checkpoints must see the collapsed chance mass, not its removed leaves.
+			for (const entry of branch.entries) events.get(entry.key)!.members.add(branch);
+		}
 	}
-	return aggregateLeaves(remaining);
+	return aggregateLeaves([...remaining]);
 }
 
 /** Only first checkpoints have complete membership before their descendants are visited.

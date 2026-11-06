@@ -139,7 +139,7 @@ export const Repl = new class {
 		Repl.setupListeners(filename);
 
 		const server = net.createServer(socket => {
-			repl.start({
+			const session = repl.start({
 				input: socket,
 				output: socket,
 				eval(cmd, context, unusedFilename, callback) {
@@ -150,6 +150,11 @@ export const Repl = new class {
 					}
 				},
 			}).on('exit', () => socket.end());
+			// Readline forwards input socket errors to the REPL session as well.
+			session.on('error', () => {
+				session.close();
+				socket.destroy();
+			});
 			socket.on('error', () => socket.destroy());
 		});
 

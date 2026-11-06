@@ -8,7 +8,7 @@ import { rulesDex } from '../cfru/util/mechanics';
 import { CandidateSelector, observationKey, perspective } from './candidates';
 import {
 	actionOutcomes, beginTurn, continueTurn, bindOpponent, clonePosition, endTurn, identity, modelsFor, positionKey,
-	supportsMove, switchIn, transitionSupported, snapshotPosition, clonePokemon, knownMoves, usableMove, moveAction,
+	supportsMove, switchIn, transitionSupported, snapshotPosition, clonePokemon, knownMoves, usableMove,
 	type SearchAction, type Side, type TurnCheckpoint,
 } from './projection';
 export type { SearchAction } from './projection';
@@ -29,6 +29,7 @@ interface Leaf {
 	config: number;
 	configWeight: number;
 	reply: string;
+	replyWeight?: number;
 	weight: number;
 	value: number;
 	entries: EntryDecision[];
@@ -37,6 +38,7 @@ interface Branch extends Leaf { state: BattleState }
 interface Response {
 	config: number;
 	profile: OpponentModel;
+	probability: number;
 	state: BattleState;
 	action: SearchAction;
 }
@@ -65,7 +67,6 @@ interface Continuation {
 	completed: Map<Response, Leaf[]>;
 	expansions: Map<Response, ResponseWork>;
 	upper: number;
-	configs: Map<number, { weight: number, upper: number }>;
 	leaves?: Leaf[];
 }
 export interface SearchOptions {
@@ -172,8 +173,7 @@ export class Search extends CandidateSelector {
 		if (reorder) pending.sort((a, b) =>
 			this.expansionCost(a.state, 'opponent', a.action) - this.expansionCost(b.state, 'opponent', b.action) ||
 			b.action.prior - a.action.prior);
-		const configs = new Map(responses.map(r => [r.config, { weight: r.profile.weight, upper: Infinity }]));
-		const work: Continuation = { action, responses, pending, configs, completed: new Map(),
+		const work: Continuation = { action, responses, pending, completed: new Map(),
 			expansions: new Map(), upper: Infinity };
 		this.continuations.set(key, work); return work;
 	}
@@ -190,20 +190,13 @@ export class Search extends CandidateSelector {
 	}
 
 	continuationUpper(work: Continuation, independent: ReadonlySet<string>): number {
-		const configs = new Map<number, { weight: number, upper: number }>();
-		for (const response of work.responses) {
-			let config = configs.get(response.config);
-			if (!config) configs.set(response.config, config = { weight: response.profile.weight, upper: Infinity });
+		return aggregateLeaves(work.responses.map(response => {
 			const expansion = work.expansions.get(response);
-			if (expansion) {
-				if (expansion.upper?.independent !== independent) expansion.upper = { independent,
-					value: entryBound(this.responseBounds(expansion), true, entry => independent.has(entry.key)) };
-				config.upper = Math.min(config.upper, expansion.upper.value);
-			}
-		}
-		const mass = [...configs.values()].reduce((n, c) => n + c.weight, 0);
-		return mass ? [...configs.values()].filter(c => c.weight > 0)
-			.reduce((n, c) => n + c.weight * c.upper, 0) / mass : Infinity;
+			if (expansion && expansion.upper?.independent !== independent) expansion.upper = { independent,
+				value: entryBound(this.responseBounds(expansion), true, entry => independent.has(entry.key)) };
+			return { config: response.config, configWeight: response.profile.weight, reply: response.action.id,
+				replyWeight: response.probability, weight: 1, entries: [], value: expansion?.upper?.value ?? Infinity };
+		}));
 	}
 
 	advanceContinuation(work: Continuation, independent?: ReadonlySet<string>): void {
@@ -226,15 +219,12 @@ export class Search extends CandidateSelector {
 				expansion.leaves = leaves;
 				expansion.frontier = leaves.map(leaf => ({ node: { weight: leaf.weight, entries: leaf.entries } }));
 				delete expansion.branches;
-				if (leaves.length) {
-					const config = work.configs.get(response.config)!;
-					config.upper = Math.min(config.upper, optimisticValue(leaves, false));
-				}
 			}
 		}
-		const mass = [...work.configs.values()].reduce((n, c) => n + c.weight, 0);
-		work.upper = mass ? [...work.configs.values()].filter(c => c.weight > 0)
-			.reduce((n, c) => n + c.weight * c.upper, 0) / mass : Infinity;
+		work.upper = aggregateLeaves(work.responses.map(r => ({ config: r.config, configWeight: r.profile.weight,
+			reply: r.action.id, replyWeight: r.probability, weight: 1, entries: [],
+			value: work.completed.has(r) ? optimisticValue(work.completed.get(r)!, false) : Infinity })));
+
 		if (!work.pending.length) {
 			// Canonical response order preserves reference summation and tie behavior.
 			work.leaves = work.responses.flatMap(r => work.completed.get(r) || []);
@@ -271,26 +261,30 @@ export class Search extends CandidateSelector {
 			const { side, cause } = pending;
 			const key = JSON.stringify([side, cause, history, observationKey(perspective(state, side))]);
 			return [{ weight, entries,
-				checkpoint: cause === 'phaze' ? undefined : { key, side, depth: history.length },
+				checkpoint: cause === 'phaze' || side === 'opponent' ? undefined : { key, side, depth: history.length },
 				expand: () => {
 					const legal = state[side].reserve.filter(p => !p.fainted && p.hp > 0);
 					const exposed = turn?.remaining.some(a => a.side !== side &&
 						!state[a.side].active[0]?.fainted && a.actor === identity(state[a.side].active[0]));
-					const options = cause === 'phaze' ? legal : this.entryChoices(state, side, exposed ? 'exposed' : 'free');
+					const options = cause === 'phaze' || side === 'opponent' ? legal :
+						this.entryChoices(state, side, exposed ? 'exposed' : 'free');
 					this.pruned.entries += legal.length - options.length;
+					const probabilities = side === 'opponent' && cause !== 'phaze' ?
+						this.entryProbabilities(state, options) : undefined;
 					return options.flatMap(pokemon => {
+						const chance = cause === 'phaze' ? 1 / options.length : probabilities ? probabilities.get(identity(pokemon)) || 0 : 1;
+						if (!chance) return [];
 						const profiles = side === 'opponent' ? modelsFor(pokemon) : [undefined];
 						const decision = { key, side, choice: identity(pokemon), depth: history.length };
-						const nextEntries = cause === 'phaze' ? entries : [...entries, decision];
+						const nextEntries = cause === 'phaze' || side === 'opponent' ? entries : [...entries, decision];
 						return profiles.map(model => ({
-							weight: weight * (model?.weight ?? 1) / (cause === 'phaze' ? options.length : 1), entries: nextEntries,
+							weight: weight * (model?.weight ?? 1) * chance, entries: nextEntries,
 							expand: () => {
 								const next = clonePosition(state);
 								if (model) bindOpponent(next, pokemon, model);
 								switchIn(next, side, pokemon);
 								return walk(next, cause === 'faint' ? undefined : { ...turn!, state: next, remaining: [...turn!.remaining] },
-									[...history, identity(pokemon)], weight * (model?.weight ?? 1) /
-									(cause === 'phaze' ? options.length : 1), nextEntries);
+									[...history, identity(pokemon)], weight * (model?.weight ?? 1) * chance, nextEntries);
 							},
 						}));
 					});
@@ -313,37 +307,6 @@ export class Search extends CandidateSelector {
 		return this.transitionTree(start, own, reply, replacing).flatMap(finish);
 	}
 
-	/** A low score against the active target must not hide a lethal answer to a retained switch. */
-	private coverSwitches(state: BattleState, switches: SearchAction[], replies: SearchAction[]): SearchAction[] {
-		if (!switches.length) return replies;
-		const dex = rulesDex(state.field);
-		const attacks = replies.filter(a => a.move && dex.moves.get(a.move).category !== 'Status');
-		const omitted = knownMoves(state.opponent.active[0]).filter(id =>
-			dex.moves.get(id).category !== 'Status' && usableMove(state, 'opponent', id) && supportsMove(state, id) &&
-			!attacks.some(a => a.move === id)).map(id => moveAction(state, 'opponent', id));
-		if (!omitted.length) return replies;
-		const added = new Set<SearchAction>();
-		for (const own of switches) {
-			const target = identity(own.switchTo!);
-			const knockedOut = (reply: SearchAction, pass = false) => {
-				const turn = beginTurn(state, own, reply);
-				// Keep queued Mega entry effects when testing the same turn without attack damage.
-				if (pass) for (const queued of turn.remaining) {
-					if (queued.side === 'opponent') queued.action = { id: 'pass', prior: 0 };
-				}
-				// A pending pivot is only decisive if its hit already KOed; do not invent its next entrant.
-				continueTurn(turn, this.matchups.damagePolicy, this.matchups.damageCache);
-				return turn.state.self.team.find(p => identity(p) === target)!.fainted;
-			};
-			// Entry hazards or existing residual damage alone do not give an attack a new purpose.
-			if (attacks.some(attack => knockedOut(attack))) continue;
-			for (const attack of omitted) {
-				if (!added.has(attack) && !knockedOut(attack, true) && knockedOut(attack)) added.add(attack);
-			}
-		}
-		return added.size ? [...replies, ...added] : replies;
-	}
-
 	responses(state: BattleState, replacing = false, ownActions?: SearchAction[]): Response[] {
 		const switches = replacing ? [] : (ownActions || this.choices(state, 'self')).filter(a => a.switchTo);
 		const coverage = JSON.stringify(switches.map(a => identity(a.switchTo!)).sort());
@@ -354,10 +317,11 @@ export class Search extends CandidateSelector {
 			[{ name: 'fainted', pokemon: active, moves: [], weight: 1, matched: true }] : modelsFor(active);
 		const responses = profiles.flatMap((profile, config) => {
 			const bound = clonePosition(state); bindOpponent(bound, active, profile);
+			bound.opponent.active[0].presetModels = [{ ...profile, weight: 1 }];
 			snapshotPosition(bound);
-			const replies = replacing ? [{ id: 'pass', prior: 0 }] :
-				this.coverSwitches(bound, switches, this.choices(bound, 'opponent'));
-			return replies.map(action => ({ config, profile, state: bound, action }));
+			const replies = replacing ? [{ action: { id: 'pass', prior: 0 }, probability: 1 }] :
+				this.responseProbabilities(bound);
+			return replies.map(({ action, probability }) => ({ config, profile, state: bound, action, probability }));
 		});
 		this.responseCache.set(key, responses); return responses;
 	}
@@ -391,7 +355,7 @@ export class Search extends CandidateSelector {
 		if (work.leaves) return work.leaves;
 		const { config, profile, action } = work.response;
 		return work.frontier.map(({ node, branch }) => branch || { config, configWeight: profile.weight,
-			reply: action.id, weight: node.weight, entries: node.entries,
+			reply: action.id, replyWeight: work.response.probability, weight: node.weight, entries: node.entries,
 			value: node.expand ? Infinity : (node.upper ??= terminalValue(node.state!) ?? this.matchups.upperBound(node.state!)) });
 	}
 
@@ -407,7 +371,8 @@ export class Search extends CandidateSelector {
 			const { config, profile, action } = work.response;
 			this.nodes++;
 			work.frontier[index].branch = { state: node.state!, config, configWeight: profile.weight,
-				reply: action.id, weight: node.weight, entries: node.entries, value: this.value(node.state!, retainPosition) };
+				reply: action.id, replyWeight: work.response.probability, weight: node.weight, entries: node.entries,
+				value: this.value(node.state!, retainPosition) };
 			work.cursor++;
 			break;
 		}
@@ -426,20 +391,24 @@ export class Search extends CandidateSelector {
 	}
 }
 
-/** Expected value over configurations, worst retained opposing action within each configuration.
- * Opponent actions have no fabricated probabilities. Switching target configurations retain their own mass.
+/** Expected value over configurations and public-information response probabilities.
+ * Recipient configurations and transition outcomes retain their conditional probability mass.
  */
 function aggregateLeaves(branches: Leaf[]): number {
-	const configs = new Map<number, { weight: number, replies: Map<string, { sum: number, mass: number }> }>();
+	const configs = new Map<number, { weight: number,
+		replies: Map<string, { sum: number, mass: number, probability: number }>, }>();
 	for (const b of branches) {
 		if (!configs.has(b.config)) configs.set(b.config, { weight: b.configWeight, replies: new Map() });
 		const config = configs.get(b.config)!;
-		const reply = config.replies.get(b.reply) || { sum: 0, mass: 0 };
+		const reply = config.replies.get(b.reply) || { sum: 0, mass: 0, probability: b.replyWeight ?? 1 };
 		reply.sum += b.value * b.weight; reply.mass += b.weight; config.replies.set(b.reply, reply);
 	}
 	let sum = 0, mass = 0;
 	for (const config of configs.values()) {
-		sum += config.weight * Math.min(...[...config.replies.values()].map(r => r.sum / r.mass)); mass += config.weight;
+		const replies = [...config.replies.values()].filter(r => r.probability > 0);
+		const total = replies.reduce((n, r) => n + r.probability, 0);
+		sum += config.weight * replies.reduce((n, r) => n + r.probability * r.sum / r.mass, 0) / total;
+		mass += config.weight;
 	}
 	return mass ? sum / mass : -Infinity;
 }
@@ -699,7 +668,7 @@ function runSearch(
 		// An unresolved response retains its configuration mass. In particular, an
 		// unvisited rare profile must not disappear from either bound.
 		const branches: Branch[] = responses.map(r => ({ state: root, config: r.config,
-			configWeight: r.profile.weight, reply: r.action.id, weight: 1, entries: [], value: 0 }));
+			configWeight: r.profile.weight, reply: r.action.id, replyWeight: r.probability, weight: 1, entries: [], value: 0 }));
 		return { action, branches,
 			lower: new Map(branches.map(b => [b, -Infinity])), upper: new Map(branches.map(b => [b, Infinity])),
 			unexpanded: responses.map((response, i) => ({ response, placeholder: branches[i] })),

@@ -189,6 +189,7 @@ export class BattleTracker {
 	private lastMoveSource = '';
 	private currentAttack?: { source: string, damaging: boolean, stellarType?: string, hits: Map<string, number> };
 	private transformations = new Map<string, TrackedTransformation>();
+	private ownPublic = new Map<string, NonNullable<AIPokemon['publicKnowledge']>>();
 	private ourPokemon = new Map<string, { ident: string, pokemon: RequestPokemonFacts }>();
 	private activeAbilities = new Map<string, string>();
 
@@ -611,6 +612,10 @@ export class BattleTracker {
 
 		const sleepIdent = this.publicIdentity(positionPart);
 		const outgoingIdent = this.activeIdentities.get(position);
+		const facts = outgoingIdent ? this.ownPublic.get(outgoingIdent) : undefined;
+		if (facts?.abilityChanged) {
+			facts.ability = facts.originalAbility; facts.abilityChanged = false;
+		}
 		const outgoingEntry = this.entries.get(position);
 		if (outgoingEntry) this.identityMemory.set(outgoingEntry.ident, { ...outgoingEntry.memory });
 		const entry: EntryObservations = {
@@ -1006,6 +1011,10 @@ export class BattleTracker {
 		this.resolveCopiedEffects(position, changed ? previous : ability);
 
 		if (this.isOurTeamSide(side)) {
+			const facts = this.ownPublicFacts(positionPart);
+			if (!facts.abilityChanged) facts.originalAbility = changed ? previous || facts.ability : ability;
+			facts.ability = ability;
+			facts.abilityChanged = changed || facts.abilityChanged;
 			const own = this.ourPokemon.get(position);
 			if (own) own.pokemon.ability = ability;
 			return;
@@ -1183,6 +1192,13 @@ export class BattleTracker {
 				originalItem, itemChanged: entry.item?.itemChanged || acquired || exchanged };
 		}
 
+		if (this.isOurTeamSide(side)) {
+			const facts = this.ownPublicFacts(positionPart);
+			facts.item = command === '-enditem' ? '' : item;
+			const acquired = command === '-item' && parts.some(p => p.startsWith('[from]'));
+			if (!facts.originalItem && !facts.itemChanged && !acquired) facts.originalItem = item;
+			facts.itemChanged ||= acquired || /move: (Trick|Switcheroo)|ability: (Pickpocket|Magician)/.test(from);
+		}
 		if (!this.isOpponentSide(side)) return;
 
 		const tracked = this.opponentPokemon.get(position);
@@ -1319,6 +1335,19 @@ export class BattleTracker {
 	 * - gLastUsedMoves[bankDef] tracks opponent's last used move
 	 * - gLastResultingMoves[bankAtk] tracks our last used move
 	 */
+	getOwnPublicKnowledge(ident: string): NonNullable<AIPokemon['publicKnowledge']> {
+		const key = this.publicIdentity(ident);
+		let facts = this.ownPublic.get(key);
+		if (!facts) this.ownPublic.set(key, facts = { moves: [] });
+		return { ...facts, moves: [...facts.moves] };
+	}
+
+	private ownPublicFacts(ident: string): NonNullable<AIPokemon['publicKnowledge']> {
+		const key = this.publicIdentity(ident);
+		if (!this.ownPublic.has(key)) this.ownPublic.set(key, { moves: [] });
+		return this.ownPublic.get(key)!;
+	}
+
 	private handleMove(parts: string[]): void {
 		const positionPart = parts[1];
 		if (!positionPart) return;
@@ -1334,6 +1363,8 @@ export class BattleTracker {
 		const moveId = toID(move);
 		if (this.isOurTeamSide(side) && !parts.some(p => p.startsWith('[from]'))) {
 			this.entries.get(position)?.moves.add(moveId);
+			const facts = this.ownPublicFacts(positionPart);
+			if (!Dex.moves.get(move).isZ && moveId !== 'struggle' && !facts.moves.includes(moveId)) facts.moves.push(moveId);
 		}
 		if (moveId === 'naturalgift') {
 			this.updateIdentityMemory(this.sleepIdentity(positionPart),
@@ -2413,6 +2444,7 @@ export class BattleTracker {
 		this.lastMoveSource = '';
 		this.transformations.clear();
 		this.ourPokemon.clear();
+		this.ownPublic.clear();
 		this.activeAbilities.clear();
 		this.activeVolatiles.clear();
 		this.trapSources.clear();

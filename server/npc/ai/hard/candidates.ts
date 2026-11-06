@@ -1,6 +1,6 @@
 /** Strategic action membership. No branch-count caps and no search/transition execution. */
 import { type AIPokemon, type BattleState, type MoveScore } from '../cfru/types';
-import { hardMove } from './opponent-model';
+import { hardMove, hardMoveId, publicTargetModels } from './opponent-model';
 import { HardEvaluation } from './evaluation';
 import { actionDelay, valueWeights, type MatchupEvaluator } from './matchups';
 import { megaEvolutionState } from '../cfru/util/forms';
@@ -23,6 +23,8 @@ export class CandidateSelector {
 	protected assessments = new Map<string, ReturnType<MatchupEvaluator['assess']>>();
 	private choicesCache = new Map<string, SearchAction[]>();
 	private entryCache = new Map<string, Set<string>>();
+	private responseProbabilityCache = new Map<string, { action: SearchAction, probability: number }[]>();
+	private entryProbabilityCache = new Map<string, Map<string, number>>();
 	readonly matchups: MatchupEvaluator;
 	private readonly knowledge?: BattleState;
 	constructor(matchups: MatchupEvaluator, root?: BattleState) {
@@ -240,6 +242,87 @@ export class CandidateSelector {
 			}
 		}
 		return scores;
+	}
+
+	/** The responder knows its configuration; its target exposes only protocol facts and presets. */
+	private responseView(state: BattleState): BattleState {
+		const next = clonePosition(state);
+		for (const p of next.self.team) {
+			const models = publicTargetModels(p, state.field.formatId || '');
+			Object.assign(p, models[0].pokemon, { presetModels: models });
+		}
+		return snapshotPosition(next);
+	}
+
+	/** Reuse the existing response model and switch destination probabilities. */
+	responseProbabilities(state: BattleState): { action: SearchAction, probability: number }[] {
+		const view = this.responseView(state), target = view.self.active[0];
+		const key = `${positionKey(view)}:${JSON.stringify(state.actedThisTurn || [])}`;
+		const cached = this.responseProbabilityCache.get(key);
+		if (cached) return cached;
+		const entries = this.entryProbabilities(state, state.opponent.reserve);
+		const mass = new Map<string, { action: SearchAction, probability: number }>();
+		const add = (action: SearchAction, probability: number) => {
+			const actionKey = `${action.id}:${action.calledMove || ''}:${!!action.mega}`;
+			const previous = mass.get(actionKey);
+			if (previous) previous.probability += probability;
+			else if (probability > 0) mass.set(actionKey, { action, probability });
+		};
+		for (const model of modelsFor(target)) {
+			const actor = { ...model.pokemon, moves: knownMoves(model.pokemon) };
+			const position = clonePosition(view);
+			Object.assign(position.self.active[0], actor);
+			const evaluator = new HardEvaluation(position, state.field.formatId || '', new Map(
+				position.opponent.team.map(p => [p, modelsFor(p)])), this.matchups.damageCache);
+			const replacements = evaluator.switchTargets(position.self.active[0], position.opponent.active[0]);
+			const pending = !!position.actedThisTurn?.length;
+			const predictions = pending ? evaluator.pendingPredictions(position.self.active[0]) :
+				evaluator.predictions(position.self.active[0], replacements);
+			for (const prediction of predictions.get(position.opponent.active[0]) || []) {
+				const probability = model.weight * prediction.weight;
+				if (prediction.switching) {
+					for (const entry of entries) {
+						const pokemon = view.opponent.reserve.find(p => identity(p) === entry[0])!;
+						add({ id: `switch ${pokemon.slot}`, switchTo: state.opponent.reserve.find(p =>
+							identity(p) === identity(pokemon))!, prior: 0 }, probability * entry[1]);
+					}
+				} else if (prediction.move) {
+					const move = hardMoveId(prediction.selectedMove || prediction.move);
+					const action = moveAction(state, 'opponent', move);
+					add(action, probability);
+				} else add({ id: 'pass', prior: 0 }, probability);
+			}
+		}
+		const total = [...mass.values()].reduce((sum, value) => sum + value.probability, 0);
+		const result = [...mass.values()].map(value => ({ ...value, probability: value.probability / total }));
+		this.responseProbabilityCache.set(key, result);
+		return result;
+	}
+
+	entryProbabilities(state: BattleState, entries: AIPokemon[]): Map<string, number> {
+		const view = this.responseView(state), result = new Map<string, number>();
+		const key = `${positionKey(view)}:${entries.map(identity).join(',')}`;
+		const cached = this.entryProbabilityCache.get(key);
+		if (cached) return cached;
+		const target = view.self.active[0], foe = view.opponent.active[0];
+		for (const model of modelsFor(target)) {
+			const actor = { ...model.pokemon, moves: target.fainted ? [] : knownMoves(model.pokemon) };
+			const evaluator = new HardEvaluation(view, state.field.formatId || '', new Map(
+				view.opponent.team.map(p => [p, modelsFor(p)])), this.matchups.damageCache);
+			const weights = entries.filter(entry => !entry.fainted && entry.hp > 0).map(entry => {
+				const member = view.opponent.team.find(p => identity(p) === identity(entry))!;
+				const candidates = evaluator.switchTargets(actor, foe, [member]);
+				return { entry, weight: candidates.reduce((sum, candidate) =>
+					sum + candidate.prior / (0.2 + candidate.threat), 0) };
+			});
+			const total = weights.reduce((sum, entry) => sum + entry.weight, 0);
+			for (const { entry, weight } of weights) if (weight > 0) {
+				const entryKey = identity(entry);
+				result.set(entryKey, (result.get(entryKey) || 0) + model.weight * weight / total);
+			}
+		}
+		this.entryProbabilityCache.set(key, result);
+		return result;
 	}
 
 	/** All tactical eligibility comes from scoring; search only supplies recipients and hypotheses. */

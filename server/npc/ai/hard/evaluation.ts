@@ -31,7 +31,7 @@ import {
 	effectiveAbility, effectiveItem, effectivePriority, replaceActivePokemon,
 } from '../cfru/util/mechanics';
 import {
-	applyTeamPresetRules, fightingStyle, hardMove, inferOpponent, predictOpponent,
+	applyTeamPresetRules, fightingStyle, hardMove, inferOpponent, predictOpponent, publicTargetModels,
 	type OpponentHypothesis, type PredictedAction,
 } from './opponent-model';
 
@@ -124,10 +124,18 @@ export class HardEvaluation {
 
 	predictions(actor: AIPokemon, replacements?: ReplacementHypothesis[]):
 	Map<AIPokemon, PredictedAction[]> {
+		const targets = publicTargetModels(actor, this.formatId);
 		return new Map(this.state.opponent.active.filter(p => !p.fainted).map(foe => [foe,
-			predictOpponent(this.calculationState(actor), foe, actor, this.formatId, (state, attacker, moves, target) =>
-				this.baseScores(state, attacker, moves, target, true), this.models.get(foe),
-			replacements && !replacements.length ? 0 : this.retreatConfidence(actor, foe, replacements), this.damageCache),
+			targets.flatMap(model => {
+				const target = { ...model.pokemon, moves: [...new Set([...model.pokemon.moves,
+					...(model.pokemon.moveKnowledge?.presetCandidates || [])])] };
+				const position = replaceActivePokemon(this.calculationState(actor), actor, target);
+				const destinations = actor.publicKnowledge ? this.switchTargets(target, foe) : replacements;
+				return predictOpponent(position, foe, target, this.formatId, (state, attacker, moves, defender) =>
+					this.baseScores(state, attacker, moves, defender, true), this.models.get(foe),
+				destinations && !destinations.length ? 0 : this.retreatConfidence(target, foe, destinations),
+				this.damageCache).map(action => ({ ...action, weight: action.weight * model.weight }));
+			}),
 		]));
 	}
 

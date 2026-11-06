@@ -1,0 +1,267 @@
+{
+  "format": "gen6ou",
+  "turn": 3,
+  "protocol": [
+    "|t:|1793951888",
+    "|gametype|singles",
+    "|player|p1|jiayi37u|101|",
+    "|player|p2|g6ou-26|acetrainer-gen6|",
+    "|gen|6",
+    "|tier|[Gen 6] OU",
+    "|rule|Sleep Clause Mod: Limit one foe put to sleep",
+    "|rule|Species Clause: Limit one of each Pokémon",
+    "|rule|OHKO Clause: OHKO moves are banned",
+    "|rule|Moody Clause: Moody is banned",
+    "|rule|Evasion Items Clause: Evasion items are banned",
+    "|rule|Evasion Moves Clause: Evasion moves are banned",
+    "|rule|Endless Battle Clause: Forcing endless battles is banned",
+    "|rule|HP Percentage Mod: HP is shown in percentages",
+    "|rule|Evasion Abilities Clause: Evasion abilities are banned",
+    "|rule|Swagger Clause: Swagger is banned",
+    "|clearpoke",
+    "|poke|p1|Metagross|item",
+    "|poke|p1|Rotom-Wash|item",
+    "|poke|p1|Serperior, M|item",
+    "|poke|p1|Excadrill, F|item",
+    "|poke|p1|Tornadus-Therian, M|item",
+    "|poke|p1|Volcanion|item",
+    "|poke|p2|Alakazam, F|item",
+    "|poke|p2|Clefable, M|item",
+    "|poke|p2|Rotom-Wash|item",
+    "|poke|p2|Ferrothorn, M|item",
+    "|poke|p2|Heatran, M|item",
+    "|poke|p2|Gliscor, F|item",
+    "|teampreview",
+    "|",
+    "|t:|1793951917",
+    "|teamsize|p1|6",
+    "|teamsize|p2|6",
+    "|start",
+    "|switch|p1a: Tornadus|Tornadus-Therian, M|100/100",
+    "|switch|p2a: Ferrothorn|Ferrothorn, M|100/100",
+    "|turn|1",
+    "|",
+    "|t:|1793951922",
+    "|move|p1a: Tornadus|Taunt|p2a: Ferrothorn",
+    "|-start|p2a: Ferrothorn|move: Taunt",
+    "|cant|p2a: Ferrothorn|move: Taunt|Spikes",
+    "|",
+    "|upkeep",
+    "|turn|2",
+    "|",
+    "|t:|1793951930",
+    "|switch|p2a: Rotom|Rotom-Wash|100/100",
+    "|move|p1a: Tornadus|Knock Off|p2a: Rotom",
+    "|-damage|p2a: Rotom|80/100",
+    "|-enditem|p2a: Rotom|Leftovers|[from] move: Knock Off|[of] p1a: Tornadus",
+    "|",
+    "|upkeep",
+    "|turn|3"
+  ],
+  "request": {
+    "side": {
+      "id": "p2",
+      "pokemon": [
+        {
+          "ident": "p2: Rotom",
+          "details": "Rotom-Wash",
+          "condition": "242/304",
+          "active": true,
+          "stats": {
+            "atk": 121,
+            "def": 260,
+            "spa": 246,
+            "spd": 250,
+            "spe": 288
+          },
+          "moves": [
+            "voltswitch",
+            "hydropump",
+            "willowisp",
+            "painsplit"
+          ],
+          "baseAbility": "levitate",
+          "item": "",
+          "pokeball": "pokeball"
+        },
+        {
+          "ident": "p2: Alakazam",
+          "details": "Alakazam, M",
+          "condition": "251/251",
+          "active": false,
+          "stats": {
+            "atk": 94,
+            "def": 132,
+            "spa": 405,
+            "spd": 226,
+            "spe": 334
+          },
+          "moves": [
+            "psychic",
+            "calmmind",
+            "focusblast",
+            "shadowball"
+          ],
+          "baseAbility": "magicguard",
+          "item": "alakazite",
+          "pokeball": "pokeball",
+          "statSpread": {
+            "nature": "Modest",
+            "evs": {
+              "hp": 0,
+              "atk": 0,
+              "def": 24,
+              "spa": 252,
+              "spd": 0,
+              "spe": 232
+            },
+            "ivs": {
+              "hp": 31,
+              "atk": 0,
+              "def": 31,
+              "spa": 31,
+              "spd": 31,
+              "spe": 31
+            }
+          }
+        },
+        {
+          "ident": "p2: Clefable",
+          "details": "Clefable, F",
+          "condition": "394/394",
+          "active": false,
+          "stats": {
+            "atk": 130,
+            "def": 266,
+            "spa": 226,
+            "spd": 216,
+            "spe": 160
+          },
+          "moves": [
+            "calmmind",
+            "moonblast",
+            "icebeam",
+            "softboiled"
+          ],
+          "baseAbility": "magicguard",
+          "item": "lifeorb",
+          "pokeball": "pokeball"
+        },
+        {
+          "ident": "p2: Ferrothorn",
+          "details": "Ferrothorn, M",
+          "condition": "352/352",
+          "active": false,
+          "stats": {
+            "atk": 224,
+            "def": 330,
+            "spa": 129,
+            "spd": 330,
+            "spe": 76
+          },
+          "moves": [
+            "powerwhip",
+            "leechseed",
+            "spikes",
+            "protect"
+          ],
+          "baseAbility": "ironbarbs",
+          "item": "leftovers",
+          "pokeball": "pokeball"
+        },
+        {
+          "ident": "p2: Heatran",
+          "details": "Heatran, M",
+          "condition": "386/386",
+          "active": false,
+          "stats": {
+            "atk": 166,
+            "def": 249,
+            "spa": 296,
+            "spd": 342,
+            "spe": 190
+          },
+          "moves": [
+            "stealthrock",
+            "lavaplume",
+            "protect",
+            "roar"
+          ],
+          "baseAbility": "flashfire",
+          "item": "leftovers",
+          "pokeball": "pokeball"
+        },
+        {
+          "ident": "p2: Gliscor",
+          "details": "Gliscor, F",
+          "condition": "354/354",
+          "active": false,
+          "stats": {
+            "atk": 226,
+            "def": 286,
+            "spa": 113,
+            "spd": 234,
+            "spe": 266
+          },
+          "moves": [
+            "earthquake",
+            "knockoff",
+            "taunt",
+            "roost"
+          ],
+          "baseAbility": "poisonheal",
+          "item": "toxicorb",
+          "pokeball": "pokeball"
+        }
+      ]
+    },
+    "active": [
+      {
+        "moves": [
+          {
+            "move": "Volt Switch",
+            "id": "voltswitch",
+            "pp": 32,
+            "maxpp": 32,
+            "target": "normal",
+            "disabled": false,
+            "disabledSource": "",
+            "used": false
+          },
+          {
+            "move": "Hydro Pump",
+            "id": "hydropump",
+            "pp": 8,
+            "maxpp": 8,
+            "target": "normal",
+            "disabled": false,
+            "disabledSource": "",
+            "used": false
+          },
+          {
+            "move": "Will-O-Wisp",
+            "id": "willowisp",
+            "pp": 24,
+            "maxpp": 24,
+            "target": "normal",
+            "disabled": false,
+            "disabledSource": "",
+            "used": false
+          },
+          {
+            "move": "Pain Split",
+            "id": "painsplit",
+            "pp": 32,
+            "maxpp": 32,
+            "target": "normal",
+            "disabled": false,
+            "disabledSource": "",
+            "used": false
+          }
+        ],
+        "trapped": false,
+        "canMegaEvo": false
+      }
+    ]
+  }
+}

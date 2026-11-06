@@ -1,6 +1,6 @@
 /** Strategic action membership. No branch-count caps and no search/transition execution. */
 import { type AIPokemon, type BattleState, type MoveScore } from '../cfru/types';
-import { hardMove } from './opponent-model';
+import { hardMove, publicTargetModels } from './opponent-model';
 import { HardEvaluation } from './evaluation';
 import { actionDelay, valueWeights, type MatchupEvaluator } from './matchups';
 import { megaEvolutionState } from '../cfru/util/forms';
@@ -23,6 +23,9 @@ export class CandidateSelector {
 	protected assessments = new Map<string, ReturnType<MatchupEvaluator['assess']>>();
 	private choicesCache = new Map<string, SearchAction[]>();
 	private entryCache = new Map<string, Set<string>>();
+	private publicViews = new Map<string, BattleState>();
+	private responseCachePolicy = new Map<string, { action: SearchAction, probability: number }[]>();
+	private entryWeights = new Map<string, Map<string, number>>();
 	readonly matchups: MatchupEvaluator;
 	private readonly knowledge?: BattleState;
 	constructor(matchups: MatchupEvaluator, root?: BattleState) {
@@ -240,6 +243,97 @@ export class CandidateSelector {
 			}
 		}
 		return scores;
+	}
+
+	/** Public configurations are inference inputs, never the trainer's private request. */
+	private responseView(state: BattleState): BattleState {
+		const key = positionKey(state), cached = this.publicViews.get(key);
+		if (cached) return cached;
+		const next = clonePosition(state);
+		for (const p of next.self.team) {
+			const models = publicTargetModels(p, state.field.formatId || '');
+			Object.assign(p, models[0].pokemon, { presetModels: models });
+		}
+		snapshotPosition(next); this.publicViews.set(key, next); return next;
+	}
+
+	/** One matrix row supplies entry quality. Exposed entries use counter; free entries use check.
+	 * A cheap weakened member may buy a free entry for an otherwise unsafe check.
+	 * These are behavior weights, not guarantees that a recipient survives every attack.
+	 */
+	entryProbabilities(state: BattleState, entries: AIPokemon[], exposed = true): Map<string, number> {
+		const view = this.responseView(state);
+		const key = `${positionKey(view)}:${exposed}:${entries.map(identity).join(',')}`;
+		const cached = this.entryWeights.get(key); if (cached) return cached;
+		const i = view.self.team.indexOf(view.self.active[0]);
+		const pairs = this.pairs(view, entries.map(p =>
+			[i, view.opponent.team.findIndex(q => identity(p) === identity(q))]));
+		const ranked = entries.map((p, n) => {
+			const pair = pairs[n];
+			const health = projectEntry(p, view.opponent.conditions, view.field, view.opponent.active[0].slot).hp;
+			const own = pair.opponent;
+			const margin = (exposed ? own.counter : own.check) - pair.self.check;
+			return { p, health, margin, check: own.check, pressure: own.pressure,
+				quality: 1 + margin + (exposed ? own.entryPressure : own.pressure) +
+					(exposed ? own.entrySustain : own.sustain) };
+		});
+		let selected = ranked.filter(e => e.health > 0 && e.margin > 0);
+		if (!selected.length) {
+			const best = Math.max(...ranked.map(e => e.health > 0 ? e.quality : -Infinity));
+			selected = ranked.filter(e => e.health > 0 && e.quality >= best - 0.25);
+		}
+		const weights = new Map(selected.map(e => [identity(e.p), Math.max(0.25, e.quality)]));
+		if (exposed) {
+			// Material plus this row's offensive role is a cheap sacrifice-cost estimate.
+			const cost = (e: typeof ranked[number]) => valueWeights.member +
+				valueWeights.hp * e.p.hp / e.p.maxHp + valueWeights.check * e.check + valueWeights.pressure * e.pressure;
+			const fodder = ranked.filter(e => e.health / e.p.maxHp <= 0.25 &&
+				!weights.has(identity(e.p)) && ranked.some(q => q !== e && q.health > 0 && q.check > 0));
+			fodder.sort((a, b) => cost(a) - cost(b));
+			if (fodder.length) {
+				const e = fodder[0], followup = Math.max(...ranked.filter(q => q !== e && q.health > 0).map(q => q.check));
+				const weight = followup - cost(e) / (valueWeights.member + valueWeights.hp + valueWeights.check + valueWeights.pressure);
+				if (weight > 0) weights.set(identity(e.p), weight);
+			}
+		}
+		// All entrants may die to hazards; the forced replacement must still be represented.
+		if (!weights.size) for (const p of entries) weights.set(identity(p), 1);
+		const total = [...weights.values()].reduce((a, b) => a + b, 0);
+		const result = new Map([...weights].map(([id, weight]) => [id, weight / total]));
+		this.entryWeights.set(key, result); return result;
+	}
+
+	/** Score once against public beliefs, trim negligible alternatives, then normalize.
+	 * The distribution is shared by every own root action; no queued move is an input.
+	 */
+	responseProbabilities(state: BattleState): { action: SearchAction, probability: number }[] {
+		const view = this.responseView(state), key = positionKey(view);
+		const cached = this.responseCachePolicy.get(key); if (cached) return cached;
+		const actor = view.opponent.active[0];
+		const moves = knownMoves(actor).filter(id => usableMove(view, 'opponent', id))
+			.map(id => moveAction(view, 'opponent', id));
+		const scores = this.scoreActions(view, 'opponent', moves);
+		const retained = new Set(selectMoveCandidates([...scores.values()], SEARCH_SCORE_GAP));
+		const best = Math.max(...[...scores.values()].map(s => s.score));
+		const available = new Map(modelsFor(actor).flatMap(m => m.moves.map(move => [move.id, move.availability] as const)));
+		let weighted = moves.filter(a => retained.has(scores.get(a)!)).map(action => ({ action,
+			probability: (available.get(action.move!) || 1) * Math.exp((scores.get(action)!.score - best) / 8) }));
+		// A response with less than 5% of the strongest move's mass is approximated away.
+		const largest = Math.max(...weighted.map(a => a.probability));
+		weighted = weighted.filter(a => a.probability >= largest * 0.05);
+		const entries = !isTrapped(view, 'opponent') && !actor.volatiles.has('trapped') ?
+			this.entryProbabilities(state, state.opponent.reserve.filter(p => !p.fainted && p.hp > 0)) : new Map<string, number>();
+		const [pair] = this.pairs(view, [[view.self.team.indexOf(view.self.active[0]), view.opponent.team.indexOf(actor)]]);
+		const retreat = Math.max(0, pair.self.check - pair.opponent.check, Math.min(1, (100 - best) / 70));
+		const switchMass = entries.size ? 0.6 * retreat : 0;
+		const total = weighted.reduce((sum, a) => sum + a.probability, 0);
+		const result = weighted.map(a => ({ ...a, probability: (1 - switchMass) * a.probability / total }));
+		if (!result.length) result.push({ action: { id: 'pass', prior: 0 }, probability: 1 - switchMass });
+		for (const [id, probability] of entries) if (switchMass > 0) {
+			const p = state.opponent.reserve.find(p => identity(p) === id)!;
+			result.push({ action: { id: `switch ${p.slot}`, switchTo: p, prior: 0 }, probability: switchMass * probability });
+		}
+		this.responseCachePolicy.set(key, result); return result;
 	}
 
 	/** All tactical eligibility comes from scoring; search only supplies recipients and hypotheses. */

@@ -152,6 +152,7 @@ export function buildBattleStateFromRequests(
 			const position = tracker.getPosition(side, i);
 			const pokemon = buildPokemonFromRequest(mon, active ? tracker.getFieldSlot(position) : i + 1, active, formatId);
 			pokemon.ident = mon.ident;
+			pokemon.publicKnowledge = tracker.getOwnPublicKnowledge(mon.ident);
 			pokemon.ownerSide = side;
 			const forme = active && tracker.getForme(position);
 			if (forme) {

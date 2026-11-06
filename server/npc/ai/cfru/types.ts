@@ -146,6 +146,9 @@ export interface AIPokemon {
 	moves: string[];
 	/** Opponent inference only; never written into tracker observations. */
 	moveKnowledge?: OpponentMoveKnowledge;
+	/** Public facts about our own member, excluding request-only configuration. */
+	publicKnowledge?: { moves: string[], item?: string, originalItem?: string, ability?: string, originalAbility?: string,
+		itemChanged?: boolean, abilityChanged?: boolean, };
 	/** Shared random-battle inference from public rules and observations. */
 	presetModels?: OpponentModel[];
 

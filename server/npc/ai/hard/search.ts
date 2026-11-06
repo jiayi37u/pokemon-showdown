@@ -2,7 +2,7 @@
 import type { BattleState, OpponentModel } from '../cfru/types';
 import type { HardEvaluation } from './evaluation';
 import { hardMove, searchOpponentModels } from './opponent-model';
-import { actionDelay, MatchupEvaluator } from './matchups';
+import { actionDelay, MatchupEvaluator, valueWeights } from './matchups';
 import { getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { rulesDex } from '../cfru/util/mechanics';
 import { CandidateSelector, observationKey, perspective } from './candidates';
@@ -79,6 +79,12 @@ function terminalValue(state: BattleState): number | undefined {
 	const self = state.self.team.some(p => !p.fainted && p.hp > 0);
 	const foe = state.opponent.team.some(p => !p.fainted && p.hp > 0);
 	if (!self || !foe) return self ? 10000 : foe ? -10000 : 0;
+}
+
+/** A mathematical score envelope, including terminal wins/losses, not a search budget. */
+function valueBound(state: BattleState): number {
+	return Math.max(10000, (state.self.team.length + state.opponent.team.length) *
+		Object.values(valueWeights).reduce((sum, value) => sum + value, 0));
 }
 
 /** Terminal values dominate finite positional heuristics. */
@@ -170,11 +176,11 @@ export class Search extends CandidateSelector {
 		const cached = this.continuations.get(key);
 		if (cached) { this.reused.continuations++; return cached; }
 		const responses = this.responses(state, false, switches), pending = [...responses];
-		if (reorder) pending.sort((a, b) =>
+		if (reorder) pending.sort((a, b) => b.probability - a.probability ||
 			this.expansionCost(a.state, 'opponent', a.action) - this.expansionCost(b.state, 'opponent', b.action) ||
 			b.action.prior - a.action.prior);
 		const work: Continuation = { action, responses, pending, completed: new Map(),
-			expansions: new Map(), upper: Infinity };
+			expansions: new Map(), upper: valueBound(state) };
 		this.continuations.set(key, work); return work;
 	}
 
@@ -195,7 +201,8 @@ export class Search extends CandidateSelector {
 			if (expansion && expansion.upper?.independent !== independent) expansion.upper = { independent,
 				value: entryBound(this.responseBounds(expansion), true, entry => independent.has(entry.key)) };
 			return { config: response.config, configWeight: response.profile.weight, reply: response.action.id,
-				replyWeight: response.probability, weight: 1, entries: [], value: expansion?.upper?.value ?? Infinity };
+				replyWeight: response.probability, weight: 1, entries: [],
+				value: expansion?.upper?.value ?? valueBound(response.state) };
 		}));
 	}
 
@@ -223,7 +230,7 @@ export class Search extends CandidateSelector {
 		}
 		work.upper = aggregateLeaves(work.responses.map(r => ({ config: r.config, configWeight: r.profile.weight,
 			reply: r.action.id, replyWeight: r.probability, weight: 1, entries: [],
-			value: work.completed.has(r) ? optimisticValue(work.completed.get(r)!, false) : Infinity })));
+			value: work.completed.has(r) ? optimisticValue(work.completed.get(r)!, false) : valueBound(r.state) })));
 
 		if (!work.pending.length) {
 			// Canonical response order preserves reference summation and tie behavior.
@@ -356,7 +363,8 @@ export class Search extends CandidateSelector {
 		const { config, profile, action } = work.response;
 		return work.frontier.map(({ node, branch }) => branch || { config, configWeight: profile.weight,
 			reply: action.id, replyWeight: work.response.probability, weight: node.weight, entries: node.entries,
-			value: node.expand ? Infinity : (node.upper ??= terminalValue(node.state!) ?? this.matchups.upperBound(node.state!)) });
+			value: node.expand ? valueBound(work.response.state) :
+			(node.upper ??= terminalValue(node.state!) ?? this.matchups.upperBound(node.state!)) });
 	}
 
 	private advanceResponse(work: ResponseWork, retainPosition: boolean): void {
@@ -559,13 +567,14 @@ function* resolveContinuations(
 	}
 	const ownActions = [...alternatives.values()];
 	const options = ownActions.map((action, rank) => ({
-		action, rank, upper: Infinity, uppers: group.map(() => Infinity),
+		action, rank, upper: Math.max(...group.map(b => valueBound(b.state))),
+		uppers: group.map(b => valueBound(b.state)),
 		works: undefined as Continuation[] | undefined, independent: undefined as Set<string> | undefined,
 		done: false, rejected: false,
 	}));
-	if (pruning) options.sort((a, b) =>
+	if (pruning) options.sort((a, b) => b.action.prior - a.action.prior ||
 		search.expansionCost(group[0].state, 'self', a.action) - search.expansionCost(group[0].state, 'self', b.action) ||
-		b.action.prior - a.action.prior || a.rank - b.rank);
+		a.rank - b.rank);
 	const sharedEntries = new Set<string>();
 	let best = -Infinity, bestRank = Infinity, chosen: number[] | undefined;
 	while (true) {
@@ -622,9 +631,9 @@ function* resolveContinuations(
 		// Envelope every still-possible winning action instead of copying the average
 		// improvement into each hidden world. Completed losing actions cannot be selected.
 		const contenders = options.filter(o => !o.done && !o.rejected && (!pruning || o.upper >= best - 1e-9));
-		const lower = group.length === 1 ? [best] : group.map((_, i) => Math.min(
-			chosen?.[i] ?? -Infinity,
-			...contenders.map(o => o.works?.[i].leaves ? pessimisticValue(o.works[i].leaves) : -Infinity)));
+		const lower = group.length === 1 ? [Math.max(best, -valueBound(group[0].state))] : group.map((b, i) => Math.min(
+			chosen?.[i] ?? -valueBound(b.state),
+			...contenders.map(o => o.works?.[i].leaves ? pessimisticValue(o.works[i].leaves) : -valueBound(b.state))));
 		yield { upper, lower };
 	}
 }
@@ -670,14 +679,15 @@ function runSearch(
 		const branches: Branch[] = responses.map(r => ({ state: root, config: r.config,
 			configWeight: r.profile.weight, reply: r.action.id, replyWeight: r.probability, weight: 1, entries: [], value: 0 }));
 		return { action, branches,
-			lower: new Map(branches.map(b => [b, -Infinity])), upper: new Map(branches.map(b => [b, Infinity])),
+			lower: new Map(branches.map(b => [b, -valueBound(root)])),
+			upper: new Map(branches.map(b => [b, valueBound(root)])),
 			unexpanded: responses.map((response, i) => ({ response, placeholder: branches[i] })),
 			lo: -Infinity, hi: Infinity, done: false, rejected: false,
 			pending: [] as { group: Branch[], work: ReturnType<typeof resolveContinuations> }[] };
 	});
 	// Work ordering uses only existing action facts, never a new candidate restriction.
-	if (pruning) roots.sort((a, b) => search.expansionCost(root, 'self', a.action) -
-		search.expansionCost(root, 'self', b.action) || b.action.prior - a.action.prior ||
+	if (pruning) roots.sort((a, b) => b.action.prior - a.action.prior ||
+		search.expansionCost(root, 'self', a.action) - search.expansionCost(root, 'self', b.action) ||
 		order.get(a.action.id)! - order.get(b.action.id)!);
 	const groupContinuations = (candidate: typeof roots[number]) => {
 		const groups = new Map<string, Branch[]>();
@@ -702,16 +712,9 @@ function runSearch(
 			return false;
 		});
 		if (pruning) {
-			pending.sort((a, b) => aggregate(a) - aggregate(b));
-			// An unvisited positive-weight configuration keeps the upper bound infinite.
-			// Cover each configuration early without splitting shared observations;
-			// chance outcomes may still require further groups to obtain a finite bound.
-			const seen = new Set<number>(), first: Branch[][] = [], rest: Branch[][] = [];
-			for (const group of pending) {
-				(group.some(b => !seen.has(b.config)) ? first : rest).push(group);
-				for (const branch of group) seen.add(branch.config);
-			}
-			pending = first.concat(rest);
+			const mass = (group: Branch[]) => group.reduce((sum, b) =>
+				sum + b.configWeight * (b.replyWeight ?? 1) * b.weight, 0);
+			pending.sort((a, b) => mass(b) - mass(a) || aggregate(a) - aggregate(b));
 		}
 		candidate.pending = pending.map(group => ({ group, work: resolveContinuations(search, group, pruning) }));
 	};
@@ -736,8 +739,8 @@ function runSearch(
 			}
 		}
 		const available = roots.filter(c => !c.done && !c.rejected);
-		// Infinite bounds are visited first. Once finite, advance the root that could
-		// still beat the leader by the most, without requiring an exact winner value.
+		// Advance the root that could still beat the leader by the most,
+		// without requiring an exact winner value.
 		if (pruning) available.sort((a, b) => b.hi - a.hi);
 		const candidate = available[0];
 		if (!candidate) { winner = leader; break; }
@@ -749,8 +752,8 @@ function runSearch(
 			candidate.lower.delete(placeholder); candidate.upper.delete(placeholder);
 			for (const branch of branches) {
 				const terminal = terminalValue(branch.state) !== undefined;
-				candidate.lower.set(branch, terminal ? branch.value : -Infinity);
-				candidate.upper.set(branch, terminal ? branch.value : Infinity);
+				candidate.lower.set(branch, terminal ? branch.value : -valueBound(branch.state));
+				candidate.upper.set(branch, terminal ? branch.value : valueBound(branch.state));
 			}
 			// Shared observation groups cannot be resolved until every member is known.
 			if (!candidate.unexpanded.length) groupContinuations(candidate);

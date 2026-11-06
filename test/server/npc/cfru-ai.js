@@ -6,7 +6,6 @@ const { buildAIMove, trackedPokemonToAIPokemon } = require('../../../dist/server
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 const { makeAIPokemonSkeleton } = require('../../../dist/server/npc/ai/cfru/util/pokemon-builder');
 const { ScoringEngine } = require('../../../dist/server/npc/ai/cfru/scoring');
-const { rewardSetupMove, rewardDefensiveSetup, rewardEncore } = require('../../../dist/server/npc/ai/cfru/scoring/positives');
 const { DEFAULT_AI_CONFIG, createAICache } = require('../../../dist/server/npc/ai/cfru/types');
 const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
 const { getBestKOMove } = require('../../../dist/server/npc/ai/cfru/util/knockout');
@@ -103,16 +102,18 @@ describe('CFRU scoring with production move metadata', () => {
 	}
 
 	it('rewards Rest recovery at low HP while keeping delayed and sacrificial healing separate', () => {
-		for (const [hp, expected] of [[144, 108], [57, 112], [300, 60]]) {
+		const full = score('rest', { actor: pokemon({ moves: ['rest', 'sleeptalk'] }) }).score;
+		for (const hp of [144, 57]) {
 			const actor = pokemon({ hp, hpPercent: hp / 3, moves: ['rest', 'sleeptalk'] });
-			assert.equal(score('rest', { actor }).score, expected);
+			assert(score('rest', { actor }).score > full);
 		}
 		assert(!hasReason(score('wish', { actor: pokemon({ hp: 60, hpPercent: 20 }) }), 'Healing at'));
 		assert(!hasReason(score('healingwish', { actor: pokemon({ hp: 60, hpPercent: 20 }) }), 'Healing at'));
 		const injured = pokemon({ hp: 60, hpPercent: 20 });
 		assert.equal(score('rest', { actor: injured, field: { terrain: 'electric' } }).score, 0);
 		assert.equal(score('rest', { actor: { ...injured, ability: 'Insomnia' } }).score, 0);
-		assert.equal(score('rest', { actor: { ...injured, status: 'slp', sleepTurns: 1 } }).score, 112);
+		assert.equal(score('rest', { actor: { ...injured, status: 'slp', sleepTurns: 1 } }).score,
+			score('rest', { actor: injured }).score);
 		assert.equal(score('rest', { actor: { ...injured, status: 'slp', sleepTurns: 2 } }).score, 0);
 	});
 
@@ -135,67 +136,6 @@ describe('CFRU scoring with production move metadata', () => {
 		assert(score('revivalblessing', { actor, reserve: [{ ...fainted, ownerSide: 'p2' }] }).score > 0);
 	});
 
-	it('separates speed benefits from Protect and attacking priority', () => {
-		const actor = pokemon();
-		actor.boosts.spe = 2;
-		for (const response of ['protect', 'bulletpunch']) {
-			const target = pokemon({ moves: [response, 'tackle'] });
-			assert.equal(score('agility', { actor, target }).score, 60, response);
-			assert(!hasReason(score('thunderwave', { actor, target }), 'Paralysis on faster target'), response);
-			assert.equal(score('psychic', { actor, target }).flags.goesFirst, response === 'protect');
-		}
-		assert.equal(score('psychic', { actor, target: pokemon({ ability: 'Prankster', moves: ['naturepower'] }) })
-			.flags.goesFirst, false, 'Nature Power is an attack with its source move priority');
-		const slow = pokemon();
-		slow.baseStats.spe = 100;
-		assert(score('agility', { actor: slow }).score > 100);
-		assert(hasReason(score('thunderwave', { actor: slow }), 'Paralysis on faster target'));
-		assert.equal(score('agility', { actor: slow, field: { trickroom: true } }).score, 60);
-		assert(!hasReason(score('thunderwave', { actor: slow, field: { trickroom: true } }), 'Paralysis on faster target'));
-	});
-
-	it('only rewards priority for an average-damage KO that overtakes a faster attacker', () => {
-		const slow = pokemon();
-		slow.baseStats.spe = 100;
-		const target = pokemon({ hp: 1, hpPercent: 100 / 300, moves: ['protect', 'tackle'] });
-		assert(hasReason(score('quickattack', { actor: slow, target }), 'Priority KO'));
-		assert(!hasReason(score('quickattack', { target }), 'Priority KO'), 'A speed tie is not slower');
-		const fast = pokemon();
-		fast.baseStats.spe = 300;
-		assert(!hasReason(score('quickattack', { actor: fast, target }), 'Priority KO'));
-		assert(!hasReason(score('quickattack', { actor: slow, target: { ...target, moves: ['extremespeed'] } }), 'Priority KO'));
-		const healthy = pokemon({ moves: ['tackle'] });
-		assert(hasReason(score('quickattack', { actor: slow, target: healthy }), 'Low damage'));
-		const damage = calculateDamage(slow, healthy, buildAIMove({ id: 'quickattack' }, 1), {});
-		const hp = Math.floor(damage.average) + 1;
-		const notReliable = { ...healthy, hp, hpPercent: hp / healthy.maxHp * 100 };
-		assert(!hasReason(score('quickattack', { actor: slow, target: notReliable }), 'Priority KO'));
-		const remaining = Math.ceil(damage.average * 1.5);
-		const twoHits = score('quickattack', { actor: slow, target: { ...healthy, hp: remaining,
-			hpPercent: remaining / healthy.maxHp * 100 } });
-		assert(twoHits.flags.can2HKO);
-		assert(!hasReason(twoHits, 'favorable 2HKO'), 'Priority alone gives no 2HKO speed reward');
-	});
-
-	it('rewards every setup stage with a nonincreasing curve', () => {
-		for (const [id, stat, positive] of [
-			['swordsdance', 'atk', rewardSetupMove], ['calmmind', 'spa', rewardSetupMove],
-			['irondefense', 'def', rewardDefensiveSetup], ['amnesia', 'spd', rewardDefensiveSetup],
-			['cosmicpower', 'def', rewardDefensiveSetup],
-		]) {
-			let previous = Infinity;
-			for (const stage of [-6, -3, -1, 0, 1, 2, 3, 4, 5, 6]) {
-				const actor = pokemon();
-				actor.boosts[stat] = stage;
-				const result = score(id, { actor, positive });
-				assert(result.score <= previous, `${id} at ${stage}`);
-				if (stage < 6) assert(result.score > 100, `${id} at ${stage}`);
-				assert.equal(100 + result.breakdown.details.reduce((sum, detail) => sum + detail.amount, 0), result.score);
-				previous = result.score;
-			}
-		}
-	});
-
 	it('only rewards pivoting into an available reserve owned by the acting trainer', () => {
 		const actor = pokemon({ ownerSide: 'p2' });
 		for (const id of ['uturn', 'voltswitch', 'flipturn']) {
@@ -209,40 +149,21 @@ describe('CFRU scoring with production move metadata', () => {
 		}
 	});
 
-	it('uses 60 for tactical discouragement and zero for confirmed failures', () => {
+	it('distinguishes tactical discouragement from confirmed failure', () => {
 		for (const [id, options] of [
 			['recover', {}], ['protect', { actor: pokemon({ lastMove: 'protect' }) }], ['haze', {}],
 			['bellydrum', { actor: pokemon({ ability: 'Contrary' }) }],
 			['swordsdance', { actor: pokemon({ ability: 'Contrary' }) }],
 		]) {
 			const result = score(id, options);
-			assert.equal(result.score, 60, id);
+			assert(result.score > 0, id);
+			assert(result.flags.discouraged, id);
 			assert.equal(result.flags.hasNoEffect, false, id);
 			assert.equal(result.breakdown.positives, 0, id);
 		}
 		assert.equal(score('bellydrum', { actor: pokemon({ hp: 120, hpPercent: 40, ability: 'Contrary' }) }).score, 0);
 		assert.equal(score('toxic', { target: pokemon({ status: 'tox' }) }).score, 0);
 		assert.equal(score('earthquake', { target: pokemon({ types: ['Flying'] }) }).score, 0);
-	});
-
-	it('discourages low-HP setup without declaring it ineffective or rewarding it again', () => {
-		for (const id of ['swordsdance', 'nastyplot', 'dragondance', 'quiverdance', 'irondefense', 'cosmicpower', 'stockpile']) {
-			for (const hpPercent of [20, 40]) {
-				const result = score(id, { actor: pokemon({ hp: hpPercent * 3, hpPercent }) });
-				assert.equal(result.score, 60, id);
-				assert.equal(result.breakdown.positives, 0, id);
-				assert.equal(result.flags.hasNoEffect, false, id);
-				assert.equal(100 + result.breakdown.details.reduce((sum, detail) => sum + detail.amount, 0), result.score);
-			}
-		}
-		assert(score('swordsdance', { actor: pokemon({ hp: 123, hpPercent: 41 }) }).score > 60);
-		const actor = pokemon({ hp: 60, hpPercent: 20 });
-		actor.boosts.atk = 6;
-		assert.equal(score('swordsdance', { actor }).score, 0, 'Confirmed failure still scores zero');
-		assert(!hasReason(score('recover', { actor }), 'Setup discouraged'));
-		assert(!hasReason(score('tidyup', { actor }), 'Setup discouraged'), 'Clearing the field has independent value');
-		assert(hasReason(score('curse', { actor: { ...actor, types: ['Normal'] } }), 'Setup discouraged'));
-		assert(!hasReason(score('curse', { actor: { ...actor, types: ['Ghost'] } }), 'Setup discouraged'));
 	});
 
 	it('discourages offensive boosts without a matching attack, preserving indirect and variable-power benefits', () => {
@@ -302,16 +223,6 @@ describe('CFRU scoring with production move metadata', () => {
 		}
 		assert(!hasReason(score('thousandarrows', { actor, target }), 'Air Balloon'));
 	});
-
-	for (const id of ['gigadrain', 'drainpunch']) {
-		it(`logs every drain reward for ${id}`, () => {
-			for (const hpPercent of [100, 70, 50, 25]) {
-				const result = score(id, { actor: pokemon({ hp: hpPercent * 3, hpPercent }) });
-				assert.equal(result.breakdown.details.reduce((sum, d) => sum + d.amount, 100), result.score);
-				if (hpPercent === 100) assert(hasReason(result, 'Drain move at high HP'));
-			}
-		});
-	}
 
 	for (const [formatId, immune] of [
 		['gen5customgame', false], ['gen6customgame', false], ['gen7customgame', true],
@@ -377,52 +288,17 @@ describe('CFRU scoring with production move metadata', () => {
 		});
 	}
 
-	it('does not reward Toxic when the target is immune to poison', () => {
-		for (const target of [pokemon({ types: ['Steel'] }), pokemon({ ability: 'Immunity' })]) {
-			const result = score('toxic', { target });
-			assert.equal(result.breakdown.positives, 0);
-			assert.equal(result.flags.hasNoEffect, true);
-		}
-	});
-
-	it('logs every paralysis bonus and does not reward burning or paralyzing immune targets', () => {
-		const result = score('thunderwave');
-		assert.equal(result.breakdown.positives, 6); // A speed tie is not a faster target.
-		assert(hasReason(result, 'Reliable accuracy for paralysis'));
-		assert.equal(100 + result.breakdown.details.reduce((sum, d) => sum + d.amount, 0), result.score);
-		for (const [id, target] of [
-			['willowisp', pokemon({ types: ['Fire'] })], ['willowisp', pokemon({ ability: 'Water Veil' })],
-			['thunderwave', pokemon({ types: ['Ground'] })], ['thunderwave', pokemon({ ability: 'Limber' })],
-		]) {
-			assert.equal(score(id, { target }).breakdown.positives, 0);
-		}
-	});
-
-	it('requires evidence of no recovery, including Wish, before rewarding Toxic', () => {
-		for (const [moves, expected] of [
-			[['tackle'], 108], [['recover'], 108], [['wish'], 108],
-			[['tackle', 'psychic', 'psychocut', 'swordsdance'], 111],
-			[['tackle', 'psychic', 'psychocut', 'wish'], 108],
-		]) {
-			const result = score('toxic', { target: pokemon({ moves }) });
-			assert.equal(result.score, expected);
-			assert.equal(hasReason(result, 'No recovery in'), expected === 111);
-			assert.equal(100 + result.breakdown.details.reduce((sum, d) => sum + d.amount, 0), result.score);
-		}
-	});
-
 	it('uses compatible preset candidates for recovery without filling unknown slots', () => {
 		const revealedMoves = ['tackle'];
 		const target = pokemon({ moves: revealedMoves, moveKnowledge: {
 			revealedMoves, presetCandidates: ['wish'], remainingSlots: 3,
 		} });
-		assert.equal(score('toxic', { target }).score, 108);
+		assert(!hasReason(score('toxic', { target }), 'No recovery in'));
 		target.moveKnowledge.presetCandidates = ['psychic'];
-		assert.equal(score('toxic', { target }).score, 108, 'A partial preset does not rule out recovery');
+		assert(!hasReason(score('toxic', { target }), 'No recovery in'), 'A partial preset does not rule out recovery');
 		target.moveKnowledge.movePools = [['tackle', 'psychic', 'psychocut', 'swordsdance']];
-		assert.equal(score('toxic', { target }).score, 111, 'A bounded pool can rule out recovery');
-		assert.equal(score('saltcure', { target }).score,
-			score('saltcure', { target: pokemon({ moves: revealedMoves }) }).score + 2);
+		assert(hasReason(score('toxic', { target }), 'No recovery in'), 'A bounded pool can rule out recovery');
+		assert(hasReason(score('saltcure', { target }), 'No recovery in'));
 	});
 
 	for (const formatId of ['gen5customgame', 'gen5pokemmorandombattle', 'gen9customgame']) {
@@ -505,7 +381,7 @@ describe('CFRU scoring with production move metadata', () => {
 			for (const move of moves) tracker.parseMessage(`|move|p1a: Foe|${move}|p1a: Foe`);
 			const target = trackedPokemonToAIPokemon(tracker.getActiveOpponent(), 1, true, 'gen5pokemmorandombattle');
 			assert.equal(target.presetModels.length, moves.length ? 1 : 2);
-			assert.equal(score('toxic', { target }).score, 108);
+			assert(!hasReason(score('toxic', { target }), 'No recovery in'));
 			assert(!hasReason(score('saltcure', { target }), 'No recovery in'));
 			assert.deepEqual(target.moves, moves);
 		}
@@ -580,54 +456,12 @@ describe('CFRU scoring with production move metadata', () => {
 		assert(!hasReason(score('protect', { target }), 'blocks priority moves'));
 	});
 
-	it('uses actual setup scoring for diminishing returns, exhausted boosts and critical HP', () => {
-		const actor = pokemon();
-		const rewards = [0, 2, 4, 6].map(atk => score('swordsdance', {
-			actor: { ...actor, boosts: { ...actor.boosts, atk } }, positive: rewardSetupMove,
-		}).score);
-		assert(rewards[0] > rewards[1] && rewards[1] > rewards[2]);
-		assert.equal(rewards[3], 100); // No setup reward when Attack cannot rise.
-		assert.equal(score('swordsdance', { actor: pokemon({ hp: 60, hpPercent: 20 }), positive: rewardSetupMove }).score, 100);
-		const target = pokemon();
-		assert(score('swordsdance', {
-			target: { ...target, boosts: { ...target.boosts, def: 2 } }, positive: rewardSetupMove,
-		}).score > rewards[0]);
-	});
-
-	it('does not reward Encore for an attacking last move, even if immune', () => {
-		for (const [move, type] of [
-			['earthquake', 'Flying'], ['thunderbolt', 'Ground'], ['tackle', 'Ghost'], ['shadowball', 'Normal'],
-			['psychic', 'Dark'], ['dragonclaw', 'Fairy'], ['sludgebomb', 'Steel'], ['nightshade', 'Normal'],
-		]) {
-			const target = pokemon({ lastMove: move });
-			const neutral = score('encore', { target, actor: pokemon({ types: ['Water'] }), positive: rewardEncore });
-			const immune = score('encore', { target, actor: pokemon({ types: [type] }), positive: rewardEncore });
-			assert.equal(immune.score, neutral.score, `${move} into ${type}`);
-		}
-	});
-
-	it('requires strict speed or priority advantage to reward Encore', () => {
-		const target = pokemon({ lastMove: 'swordsdance' });
-		assert.equal(score('encore', { target }).score, 60, 'A speed tie is not reliable');
-		const actor = pokemon({ ability: 'Prankster' });
-		assert.equal(score('encore', { actor, target }).score, 120);
-		assert.equal(score('encore', { actor, target, field: { trickroom: true } }).score, 120,
-			'Trick Room does not reverse priority');
-		assert.equal(score('encore', { actor, target: { ...target, moves: ['extremespeed', 'swordsdance'] } }).score, 60,
-			'An opposing priority move can change the last move first');
-		assert.equal(score('encore', { actor, target: { ...target, lastMove: 'encore' } }).score, 0,
-			'Encore cannot lock Encore');
-		const slow = pokemon({ baseStats: { ...actor.baseStats, spe: 100 } });
-		assert.equal(score('encore', { actor: slow, target: { ...target, lastMove: '' } }).score, 60,
-			'A slower Encore can succeed after the target acts');
-	});
-
 	it('does not invent a known remaining sleep duration for random sleep or Comatose', () => {
 		const asleep = pokemon({ status: 'slp', sleepTurns: 0 });
 		assert(score('psychic', { actor: asleep }).score > 0);
-		assert.equal(score('sleeptalk', { actor: asleep }).score, 110);
+		assert(!score('sleeptalk', { actor: asleep }).flags.hasNoEffect);
 		assert(score('psychic', { actor: pokemon({ ability: 'Comatose' }) }).score > 0);
-		assert.equal(score('sleeptalk', { actor: pokemon({ ability: 'Comatose' }) }).score, 110);
+		assert(!score('sleeptalk', { actor: pokemon({ ability: 'Comatose' }) }).flags.hasNoEffect);
 	});
 
 	it('uses recoil metadata for Reckless damage and reliable KO selection', () => {

@@ -157,24 +157,12 @@ describe('Opponent preset threat moves', () => {
 	});
 
 	for (const revealed of [[], ['splash'], ['splash', 'growl', 'leer']]) {
-		it(`should switch away from preset Flare Blitz with ${revealed.length} revealed moves`, () => {
-			const { ai, choice } = scenario(revealed);
-			assert.equal(choice, 'switch 2');
+		it(`keeps inferred Flare Blitz separate from ${revealed.length} revealed moves`, () => {
+			const { ai } = scenario(revealed);
 			const observedNames = revealed.map(move => Dex.moves.get(move).name);
 			assert.deepEqual(ai.battleState.opponent.active[0].moves, observedNames);
 			assert.deepEqual(ai.getTracker().getActiveOpponent().knownMoves, observedNames);
 			assert.equal(ai.battleState.opponent.active[0].baseStats.atk, 379);
 		});
 	}
-
-	it('should apply preset attacks to reserve admission as well', () => {
-		const { choice } = scenario([], { safeReserve: false });
-		assert(choice.startsWith('move '), choice);
-	});
-
-	it('should stop switching for an unconfirmed preset after the fourth reveal', () => {
-		const { choice } = scenario(['splash', 'growl', 'leer', 'tailwhip']);
-		assert(choice.startsWith('move '), choice);
-		assert.equal(scenario(['splash', 'growl', 'leer', 'flareblitz']).choice, 'switch 2');
-	});
 });

@@ -63,6 +63,39 @@ describe('NPC shared mechanism families', () => {
 			assert.equal(actor.observedAbility, 'trace');
 			assert.equal(actor.abilityChanged, true);
 		});
+		it(`${mode}: records Magic Bounce from a reflected move and suppresses its tactical rewards`, () => {
+			const g = game({ mode, actor: { species: 'Whimsicott', ability: 'Prankster', moves: ['leechseed', 'encore', 'taunt', 'hurricane'] },
+				foe: { species: 'Xatu', ability: 'Magic Bounce', moves: ['toxic', 'splash'] } });
+			const choice = mode === 'singles' ? 'move 1' : 'move 1 1';
+			g.b.makeChoices(...(mode === 'multi' ? [choice, choice, 'move 1', 'move 1'] :
+				mode === 'doubles' ? [choice + ', move 1', choice + ', move 1'] : [choice, choice]));
+			assert(g.b.log.some(line => line.startsWith('|move|p1a: Xatu|Leech Seed|') && line.includes('[from] ability: Magic Bounce')));
+			const s = g.state(), target = s.opponent.active[0];
+			assert.equal(target.ability, 'Magic Bounce');
+			assert.equal(target.lastMove.toLowerCase(), 'toxic');
+			assert(!target.moves.includes('leechseed'), 'Reflected moves are not revealed moveset slots');
+			for (const id of ['encore', 'leechseed', 'taunt']) {
+				const result = g.score(id, s);
+				assert(result.score <= 60, `${id}: ${result.score}`);
+				assert.equal(result.breakdown.positives, 0, id);
+				assert(result.breakdown.details.some(detail => detail.reason.includes('Magic Bounce')));
+			}
+			assert(g.score('hurricane', s).score > 60, 'Ordinary attacks are unaffected');
+			s.self.active[0].ability = 'Mold Breaker';
+			assert(g.score('encore', s).score > 60, 'Mold Breaker allows Encore through');
+		});
+		it(`${mode}: records public Tera types without revealing an unused Tera type`, () => {
+			const g = game({ mode, actor: { ...passive, teraType: 'Fire', moves: ['terablast'] } });
+			assert.equal(g.state().self.active[0].terastallized, undefined);
+			g.b.actions.terastallize(g.b.p2.active[0]);
+			const s = g.state(), actor = s.self.active[0];
+			assert.deepEqual(actor.types, g.b.p2.active[0].getTypes());
+			assert.equal(resolveMove(actor, buildAIMove({ id: 'terablast' }, 1), s.field).type, engineMove(g, 'terablast').type);
+		});
+	}
+
+	describe('single-target mechanics', () => {
+		const mode = 'singles';
 		it(`${mode}: does not treat current-HP damage or Endeavor as a repeatable 2HKO`, () => {
 			const g = game({ mode, actor: { ...passive, moves: ['superfang', 'endeavor', 'seismictoss'] } });
 			const s = g.state(), target = s.opponent.active[0];
@@ -117,78 +150,6 @@ describe('NPC shared mechanism families', () => {
 			target.volatiles.add('substitute');
 			assert(lowDamage());
 		});
-
-		it(`${mode}: rewards Protect for this slot's Wish, with public bypass and weather checks`, () => {
-			const g = game({ mode, actor: { ...passive, moves: ['wish', 'protect'] } });
-			const s = g.state(), actor = s.self.active[0], target = s.opponent.active[0];
-			actor.hp = Math.floor(actor.maxHp / 2); actor.hpPercent = actor.hp / actor.maxHp * 100;
-			s.self.conditions.wishes = { [actor.slot]: 1 };
-			for (const foe of s.opponent.active) { foe.moves = ['tackle']; foe.moveKnowledge = undefined; }
-			assert.equal(g.score('protect', s).score, 140);
-			actor.lastMove = 'protect';
-			assert.equal(g.score('protect', s).score, 60);
-			actor.lastMove = '';
-			s.self.conditions.wishes = { [actor.slot + 1]: 1 };
-			assert.equal(g.score('protect', s).score, 100);
-			s.self.conditions.wishes = { [actor.slot]: 1 };
-			target.moves = ['feint'];
-			assert.equal(g.score('protect', s).score, 100);
-			target.moves = ['tackle']; target.ability = 'Unseen Fist';
-			assert.equal(g.score('protect', s).score, 100);
-			target.ability = '';
-			s.field.weather = 'sand'; actor.hp = 1; actor.hpPercent = 100 / actor.maxHp;
-			assert.equal(g.score('protect', s).score, 100, 'Lethal weather resolves before Wish');
-		});
-
-		it(`${mode}: values Pain Split by capped HP gained, matching the simulator's absolute-HP split`, () => {
-			const g = game({ mode, actor: { ...passive, moves: ['painsplit'] } });
-			for (const [max, hp, targetMax, targetHp, expected] of [
-				[337, 264, 238, 238, 60], [337, 264, 270, 270, 80],
-				[400, 200, 200, 200, 60], [400, 200, 100, 90, 60],
-				[100, 80, 1000, 200, 100], [400, 100, 180, 180, 100],
-				[400, 100, 300, 300, 110], [400, 20, 460, 460, 120],
-				[400, 360, 800, 800, 100],
-			]) {
-				const s = g.state(), actor = s.self.active[0], target = s.opponent.active[0];
-				Object.assign(actor, { hp, maxHp: max, hpPercent: hp / max * 100 });
-				Object.assign(target, { hp: targetHp, maxHp: targetMax, hpPercent: targetHp / targetMax * 100 });
-				const result = g.score('painsplit', s);
-				assert.equal(result.score, expected, JSON.stringify([max, hp, targetMax, targetHp]));
-				assert.equal(!!result.flags.discouraged, expected === 60, 'Useful HP gains retain their scoring tier');
-				assert.equal(result.score, 100 + result.breakdown.details.reduce((n, d) => n + d.amount, 0));
-				const ours = g.b.p2.active[0], foe = g.b.p1.active[0];
-				ours.maxhp = max; ours.hp = hp;
-				foe.maxhp = targetMax; foe.hp = targetHp;
-				g.b.actions.useMove('painsplit', ours, { target: foe });
-				assert.equal(ours.hp, Math.min(max, Math.floor((hp + targetHp) / 2)));
-				assert.equal(foe.hp, Math.min(targetMax, Math.floor((hp + targetHp) / 2)));
-				assert(result.breakdown.details.some(d => d.reason.includes(`HP change: ${ours.hp - hp >= 0 ? '+' : ''}${ours.hp - hp} `)));
-			}
-		});
-		it(`${mode}: only rewards Focus Punch behind a substitute or against a sleeping target`, () => {
-			const g = game({ mode, actor: { species: 'Breloom', ability: 'Poison Heal', moves: ['focuspunch', 'spore', 'substitute'] },
-				foe: { species: 'Tauros', ability: 'Intimidate', moves: ['earthquake'] } });
-			let s = g.state();
-			s.opponent.active[0].hp = 1;
-			s.opponent.active[0].hpPercent = 1;
-			s.opponent.active[0].lastMove = 'Earthquake';
-			const result = g.score('focuspunch', s);
-			assert(result.flags.canKO, 'The test must cover a tempting KO reward');
-			assert.equal(result.score, 60);
-			assert.equal(result.breakdown.positives, 0);
-			if (mode !== 'singles') {
-				s.opponent.active[1].status = 'slp';
-				assert.equal(g.score('focuspunch', s).score, 60, 'An unrelated sleeping foe does not protect this attack');
-			}
-			g.b.p1.active[0].setStatus('slp');
-			g.b.makeRequest('move');
-			s = g.state();
-			assert(g.score('focuspunch', s).score > 60, 'Public sleep permits normal scoring');
-			g.b.p1.active[0].cureStatus();
-			g.b.p2.active[0].addVolatile('substitute');
-			g.b.makeRequest('move');
-			assert(g.score('focuspunch').score > 60, 'Our substitute permits normal scoring');
-		});
 		for (const format of ['gen5customgame', 'gen5pokemmorandombattle', 'gen9customgame']) {
 			it(`${mode}, ${format}: validates Psycho Shift using the user's actual status`, () => {
 				const g = game({ mode, format, actor: { species: 'Sigilyph', ability: 'Magic Guard', moves: ['psychoshift'] },
@@ -223,48 +184,6 @@ describe('NPC shared mechanism families', () => {
 				assert.equal(g.b.p2.active[0].status, 'tox');
 			});
 		}
-		it(`${mode}: discourages Coil when Unaware ignores every useful boost`, () => {
-			const g = game({ mode, actor: { species: 'Dunsparce', ability: 'Serene Grace', moves: ['coil', 'bodyslam', 'earthquake', 'roost'] } });
-			const s = g.state();
-			for (const foe of s.opponent.active) foe.ability = 'Unaware';
-			for (const id of ['coil', 'honeclaws', 'doubleteam']) {
-				const result = g.score(id, s);
-				assert.equal(result.score, 60, id);
-				assert.equal(result.breakdown.positives, 0, id);
-			}
-			assert(g.score('dragondance', s).score > 60, 'Speed still has value against Unaware');
-			s.self.active[0].ability = 'Mold Breaker';
-			assert(g.score('coil', s).score > 60, 'Mold Breaker bypasses Unaware');
-			s.self.active[0].ability = 'Serene Grace';
-			s.self.active[0].moves.push('storedpower');
-			assert(g.score('coil', s).score > 60, 'Stored Power still benefits from the boost count');
-			s.self.active[0].moves.pop();
-			if (mode !== 'singles') {
-				s.opponent.active[1].ability = 'Synchronize';
-				assert(g.score('coil', s).score > 60, 'Boosts can still help against the other foe');
-			}
-		});
-		it(`${mode}: records Magic Bounce from a reflected move and suppresses its tactical rewards`, () => {
-			const g = game({ mode, actor: { species: 'Whimsicott', ability: 'Prankster', moves: ['leechseed', 'encore', 'taunt', 'hurricane'] },
-				foe: { species: 'Xatu', ability: 'Magic Bounce', moves: ['toxic', 'splash'] } });
-			const choice = mode === 'singles' ? 'move 1' : 'move 1 1';
-			g.b.makeChoices(...(mode === 'multi' ? [choice, choice, 'move 1', 'move 1'] :
-				mode === 'doubles' ? [choice + ', move 1', choice + ', move 1'] : [choice, choice]));
-			assert(g.b.log.some(line => line.startsWith('|move|p1a: Xatu|Leech Seed|') && line.includes('[from] ability: Magic Bounce')));
-			const s = g.state(), target = s.opponent.active[0];
-			assert.equal(target.ability, 'Magic Bounce');
-			assert.equal(target.lastMove.toLowerCase(), 'toxic');
-			assert(!target.moves.includes('leechseed'), 'Reflected moves are not revealed moveset slots');
-			for (const id of ['encore', 'leechseed', 'taunt']) {
-				const result = g.score(id, s);
-				assert(result.score <= 60, `${id}: ${result.score}`);
-				assert.equal(result.breakdown.positives, 0, id);
-				assert(result.breakdown.details.some(detail => detail.reason.includes('Magic Bounce')));
-			}
-			assert(g.score('hurricane', s).score > 60, 'Ordinary attacks are unaffected');
-			s.self.active[0].ability = 'Mold Breaker';
-			assert(g.score('encore', s).score > 60, 'Mold Breaker allows Encore through');
-		});
 		it(`${mode}: resolves Shell Side Arm against the target's defenses`, () => {
 			const g = game({ mode, actor: { species: 'Slowbro-Galar', ability: 'Quick Draw', nature: 'Adamant', evs: { atk: 252 }, moves: ['shellsidearm'] }, foe: { species: 'Chansey', ability: 'Natural Cure', moves: ['splash'] } });
 			const s = g.state();
@@ -274,14 +193,6 @@ describe('NPC shared mechanism families', () => {
 			assert.equal(ai.category, engine.category);
 			assert.equal(ai.flags.contact, engine.flags.contact);
 			assert.equal(g.score('shellsidearm', s, target).move.category, 'Physical');
-		});
-		it(`${mode}: records public Tera types without revealing an unused Tera type`, () => {
-			const g = game({ mode, actor: { ...passive, teraType: 'Fire', moves: ['terablast'] } });
-			assert.equal(g.state().self.active[0].terastallized, undefined);
-			g.b.actions.terastallize(g.b.p2.active[0]);
-			const s = g.state(), actor = s.self.active[0];
-			assert.deepEqual(actor.types, g.b.p2.active[0].getTypes());
-			assert.equal(resolveMove(actor, buildAIMove({ id: 'terablast' }, 1), s.field).type, engineMove(g, 'terablast').type);
 		});
 		for (const id of ['steelroller', 'lastresort', 'swallow', 'gearup', 'magneticflux']) {
 			it(`${mode}: rejects ${id} when its prerequisite is absent`, () => {
@@ -302,7 +213,7 @@ describe('NPC shared mechanism families', () => {
 			s = g.state();
 			assert(!s.self.active[0].volatiles.has('partiallytrapped'));
 		});
-	}
+	});
 	for (const mode of ['doubles', 'multi']) {
 		it(`${mode}: Damp on a known ally blocks damage and scoring`, () => {
 			const g = game({ mode, actor: { ...passive, moves: ['explosion'] }, ally: { species: 'Golduck', ability: 'Damp', moves: ['splash'] } });

@@ -61,9 +61,15 @@ describe('Hard selective search depth', () => {
 		const f = fixture(['spikes', 'tackle'], ['rapidspin'], [], [{ species: 'Pidgey', moves: ['splash'] }]);
 		f.state.self.active[0].baseStats.spe = 100;
 		f.state.opponent.conditions.spikes = 1;
-		const result = run(f, [action('spikes')]);
-		assert(result.continuations.length > 0);
-		assert(result.continuations.every(c => c.foeSpikes === 1));
+		const original = Search.prototype.responseProbabilities;
+		Search.prototype.responseProbabilities = () => [{ action: action('rapidspin'), probability: 1 }];
+		try {
+			const result = run(f, [action('spikes')]);
+			assert(result.continuations.length > 0);
+			assert(result.continuations.every(c => c.foeSpikes === 1));
+		} finally {
+			Search.prototype.responseProbabilities = original;
+		}
 	});
 	it('preserves a root Wish commitment after the first turn consumes it', () => {
 		const f = fixture();

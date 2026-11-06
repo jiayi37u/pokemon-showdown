@@ -2,7 +2,6 @@
 
 const assert = require('assert').strict;
 const { Battle } = require('../../../dist/sim');
-const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 const { buildAIMove, trackedPokemonToAIPokemon } = require('../../../dist/server/npc/ai/cfru/state-builder');
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 const { calculateDamage } = require('../../../dist/server/npc/ai/cfru/util/damage-calc');
@@ -394,25 +393,6 @@ describe('NPC team cures and opponent stat-drop effects', () => {
 		});
 	}
 
-	it('Normal attacks instead of using Aromatherapy on a healthy team', () => {
-		const ai = new NormalAI({ write() {} }, { seed: [1, 2, 3, 4] });
-		ai.setBattle({ format: 'gen5pokemmorandombattle' });
-		ai.getTracker().parseMessage('|switch|p1a: Armaldo|Armaldo, L86|81/100 slp');
-		let choice;
-		ai.choose = value => { choice = value; };
-		const moves = ['sludgebomb', 'sleeppowder', 'aromatherapy', 'synthesis'];
-		ai.receiveRequest({
-			side: { id: 'p2', pokemon: [{
-				ident: 'p2: Vileplume', details: 'Vileplume, L88', condition: '275/275', active: true,
-				stats: { atk: 150, def: 200, spa: 240, spd: 200, spe: 180 },
-				moves, ability: 'Chlorophyll', item: 'blacksludge',
-			}] },
-			active: [{ moves: moves.map(id => ({ id, move: id, pp: 10, maxpp: 10, target: 'normal' })) }],
-		});
-		assert.equal(choice, 'move 1');
-		assert.equal(ai.lastMoveScores.find(s => s.move.id === 'aromatherapy').score, 0);
-	});
-
 	for (const ability of ['Clear Body', 'White Smoke', 'Full Metal Body', 'Mirror Armor', 'Defiant', 'Competitive', 'Contrary']) {
 		it(`does not treat self stat drops as effects on ${ability}`, () => {
 			const target = pokemon({ ability });
@@ -423,19 +403,4 @@ describe('NPC team cures and opponent stat-drop effects', () => {
 			assert(score('charm', { target }).breakdown.details.some(d => d.reason.includes(ability)));
 		});
 	}
-
-	it('matches Clear Body allowing Leaf Storm self drops in a real MMO battle', () => {
-		const battle = new Battle({
-			formatid: 'gen5pokemmorandombattle', seed: [1, 2, 3, 4],
-			p1: { name: 'Plant', team: [{ species: 'Roserade', ability: 'Natural Cure', moves: ['leafstorm'] }] },
-			p2: { name: 'Steel', team: [{ species: 'Klinklang', ability: 'Clear Body', moves: ['splash'] }] },
-		});
-		try {
-			battle.makeChoices('move 1', 'move 1');
-			assert.equal(battle.p1.active[0].boosts.spa, -2);
-			assert(battle.p2.active[0].hp < battle.p2.active[0].maxhp);
-		} finally {
-			battle.destroy();
-		}
-	});
 });

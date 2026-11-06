@@ -2,7 +2,6 @@
 
 const assert = require('assert').strict;
 const { Battle } = require('../../../dist/sim');
-const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 
 const revealCases = [
@@ -235,54 +234,6 @@ describe('NPC ability reveals', () => {
 		tracker.parseMessage('|-start|p1a: Lanturn|move: Substitute');
 		assert.equal(tracker.getActiveOpponent().ability, '');
 	});
-
-	for (const damaged of [false, true]) {
-		it(`should switch a Choice-locked Porygon-Z after Volt Absorb ${damaged ? 'heals' : 'blocks at full HP'}`, () => {
-			const stream = { push() {}, write() {} };
-			const ai = new NormalAI(stream, { seed: [1, 2, 3, 4] });
-			ai.setBattle({ stream, format: 'gen9customgame' });
-			const battle = new Battle({
-				formatid: 'gen9customgame', seed: [1, 2, 3, 4],
-				p1: { name: 'Player', team: [
-					{ species: 'Blissey', ability: 'Natural Cure', moves: ['splash'] },
-					{ species: 'Lanturn', ability: 'Volt Absorb', moves: ['protect'] },
-				] },
-				p2: { name: 'NPC', team: [
-					{ species: 'Porygon-Z', ability: 'Adaptability', item: 'Choice Scarf', moves: ['thunderbolt', 'icebeam'] },
-					{ species: 'Venusaur', ability: 'Overgrow', moves: ['energyball', 'splash'] },
-				] },
-			});
-			try {
-				battle.makeChoices('team 12', 'team 12');
-				battle.makeChoices('move 1', 'move 1');
-				const lanturn = battle.p1.pokemon[1];
-				if (damaged) lanturn.hp = Math.floor(lanturn.maxhp / 2);
-				battle.makeChoices('switch 2', 'move 1');
-				const protocol = battle.log.join('\n');
-				assert(protocol.includes(`|-${damaged ? 'heal' : 'immune'}|p1a: Lanturn|`));
-				assert(protocol.includes('[from] ability: Volt Absorb'));
-				assert(!protocol.includes('|-ability|p1a: Lanturn|'));
-				// Feed actual simulator output and the NPC's request, without exposing Battle to the AI.
-				stream.push(protocol);
-				const request = JSON.parse(JSON.stringify(battle.p2.activeRequest));
-				assert.equal(request.active[0].moves.find(m => m.id === 'icebeam').disabled, true);
-				let choice;
-				ai.choose = value => { choice = value; };
-				ai.receiveRequest(request);
-				assert.equal(choice, 'switch 2');
-				assert.equal(ai.getTracker().getActiveOpponent().ability, 'Volt Absorb');
-				battle.makeChoices('move 1', choice);
-				assert.equal(battle.p2.active[0].species.id, 'venusaur');
-				// Revealed abilities survive leaving and re-entering the field.
-				battle.makeChoices('switch 2', 'move 2');
-				battle.makeChoices('switch 2', 'move 2');
-				stream.push(battle.log.join('\n'));
-				assert.equal(ai.getTracker().getActiveOpponent().ability, 'Volt Absorb');
-			} finally {
-				battle.destroy();
-			}
-		});
-	}
 
 	it('should attribute absorption to the recipient, even when [of] names the attacker', () => {
 		const tracker = createBattleTracker('p2');

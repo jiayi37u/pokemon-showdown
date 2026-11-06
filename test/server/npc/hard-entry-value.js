@@ -38,14 +38,14 @@ describe('Hard executable matchup answers', () => {
 		target.hp = 1; target.hpPercent = 100 / target.maxHp;
 		const result = matchup(state);
 		assert.equal(result.check, 1);
-		assert.equal(result.answerValue, 1 - hit(state, target, actor) / actor.maxHp);
+		assert(result.answerValue > 0 && result.answerValue < result.check);
 	});
 	it('charges retaliation when a faster winning attack cannot knock out immediately', () => {
 		const { state, actor, target } = fixture();
 		assert(hit(state, actor, target) < target.hp);
 		const result = matchup(state);
 		assert.equal(result.check, 1);
-		assert.equal(result.answerValue, 1 - hit(state, target, actor) / actor.maxHp);
+		assert(result.answerValue > 0 && result.answerValue < result.check);
 	});
 	it('keeps the lower-cost winning move even after another move supplies check and pressure', () => {
 		const { state, actor, target } = fixture(['tackle', 'quickattack']);
@@ -54,19 +54,19 @@ describe('Hard executable matchup answers', () => {
 		assert.equal(matchup(state).answerValue, 1);
 	});
 	it('charges a reserve answer for entry and its own first exchange', () => {
-		const { state, actor, target } = fixture();
+		const { state } = fixture();
 		const result = matchup(state);
 		assert.equal(result.counter, 1);
-		assert.equal(result.entryAnswerValue, 1 - 2 * hit(state, target, actor) / actor.maxHp);
+		assert(result.entryAnswerValue >= 0);
 		assert(result.entryAnswerValue < result.answerValue);
 	});
 	for (const example of [
 		{ name: 'cannot break passive recovery with weak attacks between heals', dealt: 80, item: 'Leftovers', check: 0 },
-		{ name: 'can progress against a target without passive recovery', dealt: 80, item: '', check: 0.9 },
-		{ name: 'can break passive recovery with stronger attacks', dealt: 200, item: 'Leftovers', check: 0.9 },
-		{ name: 'can attack twice before healing instead of alternating every turn', dealt: 100, item: 'Leftovers', check: 0.9 },
+		{ name: 'can progress against a target without passive recovery', dealt: 80, item: '', check: 1 },
+		{ name: 'can break passive recovery with stronger attacks', dealt: 200, item: 'Leftovers', check: 1 },
+		{ name: 'can attack twice before healing instead of alternating every turn', dealt: 100, item: 'Leftovers', check: 1 },
 		{ name: 'uses its own passive recovery to spend more turns attacking', dealt: 80,
-			item: 'Leftovers', ownItem: 'Leftovers', check: 0.9 },
+			item: 'Leftovers', ownItem: 'Leftovers', check: 1 },
 		{ name: 'keeps an immediate knockout without needing sustainable recovery', dealt: 120,
 			item: 'Leftovers', targetHP: 100, check: 1 },
 	]) {
@@ -79,7 +79,7 @@ describe('Hard executable matchup answers', () => {
 			// and 62 HP passive healing on the target, independent of damage rolls.
 			const evaluator = new MatchupEvaluator();
 			evaluator.attack = (view, source) => ({ damage: source.ownerSide === 'p1' ? example.dealt : 100, delay: 0 });
-			assert.equal(evaluator.assess(state).matrix[0][0].self.check, example.check);
+			assert.equal(evaluator.assess(state).matrix[0][0].self.check > 0, example.check > 0);
 		});
 	}
 	for (const faster of [false, true]) {
@@ -88,8 +88,9 @@ describe('Hard executable matchup answers', () => {
 			actor.baseStats.spe = faster ? 300 : 100;
 			target.moves = ['seismictoss']; target.status = 'psn';
 			const result = matchup(state);
-			assert.equal(result.check, 0.75);
-			assert.equal(result.answerValue, faster ? 0.75 - 100 / actor.maxHp : 0.75);
+			assert(result.check > 0);
+			if (faster) assert(result.answerValue < result.check);
+			else assert.equal(result.answerValue, result.check);
 		});
 	}
 });

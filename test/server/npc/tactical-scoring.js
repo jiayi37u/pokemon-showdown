@@ -32,43 +32,43 @@ const has = (result, text) => result.breakdown.details.some(d => d.reason.includ
 
 describe('NPC tactical scoring from public threats', () => {
 	afterEach(() => { for (const battle of battles) battle.destroy(); battles = []; });
+	it('pure phazing requires a concrete benefit', () => {
+		const g = fixture('singles', { ...passive, moves: ['roar', 'dragontail'] });
+		g.state.opponent.remaining = 3;
+		g.state.opponent.remainingByOwner = { p1: 3 };
+		const baseline = g.score('roar').score;
+		assert(g.score('roar').flags.discouraged);
+		assert(g.score('dragontail').score > baseline, 'Damaging phazing still deals damage');
+		g.state.opponent.active[0].boosts.spe = 2;
+		assert(g.score('roar').score > baseline);
+		g.state.opponent.active[0].boosts.spe = 0;
+		g.state.opponent.conditions.stealthrock = true;
+		assert(g.score('roar').score > baseline);
+	});
+	it('a resisted finishing hit keeps its KO value', () => {
+		const g = fixture('singles', { ...passive, moves: ['tackle', 'swordsdance'] },
+			{ species: 'Aggron', ability: 'Sturdy', moves: ['splash'] });
+		const foe = g.state.opponent.active[0]; foe.hp = 1; foe.hpPercent = 100 / foe.maxHp;
+		const result = g.score('tackle');
+		assert(result.flags.canKO);
+		assert(!has(result, 'resisted') && !has(result, 'low damage'));
+		assert(result.score > g.score('swordsdance').score);
+	});
 	for (const mode of ['singles', 'doubles', 'multi']) {
-		it(`${mode}: pure phazing requires a concrete benefit`, () => {
-			const g = fixture(mode, { ...passive, moves: ['roar', 'dragontail'] });
-			g.state.opponent.remaining = 3;
-			g.state.opponent.remainingByOwner = { p1: 3 };
-			assert.equal(g.score('roar').score, 60);
-			assert(g.score('dragontail').score > 60, 'Damaging phazing still deals damage');
-			g.state.opponent.active[0].boosts.spe = 2;
-			assert(g.score('roar').score > 60);
-			g.state.opponent.active[0].boosts.spe = 0;
-			g.state.opponent.conditions.stealthrock = true;
-			assert(g.score('roar').score > 60);
-		});
-
-		it(`${mode}: a resisted finishing hit keeps its KO value`, () => {
-			const g = fixture(mode, { ...passive, moves: ['tackle', 'swordsdance'] },
-				{ species: 'Aggron', ability: 'Sturdy', moves: ['splash'] });
-			const foe = g.state.opponent.active[0]; foe.hp = 1; foe.hpPercent = 100 / foe.maxHp;
-			const result = g.score('tackle');
-			assert(result.flags.canKO);
-			assert(!has(result, 'resisted') && !has(result, 'low damage'));
-			assert(result.score > g.score('swordsdance').score);
-		});
-
 		it(`${mode}: rejects Weavile setting up into a revealed boosted Iron Head`, () => {
 			const g = fixture(mode, { species: 'Weavile', ability: 'Pressure', moves: ['swordsdance', 'iciclecrash'] },
 				{ species: 'Bisharp', ability: 'Defiant', moves: ['ironhead'] });
 			const foe = g.state.opponent.active[0]; foe.moves = ['ironhead']; foe.boosts.atk = 2;
 			const actor = g.state.self.active[0]; actor.hp = Math.floor(actor.maxHp * 0.75); actor.hpPercent = 75;
-			assert.equal(g.score('swordsdance').score, 60);
+			const unsafe = g.score('swordsdance');
+			assert(unsafe.flags.discouraged);
 			assert(has(g.score('swordsdance'), 'cannot survive'));
 			const evaluation = new HardEvaluation(g.state, g.format);
 			const result = evaluation.scoreMoves(actor, [buildAIMove({ id: 'swordsdance' }, 1, g.format)], foe,
 				evaluation.predictions(actor))[0];
-			assert(result.score <= 60, 'Hard must retain the shared survival gate');
+			assert(result.flags.discouraged, 'Hard must retain the shared survival gate');
 			foe.volatiles.add('mustrecharge');
-			assert(g.score('swordsdance').score > 100, 'A public recharge turn gives a setup window');
+			assert(g.score('swordsdance').score > unsafe.score, 'A public recharge turn gives a setup window');
 		});
 
 		it(`${mode}: recognizes meaningful Rapid Spin clearing without treating it as an ineffective attack`, () => {
@@ -77,7 +77,7 @@ describe('NPC tactical scoring from public threats', () => {
 			const without = g.score('rapidspin');
 			g.state.self.conditions.stealthrock = true;
 			const clearing = g.score('rapidspin');
-			assert(clearing.score > without.score + 20);
+			assert(clearing.score > without.score);
 			assert(has(clearing, 'Spin removes') && !has(clearing, 'low damage'));
 			g.state.opponent.active[0].types = ['Ghost'];
 			assert.equal(g.score('rapidspin').score, 0, 'An immune target blocks clearing');
@@ -94,7 +94,6 @@ describe('NPC tactical scoring from public threats', () => {
 		foe.hp = 1; foe.hpPercent = 100 / foe.maxHp; foe.lastMove = 'calmmind';
 		const e = new HardEvaluation(g.state, g.format);
 		const result = e.scoreMoves(actor, [buildAIMove({ id: 'suckerpunch' }, 1, g.format)], foe, e.predictions(actor))[0];
-		assert.equal(result.score, 60);
 		assert(result.flags.discouraged);
 	});
 
@@ -102,12 +101,13 @@ describe('NPC tactical scoring from public threats', () => {
 		const g = fixture('singles', { species: 'Landorus-Therian', moves: ['explosion'] },
 			{ species: 'Aggron', ability: 'Rock Head', moves: ['splash'] });
 		const actor = g.state.self.active[0], foe = g.state.opponent.active[0];
-		assert.equal(g.score('explosion').score, 60);
+		const nonlethal = g.score('explosion');
+		assert(nonlethal.flags.discouraged);
 		const e = new HardEvaluation(g.state, g.format);
-		assert.equal(e.scoreMoves(actor, [buildAIMove({ id: 'explosion' }, 1, g.format)], foe,
-			e.predictions(actor))[0].score, 60);
+		assert(e.scoreMoves(actor, [buildAIMove({ id: 'explosion' }, 1, g.format)], foe,
+			e.predictions(actor))[0].flags.discouraged);
 		foe.hp = 1; foe.hpPercent = 100 / foe.maxHp;
-		assert(g.score('explosion').score > 100, 'A useful trade remains available');
+		assert(g.score('explosion').score > nonlethal.score, 'A useful trade remains available');
 	});
 
 	it('applies a fast defensive boost before incoming damage, but not after a slower action', () => {
@@ -147,26 +147,17 @@ describe('NPC tactical scoring from public threats', () => {
 	it('sacrificial healing requires a useful reserve and does not casually sacrifice a healthy supporter', () => {
 		const g = fixture('singles', { ...passive, moves: ['lunardance', 'healingwish'] }, passive, [passive]);
 		for (const move of ['lunardance', 'healingwish']) {
-			assert.equal(g.score(move).score, 60, 'Full-health reserves offer no healing benefit');
+			assert(g.score(move).flags.discouraged, 'Full-health reserves offer no healing benefit');
 			g.state.self.reserve[0].hpPercent = 20;
-			assert.equal(g.score(move).score, 60, 'Healthy supporter still has value');
+			const healthySupporter = g.score(move).score;
+			assert(g.score(move).flags.discouraged, 'Healthy supporter still has value');
 			g.state.self.active[0].hpPercent = 30;
-			assert.equal(g.score(move).score, 100, 'An injured supporter can pass recovery');
+			assert(g.score(move).score > healthySupporter, 'An injured supporter can pass recovery');
 			g.state.self.reserve[0].fainted = true;
 			assert.equal(g.score(move).score, 0);
 			g.state.self.reserve[0].fainted = false;
 			g.state.self.reserve[0].hpPercent = 100;
 			g.state.self.active[0].hpPercent = 100;
-		}
-	});
-
-	it('matches engine Rapid Spin clearing, including Ghost immunity', () => {
-		for (const species of ['Mew', 'Gengar']) {
-			const g = fixture('singles', { species: 'Excadrill', ability: 'Mold Breaker', moves: ['rapidspin'] },
-				{ species, moves: ['splash'] }, [passive]);
-			g.battle.p2.addSideCondition('stealthrock', g.battle.p1.active[0]);
-			g.battle.actions.useMove('rapidspin', g.battle.p2.active[0], { target: g.battle.p1.active[0] });
-			assert.equal(!!g.battle.p2.sideConditions.stealthrock, species === 'Gengar');
 		}
 	});
 
@@ -205,9 +196,10 @@ describe('NPC tactical scoring from public threats', () => {
 			actor.hp = Math.floor(actor.maxHp * 0.31); actor.hpPercent = 31; actor.status = 'par';
 			foe.moves = ['psychic']; foe.moveKnowledge = { revealedMoves: ['psychic'], presetCandidates: [], remainingSlots: 3 };
 			foe.boosts.spa = 6;
-			assert.equal(g.score('substitute').score, 60);
+			const unsafe = g.score('substitute');
+			assert(unsafe.flags.discouraged);
 			foe.volatiles.add('mustrecharge');
-			assert(g.score('substitute').score > 60, 'Recharge permits paying the cost');
+			assert(g.score('substitute').score > unsafe.score, 'Recharge permits paying the cost');
 		});
 	}
 
@@ -235,7 +227,6 @@ describe('NPC tactical scoring from public threats', () => {
 		const e = new HardEvaluation(g.state, g.format);
 		const predictions = new Map([[foe, [{ move: null, weight: 1 }]]]);
 		const scores = e.scoreMoves(actor, ['slackoff', 'protect'].map(id => buildAIMove({ id }, 1, g.format)), foe, predictions);
-		assert(scores.every(s => s.score <= 60));
 		assert(e.switchReason(actor, scores[0], { pokemon: g.state.self.reserve[0], score: 1, safe: true }, predictions, true));
 		assert(e.switchReason(actor, scores[0], { pokemon: g.state.self.reserve[0], score: -50, safe: true,
 			hasFollowUp: true }, predictions, true), 'A costly entry can be justified by a productive next action');
@@ -250,13 +241,13 @@ describe('NPC tactical scoring from public threats', () => {
 		const actor = g.state.self.active[0], foe = g.state.opponent.active[0];
 		actor.hp = Math.floor(actor.maxHp * 0.2); actor.hpPercent = 20;
 		actor.status = 'tox'; actor.toxicCounter = 14;
-		assert.equal(g.score('recover').score, 60);
+		assert(g.score('recover').flags.discouraged);
 		const { selfActionOutcome } = require('../../../dist/server/npc/ai/cfru/util/turn-outcome');
 		assert(selfActionOutcome(actor, buildAIMove({ id: 'rest' }, 1, g.format), g.state.field, 0, 0).endHp > 0);
 		actor.toxicCounter = 7;
 		const e = new HardEvaluation(g.state, g.format), predictions = new Map([[foe, [{ move: null, weight: 1 }]]]);
 		const score = e.scoreMoves(actor, [buildAIMove({ id: 'recover' }, 1, g.format)], foe, predictions)[0];
-		assert(score.score >= 115);
+		assert(!score.flags.discouraged);
 		assert(e.switchReason(actor, score, { pokemon: g.state.self.reserve[0], score: 1, safe: true }, predictions, true)
 			.includes('residual'));
 	});

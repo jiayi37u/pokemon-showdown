@@ -18,7 +18,7 @@ import { checkRecoverySurvival, checkHealingUnnecessary, checkLowDamage } from '
 import { createCache } from '../cfru/util/cache';
 import { getSecondaryEffectDamage, getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { calculateDamage, DamageCache } from './damage';
-import { projectEntry } from './projection';
+import { projectEntry, clonePokemon, boosts } from './projection';
 import { resolveMove } from '../cfru/util/type-calc';
 import {
 	protectionMoves, protectsPendingWish, recoveryCuresStatus, estimatedMoveAccuracy, pendingWishRecovery,
@@ -534,15 +534,36 @@ export class HardEvaluation {
 				add(actor.hp <= cost + beforeDamage ? -90 : 35 * useful - 15,
 					'CFRU Substitute: pay HP only for protection or a setup window');
 			} else if (data.boosts && data.target === 'self') {
-				const useful = Object.entries(data.boosts).some(([stat, boost]) =>
-					boost && boost > 0 && actor.boosts[stat as keyof AIPokemon['boosts']] < 6);
-				if (!useful) add(-50, 'No useful boost remains');
-				else if (this.incomingRisk(actor, predictions) >= actor.hp) add(-65, 'CFRU setup: do not boost into a predicted KO');
-				else {
-					const switching = actions.reduce((n, a) => n + (a.switching ? a.weight : 0), 0);
-					add(24 * switching + (1 - switching) * (incoming < actor.hp / 3 ? 16 : -8),
-						'CFRU setup: exploit a switch or low incoming damage');
-					if (role === 'setup') add(4, 'Setup fighting style');
+				const boosted = clonePokemon(actor);
+				boosts(boosted, data.boosts, this.state);
+				if (Object.keys(actor.boosts).every(stat =>
+					boosted.boosts[stat as keyof AIPokemon['boosts']] <= actor.boosts[stat as keyof AIPokemon['boosts']])) {
+					add(-50, 'No useful boost remains');
+				} else if (this.incomingRisk(actor, predictions, undefined, move) >= actor.hp) {
+					add(-65, 'Setup cannot act before the predicted KO');
+				} else {
+					const attacks = actor.moves.map(id => hardMove(id, 1, this.formatId))
+						.filter(m => m.category !== 'Status');
+					const progress = (user: AIPokemon) => {
+						let best = 0;
+						for (const attack of attacks) {
+							const outlook = this.attackOutlook(user, target, attack, predictions);
+							const coverage = switchTargets.reduce((sum, candidate) => sum + candidate.weight *
+								Math.min(1, this.damage(user, candidate.pokemon, attack).average / candidate.pokemon.hp) *
+								estimatedMoveAccuracy(user, candidate.pokemon, attack, this.state.field) / 100, 0);
+							best = Math.max(best, (1 - switchProbability) * (32 * outlook.progress + 24 * outlook.finish) +
+							32 * switchProbability * coverage);
+						}
+						return best;
+					};
+					const before = progress(actor), gain = Math.max(0, progress(boosted) - before);
+					const afterIncoming = this.incoming(boosted, predictions);
+					const saved = Math.max(0, incoming - afterIncoming) / actor.maxHp;
+					// Boosts buy offensive progress or survival; another turn also forfeits an attack.
+					// Damage/accuracy/order reuse the same scorer and calculator cache, not another matrix/search.
+					const survives = afterIncoming < actor.hp;
+					add(survives ? gain + 24 * saved - before / 2 : -65,
+						'Setup marginal offense and defense minus the forgone attack');
 				}
 			} else if (beforeDamage >= actor.hp && move.target !== 'allySide') {
 				add(-65, 'Predicted to faint before using support move');

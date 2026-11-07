@@ -10,20 +10,23 @@ import {
 import { calculateDamage, selectDamage, DamageCache, type DamagePolicy } from './damage';
 import { modelsFor, knownMoves, isTrapped, clonePosition, settleFutureAttacks, bindOpponent,
 	positionKey, usableMove, hasMovePP, clonePokemon, projectEntry, boosts, status, isSnapshotPokemon,
-	applyRecovery, type Side, type ProjectedPokemon } from './projection';
+	applyRecovery, applyAttackHealth, type Side, type ProjectedPokemon } from './projection';
 import { compareSpeedOrder, type ActionOrder } from '../cfru/util/speed';
 import { getMoveInteraction } from '../cfru/util/type-calc';
 import { directRecoveryAmount } from '../cfru/util/turn-outcome';
 import {
-	effectiveAbility, effectiveItem, effectivePriority, fieldWithActivePokemon, rulesDex, tracedAbility,
+	effectiveAbility, effectiveItem, effectivePriority, fieldWithActivePokemon, rulesDex, tracedAbility, defensiveAbility,
 } from '../cfru/util/mechanics';
 import {
 	mustSkipMove, statusFailure, sleepClauseOccupied, moveSelectionFailure, conditionalAttackDiscouraged,
+	estimatedMoveAccuracy,
 } from '../cfru/util/move-effects';
 
 export interface Matchup {
 	/** Ability to win after a free entry, and after conceding an entry action. */
 	check: number;
+	/** Per-move mass of reliable immediate KOs without a lethal earlier reply. */
+	finishes: Record<string, number>;
 	counter: number;
 	/** Useful offensive progress even when the user cannot win the exchange. */
 	pressure: number;
@@ -57,8 +60,8 @@ interface PairState extends BattleState {
 	/** Only lives during one read-only assessment; never memoize live mutable Pokemon by identity. */
 	keys: WeakMap<object, number>;
 }
-export interface AttackFacts { damage: number; delay: number }
-const zero = (): Matchup => ({ check: 0, counter: 0, pressure: 0, switchPressure: {}, sustain: 0,
+export interface AttackFacts { damage: number; min: number; max: number; delay: number }
+const zero = (): Matchup => ({ check: 0, finishes: {}, counter: 0, pressure: 0, switchPressure: {}, sustain: 0,
 	entryPressure: 0, entrySustain: 0, answerValue: 0, entryAnswerValue: 0 });
 const emptyPair: Pair = { self: zero(), opponent: zero() };
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
@@ -218,7 +221,7 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 	const lossAfter = (amount: number) => clamp((actor.hp -
 		getEffectiveHpAfterSecondary(hp(actor, actor.hp - amount), state.field.weather, foeAbility,
 			state.field, Infinity, 0, ownEffects)) / actor.maxHp);
-	const switchPressure: Record<string, number> = {};
+	const switchPressure: Record<string, number> = {}, finishes: Record<string, number> = {};
 	for (const move of attacks) {
 		if (conditionalAttackDiscouraged(state, actor, target, move)) continue;
 		const dealt = damage(actor, target, move, state);
@@ -228,6 +231,31 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		const directWall = targetHealing > dealt + targetResidual && target.hp > dealt * 2;
 		const directBreaking = directWall ? clamp(dealt / Math.max(1, 2 * targetHealing)) : 1;
 		const ownDelay = ownFacts.delays.get(move)!;
+		const ownPriority = effectivePriority(actor, move, state.field);
+		const orderAgainst = (response: typeof incoming[number]) => {
+			const priority = response.priority ??= effectivePriority(target, response.move, state.field);
+			return ownPriority !== priority ? (ownPriority > priority ? 1 : -1) :
+				(speedOrder ??= compareSpeedOrder(actor, target, state.field, state.self.conditions, state.opponent.conditions));
+		};
+		// Reuse this hit's range and the race's replies; no turn or configuration expansion.
+		if (actor.active && target.active && !ownDelay && dealt >= target.hp && actor.status !== 'par' &&
+			!actor.volatiles.has('confusion') && !target.volatiles.has('substitute') &&
+			!rulesDex(state.field).moves.get(move.id).selfdestruct &&
+			estimatedMoveAccuracy(actor, target, move, state.field) >= 100 &&
+			actor.boosts.accuracy >= target.boosts.evasion &&
+			state.evaluator.attack(state, actor, target, move, state.keys).min >= target.hp &&
+			!(target.hp === target.maxHp && !move.multihit && (effectiveItem(target, state.field) === 'focussash' ||
+				defensiveAbility(actor, target, move, state.field) === 'sturdy'))) {
+			const earlier = Math.max(0, ...incoming.filter(r => !foeFacts.delays.get(r.move) &&
+				orderAgainst(r) !== 1).map(r => state.evaluator.attack(theirs, target, actor, r.move, state.keys).max));
+			const survivor = clonePokemon(actor);
+			survivor.hp -= earlier;
+			if (survivor.hp > 0) {
+				applyAttackHealth(survivor, target, move, target.hp, false, state);
+				if (survivor.hp > 0 && getEffectiveHpAfterSecondary(survivor, state.field.weather,
+					foeAbility, state.field, Infinity, 0, ownEffects) > 0) finishes[hardMoveId(move)] = 1;
+			}
+		}
 		if (!ownDelay && move.id !== 'suckerpunch') {
 			switchPressure[hardMoveId(move)] = clamp(dealt / target.hp) * accuracy * directBreaking;
 		}
@@ -246,11 +274,8 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 		const turns = target.volatiles.has('perish0') ? 1 : fixedDamageKnockoutTurns(target.hp, dealt, foeEffects);
 		const canFinish = turns !== Infinity;
 		let race = Number(canFinish), opportunity = 1, firstLoss = needsAnswer ? lossAfter(0) : 0;
-		const ownPriority = incoming.length ? effectivePriority(actor, move, state.field) : 0;
 		for (const response of incoming) {
-			const responsePriority = response.priority ??= effectivePriority(target, response.move, state.field);
-			const order = ownPriority !== responsePriority ? (ownPriority > responsePriority ? 1 : -1) :
-				(speedOrder ??= compareSpeedOrder(actor, target, state.field, state.self.conditions, state.opponent.conditions));
+			const order = orderAgainst(response);
 			const first = (order + 1) / 2;
 			const foeDelay = foeFacts.delays.get(response.move)!;
 			// Moving first prevents retaliation only when this attack actually knocks the foe out.
@@ -301,7 +326,7 @@ function outlook(actor: AIPokemon, target: AIPokemon, state: PairState): Matchup
 	}
 	const sustain = clamp((actor.hp - worst - residual) / actor.maxHp +
 		(healing > worst + residual ? 0.5 : 0));
-	return { check, counter: 0, pressure, switchPressure, sustain,
+	return { check, finishes, counter: 0, pressure, switchPressure, sustain,
 		entryPressure: 0, entrySustain: 0, answerValue, entryAnswerValue: 0 };
 }
 
@@ -499,11 +524,13 @@ export class MatchupEvaluator {
 		}
 		const id = hardMoveId(move), cached = estimates.get(id);
 		if (cached) return cached;
-		const facts = { damage: selectDamage(calculateDamage(actor, target, move, state.field, undefined, {
+		const calculated = calculateDamage(actor, target, move, state.field, undefined, {
 			cache: this.damageCache, isDoubles: false, numAliveTargets: 1,
 			attackerSideConditions: state.self.conditions, defenderSideConditions: state.opponent.conditions,
 			activePokemon: [actor, target], defenderAllies: [target],
-		}), this.damagePolicy), delay: actionDelay(actor, state.field, move) };
+		});
+		const facts = { damage: selectDamage(calculated, this.damagePolicy), min: calculated.min, max: calculated.max,
+			delay: actionDelay(actor, state.field, move) };
 		estimates.set(id, facts); return facts;
 	}
 
@@ -683,8 +710,10 @@ export class MatchupEvaluator {
 					for (const metric of metrics) {
 						sum[side][metric] += weight * result[side][metric];
 					}
-					for (const [move, value] of Object.entries(result[side].switchPressure)) {
-						sum[side].switchPressure[move] = (sum[side].switchPressure[move] || 0) + weight * value;
+					for (const metric of ['switchPressure', 'finishes'] as const) {
+						for (const [move, value] of Object.entries(result[side][metric])) {
+							sum[side][metric][move] = (sum[side][metric][move] || 0) + weight * value;
+						}
 					}
 				}
 			}
@@ -692,7 +721,9 @@ export class MatchupEvaluator {
 			// to exactly 1, since advantage pruning distinguishes certainty from partial coverage.
 			if (mass) for (const side of ['self', 'opponent'] as const) {
 				for (const metric of metrics) sum[side][metric] /= mass;
-				for (const move of Object.keys(sum[side].switchPressure)) sum[side].switchPressure[move] /= mass;
+				for (const metric of ['switchPressure', 'finishes'] as const) {
+					for (const move of Object.keys(sum[side][metric])) sum[side][metric][move] /= mass;
+				}
 			}
 			this.pairInputs.set(weighted, sum); return sum;
 		};

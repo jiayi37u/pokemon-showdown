@@ -375,6 +375,28 @@ export function applyRecovery(state: BattleState, side: Side, actor: AIPokemon,
 	}
 }
 
+/** Attack HP costs shared by projection and the immediate-KO matchup estimate. */
+export function applyAttackHealth(actor: AIPokemon, target: AIPokemon, move: ReturnType<typeof hardMove>,
+	dealt: number, hitSubstitute: boolean, state: Pick<BattleState, 'field'>): void {
+	const data = rulesDex(state.field).moves.get(move.id);
+	if (data.drain) hp(actor, actor.hp + Math.floor(dealt * data.drain[0] / data.drain[1]));
+	if (data.recoil && !['rockhead', 'magicguard'].includes(effectiveAbility(actor, state.field))) {
+		hp(actor, actor.hp - Math.max(1, Math.round(dealt * data.recoil[0] / data.recoil[1])));
+	}
+	if (data.flags.contact && !hitSubstitute && effectiveAbility(actor, state.field) !== 'magicguard') {
+		const hits = Math.round(getExpectedHitCount(move, effectiveAbility(actor, state.field),
+			effectiveItem(actor, state.field), actor.species));
+		if (['roughskin', 'ironbarbs'].includes(effectiveAbility(target, state.field))) {
+			hp(actor, actor.hp - hits * Math.floor(actor.maxHp / 8));
+		}
+		if (effectiveItem(target, state.field) === 'rockyhelmet') hp(actor, actor.hp - hits * Math.floor(actor.maxHp / 6));
+	}
+	if (effectiveItem(actor, state.field) === 'lifeorb' && effectiveAbility(actor, state.field) !== 'magicguard' &&
+		!(effectiveAbility(actor, state.field) === 'sheerforce' && !!data.secondaries?.length)) {
+		hp(actor, actor.hp - Math.floor(actor.maxHp / 10));
+	}
+}
+
 export function transitionSupported(state: BattleState): string | undefined {
 	if (state.isDoubles) return 'two-turn search currently supports singles';
 	if (state.self.active.length !== 1 || state.opponent.active.length !== 1) return 'requires active placeholders';
@@ -558,22 +580,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 			}
 			triggerHealthItem(target, state);
 		}
-		if (data.drain) hp(actor, actor.hp + Math.floor(dealt * data.drain[0] / data.drain[1]));
-		if (data.recoil && !['rockhead', 'magicguard'].includes(effectiveAbility(actor, state.field))) {
-			hp(actor, actor.hp - Math.max(1, Math.round(dealt * data.recoil[0] / data.recoil[1])));
-		}
-		if (data.flags.contact && !hitSubstitute && effectiveAbility(actor, state.field) !== 'magicguard') {
-			const hits = Math.round(getExpectedHitCount(move, effectiveAbility(actor, state.field),
-				effectiveItem(actor, state.field), actor.species));
-			if (['roughskin', 'ironbarbs'].includes(effectiveAbility(target, state.field))) {
-				hp(actor, actor.hp - hits * Math.floor(actor.maxHp / 8));
-			}
-			if (effectiveItem(target, state.field) === 'rockyhelmet') hp(actor, actor.hp - hits * Math.floor(actor.maxHp / 6));
-		}
-		if (effectiveItem(actor, state.field) === 'lifeorb' && effectiveAbility(actor, state.field) !== 'magicguard' &&
-			!(effectiveAbility(actor, state.field) === 'sheerforce' && !!data.secondaries?.length)) {
-			hp(actor, actor.hp - Math.floor(actor.maxHp / 10));
-		}
+		applyAttackHealth(actor, target, move, dealt, hitSubstitute, state);
 		if (!target.fainted && flinchesOnHit({ ...actor, activeMoveActions: actor.activeMoveActions! - 1,
 			lastMove: previous }, target, move, state.field)) {
 			target.projection ||= {}; target.projection.flinch = true;

@@ -2,7 +2,7 @@
 import { type AIPokemon, type BattleState, type MoveScore } from '../cfru/types';
 import { hardMove, publicTargetModels } from './opponent-model';
 import { HardEvaluation } from './evaluation';
-import { actionDelay, valueWeights, type MatchupEvaluator } from './matchups';
+import { actionDelay, valueWeights, type Matchup, type MatchupEvaluator } from './matchups';
 import { megaEvolutionState } from '../cfru/util/forms';
 import { rulesDex } from '../cfru/util/mechanics';
 import { selectMoveCandidates } from '../cfru/scoring';
@@ -72,6 +72,14 @@ export class CandidateSelector {
 		return this.matchups.holdsAdvantage(state, side, this.assessments.get(positionKey(state)));
 	}
 
+	/** A base-form matchup cannot certify a KO against a still-available Mega evolution. */
+	private canFinish(state: BattleState, side: Side, matchup: Matchup): boolean {
+		if (!Object.values(matchup.finishes).some(weight => weight === 1)) return false;
+		const view = perspective(state, side);
+		return modelsFor(view.opponent.active[0]).every(model => !moveAction({ ...view,
+			opponent: { ...view.opponent, active: [model.pokemon] } }, 'opponent', '').mega);
+	}
+
 	/** Destinations share entry selection; possible pivot timing retains either entry context. */
 	destinations(state: BattleState, side: Side): AIPokemon[] {
 		const view = perspective(state, side), actor = view.self.active[0], dex = rulesDex(state.field);
@@ -120,6 +128,11 @@ export class CandidateSelector {
 		// Simultaneous faints do not yet reveal the opponent's next occupant.
 		if (!foe || foe.fainted) return legal;
 		const other = side === 'self' ? 'opponent' : 'self';
+		const activePair = !required && this.pairs(belief, [[belief.self.team.indexOf(belief.self.active[0]),
+			belief.opponent.team.indexOf(belief.opponent.active[0])]])[0];
+		if (activePair && this.canFinish(belief, side, activePair[side])) {
+			this.entryCache.set(key, new Set()); return [];
+		}
 		const ownIndex = belief.self.team.indexOf(belief.self.active[0]);
 		const foeIndex = belief.opponent.team.indexOf(belief.opponent.active[0]);
 		const pairs = this.pairs(belief, legal.map(p => {
@@ -249,15 +262,36 @@ export class CandidateSelector {
 	private responseView(state: BattleState): BattleState {
 		const key = positionKey(state), cached = this.publicViews.get(key);
 		if (cached) return cached;
-		const next = clonePosition(state);
+		let next = clonePosition(state);
 		for (const p of next.self.team) {
 			const models = publicTargetModels(p, state.field.formatId || '');
 			Object.assign(p, models[0].pokemon, { presetModels: models });
 		}
+		const actor = next.opponent.active[0];
+		if (!actor.fainted && moveAction(next, 'opponent', knownMoves(actor)[0] || 'struggle').mega) {
+			const evolved = megaEvolutionState(perspective(next, 'opponent'), actor);
+			if (evolved) {
+				next = perspective(evolved, 'opponent');
+				// Keep this bound profile's move availability, with its actual acting form's stats.
+				const pokemon = { ...next.opponent.active[0], presetModels: undefined };
+				next.opponent.active[0].presetModels = modelsFor(actor).map(model => ({ ...model, pokemon }));
+			}
+		}
 		snapshotPosition(next); this.publicViews.set(key, next); return next;
 	}
 
-	/** One matrix row supplies entry quality. Exposed entries use counter; free entries use check.
+	/** Expected entry damage uses the current threat's existing per-move pressure weights.
+	 * A counter is a worst-response guarantee, not the probability of a successful switch.
+	 */
+	private entryQuality(pair: { self: Matchup, opponent: Matchup }, threats: Record<string, number>): number {
+		let loss = 0, mass = 0;
+		for (const [move, weight] of Object.entries(threats)) {
+			mass += weight; loss += weight * (pair.self.switchPressure[move] || 0);
+		}
+		return 1 + pair.opponent.check + pair.opponent.pressure + pair.opponent.sustain - (mass ? loss / mass : 0);
+	}
+
+	/** One matrix row supplies entry quality. Prefer favorable entries; weight uncertain entries by expected damage.
 	 * A cheap weakened member may buy a free entry for an otherwise unsafe check.
 	 * These are behavior weights, not guarantees that a recipient survives every attack.
 	 */
@@ -266,16 +300,17 @@ export class CandidateSelector {
 		const key = `${positionKey(view)}:${exposed}:${entries.map(identity).join(',')}`;
 		const cached = this.entryWeights.get(key); if (cached) return cached;
 		const i = view.self.team.indexOf(view.self.active[0]);
+		const [current] = this.pairs(view, [[i, view.opponent.team.indexOf(view.opponent.active[0])]]);
 		const pairs = this.pairs(view, entries.map(p =>
 			[i, view.opponent.team.findIndex(q => identity(p) === identity(q))]));
 		const ranked = entries.map((p, n) => {
 			const pair = pairs[n];
 			const health = projectEntry(p, view.opponent.conditions, view.field, view.opponent.active[0].slot).hp;
 			const own = pair.opponent;
-			const margin = (exposed ? own.counter : own.check) - pair.self.check;
-			return { p, health, margin, check: own.check, pressure: own.pressure,
-				quality: 1 + margin + (exposed ? own.entryPressure : own.pressure) +
-					(exposed ? own.entrySustain : own.sustain) };
+			const quality = exposed ? this.entryQuality(pair, current.self.switchPressure) :
+				1 + own.check - pair.self.check + own.pressure + own.sustain;
+			return { p, health, margin: (exposed ? own.counter : own.check) - pair.self.check,
+				check: own.check, pressure: own.pressure, quality };
 		});
 		let selected = ranked.filter(e => e.health > 0 && e.margin > 0);
 		if (!selected.length) {
@@ -311,7 +346,7 @@ export class CandidateSelector {
 		const cached = this.responseCachePolicy.get(key); if (cached) return cached;
 		const actor = view.opponent.active[0];
 		const moves = knownMoves(actor).filter(id => usableMove(view, 'opponent', id))
-			.map(id => moveAction(view, 'opponent', id));
+			.map(id => moveAction(state, 'opponent', id));
 		const scores = this.scoreActions(view, 'opponent', moves);
 		const retained = new Set(selectMoveCandidates([...scores.values()], SEARCH_SCORE_GAP));
 		const best = Math.max(...[...scores.values()].map(s => s.score));
@@ -321,11 +356,23 @@ export class CandidateSelector {
 		// A response with less than 5% of the strongest move's mass is approximated away.
 		const largest = Math.max(...weighted.map(a => a.probability));
 		weighted = weighted.filter(a => a.probability >= largest * 0.05);
-		const entries = !isTrapped(view, 'opponent') && !actor.volatiles.has('trapped') ?
+		const i = view.self.team.indexOf(view.self.active[0]), j = view.opponent.team.indexOf(actor);
+		const [pair] = this.pairs(view, [[i, j]]);
+		const finishing = this.canFinish(view, 'opponent', pair.opponent);
+		const entries = !finishing && !isTrapped(view, 'opponent') && !actor.volatiles.has('trapped') ?
 			this.entryProbabilities(state, state.opponent.reserve.filter(p => !p.fainted && p.hp > 0)) : new Map<string, number>();
-		const [pair] = this.pairs(view, [[view.self.team.indexOf(view.self.active[0]), view.opponent.team.indexOf(actor)]]);
-		const retreat = Math.max(0, pair.self.check - pair.opponent.check, Math.min(1, (100 - best) / 70));
-		const switchMass = entries.size ? 0.6 * retreat : 0;
+		// Retreat needs both a losing matchup and an improvement after conceding entry.
+		// Reuse the same matrix cells that selected/weighted the recipients.
+		const retreat = Math.max(0, pair.self.check - pair.opponent.check);
+		const stay = this.entryQuality(pair, pair.self.switchPressure);
+		let improvement = 0;
+		for (const [id, probability] of entries) {
+			const index = view.opponent.team.findIndex(p => identity(p) === id);
+			const [entry] = this.pairs(view, [[i, index]]);
+			improvement += probability * Math.max(0, Math.min(1,
+				this.entryQuality(entry, pair.self.switchPressure) - stay));
+		}
+		const switchMass = 0.6 * retreat * improvement;
 		const total = weighted.reduce((sum, a) => sum + a.probability, 0);
 		const result = weighted.map(a => ({ ...a, probability: (1 - switchMass) * a.probability / total }));
 		if (!result.length) result.push({ action: { id: 'pass', prior: 0 }, probability: 1 - switchMass });

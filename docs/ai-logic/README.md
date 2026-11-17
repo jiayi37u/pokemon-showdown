@@ -8,7 +8,7 @@
 |------|------|------|------|
 | Basic | BasicAI | ✅ 可用 | 优先最大伤害 |
 | Normal | NormalAI | ✅ 策略固定 | CFRU 基础评分；保留正确性修复 |
-| Hard | HardAI | ✅ 可用，持续调优 | 公开证据约束配置、单打对位价值与两回合搜索；其他局面使用战术评分和换人，见 [Hard 逻辑](./HardAI/logic.md) |
+| Hard | HardAI | ✅ 可用 | 公开证据约束配置，以对位矩阵和回应概率做最多两回合的选择性搜索；其他局面使用战术评分和换人，见 [Hard 逻辑](./HardAI/logic.md) |
 | Expert | ExpertAI | ⏳ 计划中 | 完整策略 + 双打协作 |
 
 ## 文档结构
@@ -65,7 +65,3 @@ AI 逻辑移植自 CFRU (Complete-Fire-Red-Upgrade) 项目。
   - 完成率统计和主要差距分析
 
 **CFRU 源码位置**: `/home/lvjiawei.376/myproj/Complete-Fire-Red-Upgrade/src/Battle_AI/`
-
----
-
-*最后更新: 2026-10-22*

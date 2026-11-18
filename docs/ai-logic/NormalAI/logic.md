@@ -739,7 +739,7 @@ Knock Off (拍落) 是恶系物理招式，65 威力，可以拍掉对手道具�
 
 ### Random Battle 配置识别
 
-Normal 和 Hard 共用 `cfru/util/random-presets.ts`。随机格式优先读取对应生成器的配置，不使用 OU 的性格、努力值或核心技能先验。Gen9 单打读取单打池，Gen9 Multi／双打读取双打池；PokeMMO 单打和 Multi 复用 Gen5 的单打池。适配器也支持 Gen5／6／7 的角色配置格式。
+Normal 和 Hard 共用 `cfru/util/random-presets.ts`。随机格式优先读取对应生成器的配置，不使用 OU 的性格、努力值或核心技能先验。Gen9 单打读取单打池，Gen9 Multi／双打读取双打池；PokeMMO 单打和 Multi 复用 Gen5 的单打池。Gen4／5／6／7 单打和 Multi 读取各世代的单打角色配置，复用对应生成器的等级、选招、道具、特性及 IV／EV 调整规则。
 
 根据公开形态、等级、原始招式、原生特性和原始道具排除不相容配置。消耗道具保留原始道具证据；戏法、特性替换等后天变化不作为原配置证据。Gen5 喷火龙公开剑舞后只保留 Setup Sweeper 配置，候选仍受剩余技能槽限制。普通形态的当前能力值和特性不因推断出 Mega 石而提前进化；Gen7 妙蛙花 78 级可以匹配 Mega 配置，84 级匹配普通配置。
 

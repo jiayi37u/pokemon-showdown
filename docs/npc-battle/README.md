@@ -51,11 +51,13 @@ NPC ID 自动生成且不可编辑，页面以名称展示 NPC。新 NPC 默认�
 
 ## 随机对战
 
-`/npc` 的 NPC 表格包含独立的 **Random Battle** 行，Formats 列显示支持的 **Gen 9 Random Battle** 和 **PokeMMO Random Battle**。点击 **Challenge** 后，选择 Basic／Smart 难度，再点击目标模式旁的 **Battle**。开始对战时随机选择已有 NPC 的名称与形象，双方自动生成队伍。各具体 NPC 的详情页只展示其固定队伍模式。
+`/npc` 的 NPC 表格包含独立的 **Random Battle** 行，Formats 列显示支持的 **Gen 4／5／6／7／9 Random Battle** 和 **PokeMMO Random Battle**。点击 **Challenge** 后，选择 Basic／Smart／Hard 难度，再点击目标模式旁的 **Battle**。开始对战时随机选择已有 NPC 的名称与形象，双方自动生成队伍。各具体 NPC 的详情页只展示其固定队伍模式。
 
 随机对战默认为 Smart AI，难度由玩家选择，与抽到的 NPC 无关。`/npc challenge random` 可直接打开选择页；也可以使用命令 `/npc random gen5pokemmorandombattle, basic` 指定 Basic AI；省略格式的 `/npc random` 默认进入 Gen 9。随机格式在 `server/npc/manager.ts` 的 `NPC_RANDOM_FORMATS` 中统一配置，NPC 模板只配置形象和固定队伍，无需逐个维护随机格式。
 
-随机页的 **Multi Battle** 区提供 **Gen 9 Multi Random Battle** 和 **PokeMMO Multi Random Battle**。点击 **Multi**，填写队友用户名后点击 **Send Invitation**；队友点击 **Accept & Battle** 后进入对局。玩家占 p1／p3，NPC 占 p2／p4，每个位置独立生成 3 只精灵，无需选择队伍，也不会使用已选择的队伍。随机 Multi 使用 Smart AI，与单打难度选择无关。邀请沿用现有挑战系统，可拒绝或取消；接受前不会生成队伍或创建房间。
+随机页的 **Multi Battle** 区提供 **Gen 4／5／6／7／9 Multi Random Battle** 和 **PokeMMO Multi Random Battle**。点击 **Multi**，填写队友用户名后点击 **Send Invitation**；队友点击 **Accept & Battle** 后进入对局。玩家占 p1／p3，NPC 占 p2／p4，每个联盟生成一支 6 只队伍，打乱后分配给两名成员，每人 3 只，无需选择队伍，也不会使用已选择的队伍。随机 Multi 支持 Smart／Hard AI，选择 Hard 时使用 Hard，选择 Basic 或 Smart 时使用 Smart。邀请沿用现有挑战系统，可拒绝或取消；接受前不会生成队伍或创建房间。
+
+Gen4／5／6／7 Multi 沿用各世代单打模板及平衡等级，不单独优化双位置配招。联盟共享生成器的物种去重和配队约束；Gen6／7 每个联盟最多包含一只 Mega 配置，Gen7 最多包含一只 Z 道具配置。AI 配置推断共用对应世代的公开随机模板，不读取对手隐藏队伍。
 
 随机 Multi 格式在 `NPC_RANDOM_MULTI_FORMATS` 中配置。直接邀请命令为 `/npc multi random, 队友名, smart, gen9multirandombattle` 或 `/npc multi random, 队友名, smart, gen5pokemmomultirandombattle`；省略格式时默认为 Gen 9。固定 NPC Multi 仍需双方提供合法队伍。
 

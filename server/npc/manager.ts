@@ -12,8 +12,14 @@ import type { PokemonSet } from '../../sim/teams';
 import { Dex } from '../../sim/dex';
 
 /** Random formats are shared by all NPC appearances, independently of fixed teams. */
-export const NPC_RANDOM_FORMATS: readonly string[] = ['gen9randombattle', 'gen5pokemmorandombattle'];
-export const NPC_RANDOM_MULTI_FORMATS: readonly string[] = ['gen9multirandombattle', 'gen5pokemmomultirandombattle'];
+export const NPC_RANDOM_FORMATS: readonly string[] = [
+	'gen9randombattle', 'gen7randombattle', 'gen6randombattle', 'gen5randombattle', 'gen4randombattle',
+	'gen5pokemmorandombattle',
+];
+export const NPC_RANDOM_MULTI_FORMATS: readonly string[] = [
+	'gen9multirandombattle', 'gen7multirandombattle', 'gen6multirandombattle', 'gen5multirandombattle',
+	'gen4multirandombattle', 'gen5pokemmomultirandombattle',
+];
 
 /**
  * NPC 的队伍配置。

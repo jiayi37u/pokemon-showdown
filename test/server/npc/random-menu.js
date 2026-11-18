@@ -109,6 +109,7 @@ describe('NPC global random battle menu', () => {
 		['gen9randombattle', 'gen9randombattle', 'smart'],
 		['gen5pokemmorandombattle', 'gen5pokemmorandombattle', 'smart'],
 		['gen5pokemmorandombattle, basic', 'gen5pokemmorandombattle', 'basic'],
+		...[4, 5, 6, 7].map(gen => [`gen${gen}randombattle`, `gen${gen}randombattle`, 'smart']),
 	]) {
 		it(`should start ${target || 'the default format'} with a randomly chosen appearance`, async () => {
 			await commands.npc.random.call(context, target, null, user);

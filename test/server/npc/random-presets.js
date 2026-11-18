@@ -181,7 +181,8 @@ describe('Shared random-battle configuration inference', function () {
 	});
 
 	for (const format of ['gen9randombattle', 'gen5pokemmorandombattle', 'gen9multirandombattle',
-		'gen5pokemmomultirandombattle', 'gen7randombattle']) {
+		'gen5pokemmomultirandombattle',
+		...[4, 5, 6, 7].flatMap(gen => [`gen${gen}randombattle`, `gen${gen}multirandombattle`])]) {
 		it(`retains actual generated configurations in ${format}`, () => {
 			const team = Teams.generate(format, { seed: [1, 2, 3, 4] });
 			for (const set of team) {

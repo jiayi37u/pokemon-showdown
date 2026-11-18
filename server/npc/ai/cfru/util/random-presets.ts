@@ -42,7 +42,7 @@ const sources = new Map<string, Source>();
 const EXPANSION_LIMIT = 1024;
 // These generators expose the same role-based randomSet contract. Factory and arbitrary custom
 // generators are deliberately not interpreted as these formats just because their name says random.
-const supportedMods = new Set(['gen5', 'gen6', 'gen7', 'gen9', 'mmo']);
+const supportedMods = new Set(['gen4', 'gen5', 'gen6', 'gen7', 'gen9', 'mmo']);
 
 function sourceFor(formatId: string): Source | null {
 	if (!formatId) return null;

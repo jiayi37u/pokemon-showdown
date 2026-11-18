@@ -32,11 +32,11 @@ function completeBattle(options) {
 		assert.equal(battle.gameType, 'multi');
 		assert.equal(battle.p1.allySide, battle.p3);
 		assert.equal(battle.p2.allySide, battle.p4);
-		assert.equal(battle.dex.currentMod, options.format.includes('pokemmo') ? 'mmo' : 'base');
+		assert.equal(battle.dex.currentMod, Dex.forFormat(options.format).currentMod);
 		for (let i = 0; i < 4; i++) {
 			const team = Teams.unpack(options.players[i].team);
 			assert.equal(team.length, 3);
-			assert.deepEqual(battle.sides[i].pokemon.map(p => p.level), team.map(p => p.level));
+			assert.deepEqual(battle.sides[i].pokemon.map(p => p.level), team.map(p => p.level || 100));
 		}
 		for (let step = 0; step < 1000 && !battle.ended; step++) {
 			room.stream.push(battle.log.slice(cursor).join('\n'));

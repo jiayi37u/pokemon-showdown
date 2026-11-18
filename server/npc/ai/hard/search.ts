@@ -1,20 +1,21 @@
 /** Selective search up to two plies over AI knowledge snapshots; no simulator or complete-team samples. */
 import type { BattleState, OpponentModel } from '../cfru/types';
-import type { HardEvaluation } from './evaluation';
+import { type HardEvaluation, pendingPriority } from './evaluation';
 import { hardMove, searchOpponentModels } from './opponent-model';
 import { actionDelay, MatchupEvaluator, valueWeights } from './matchups';
 import { getEffectiveHpAfterSecondary } from '../cfru/util/damage-calc';
 import { rulesDex } from '../cfru/util/mechanics';
 import { CandidateSelector, observationKey, perspective } from './candidates';
 import {
-	actionOutcomes, beginTurn, continueTurn, bindOpponent, clonePosition, endTurn, identity, modelsFor, positionKey,
-	supportsMove, switchIn, transitionSupported, snapshotPosition, clonePokemon, knownMoves, usableMove, committedMove,
+	actionOutcomes, beginTurn, continueTurn, bindOpponent, clonePosition, entryView, identity, modelsFor, positionKey,
+	supportsMove, switchIn, simultaneousEntry, transitionSupported, snapshotPosition, clonePokemon, knownMoves, usableMove, committedMove,
 	type SearchAction, type Side, type TurnCheckpoint,
 } from './projection';
 export type { SearchAction } from './projection';
 
 export interface SearchResult {
 	choice?: string;
+	receivers?: { observation: string, health: number[], recipient: string }[];
 	reason: string;
 	values: { id: string, value: number, upperBound?: boolean, lowerBound?: boolean, upperValue?: number }[];
 	nodes: number;
@@ -24,6 +25,22 @@ interface EntryDecision {
 	side: Side;
 	choice: string;
 	depth: number;
+	pivot?: { observation: string, health: number[] };
+}
+
+function awaitsOpponent(state: BattleState): boolean {
+	const foe = state.opponent.active[0];
+	return !state.self.active[0].fainted && !foe.fainted && !state.actedThisTurn?.includes(`${foe.ownerSide}a`);
+}
+
+export function pivotObservation(state: BattleState, pending = awaitsOpponent(state)): string {
+	const own = state.self.active[0], foe = state.opponent.active[0];
+	const combatant = (pokemon: typeof own) => [identity(pokemon), pokemon.species, pokemon.status,
+		pokemon.boosts, [...pokemon.volatiles].sort()];
+	return JSON.stringify([combatant(own), combatant(foe), pending, !pending && foe.lastMove, own.item,
+		state.field.weather, state.field.terrain, state.field.trickroom,
+		...([state.self, state.opponent].map(({ conditions }) => [conditions.stealthrock, conditions.spikes,
+			conditions.toxicspikes, conditions.stickyweb, conditions.reflect, conditions.lightscreen, conditions.tailwind]))]);
 }
 interface Leaf {
 	config: number;
@@ -254,7 +271,7 @@ export class Search extends CandidateSelector {
 	TransitionNode[] {
 		const walk = (state: BattleState, turn: TurnCheckpoint | undefined, history: string[],
 			weight: number, entries: EntryDecision[]): TransitionNode[] => {
-			let pending: { side: Side, cause: 'pivot' | 'phaze' | 'faint' } | undefined;
+			let pending: { side: Side, cause: 'pivot' | 'phaze' | 'faint', copyVolatile?: boolean } | undefined;
 			if (turn) {
 				const completed = continueTurn(turn, this.matchups.damagePolicy, this.matchups.damageCache);
 				state = turn.state;
@@ -266,30 +283,39 @@ export class Search extends CandidateSelector {
 			}
 			if (!pending) return [{ state: snapshotPosition(state), weight, entries }];
 			const { side, cause } = pending;
+			const simultaneous = cause === 'faint' && state.self.active[0].fainted && state.opponent.active[0].fainted;
 			const key = JSON.stringify([side, cause, history, observationKey(perspective(state, side))]);
 			return [{ weight, entries,
 				checkpoint: cause === 'phaze' || side === 'opponent' ? undefined : { key, side, depth: history.length },
 				expand: () => {
-					const legal = state[side].reserve.filter(p => !p.fainted && p.hp > 0);
+					const view = entryView(state, side, pending.copyVolatile);
+					const legal = view[side].reserve.filter(p => !p.fainted && p.hp > 0);
 					const exposed = turn?.remaining.some(a => a.side !== side &&
 						!state[a.side].active[0]?.fainted && a.actor === identity(state[a.side].active[0]));
 					const options = cause === 'phaze' || side === 'opponent' ? legal :
-						this.entryChoices(state, side, exposed ? 'exposed' : 'free');
+						this.entryChoices(view, side, exposed ? 'exposed' : 'free');
 					this.pruned.entries += legal.length - options.length;
 					const probabilities = side === 'opponent' && cause !== 'phaze' ?
-						this.entryProbabilities(state, options, !!exposed) : undefined;
+						this.entryProbabilities(view, options, !!exposed) : undefined;
 					return options.flatMap(pokemon => {
 						const chance = cause === 'phaze' ? 1 / options.length : probabilities ? probabilities.get(identity(pokemon)) || 0 : 1;
 						if (!chance) return [];
 						const profiles = side === 'opponent' ? modelsFor(pokemon) : [undefined];
-						const decision = { key, side, choice: identity(pokemon), depth: history.length };
+						const pivot = side === 'self' && cause === 'pivot' && !history.length &&
+							identity(state.opponent.active[0]) === identity(start.opponent.active[0]) ? {
+								observation: pivotObservation(state, !!exposed),
+								health: [state.self.active[0].hpPercent, state.opponent.active[0].hpPercent],
+							} : undefined;
+						const decision = { key, side, choice: identity(pokemon), depth: history.length, pivot };
 						const nextEntries = cause === 'phaze' || side === 'opponent' ? entries : [...entries, decision];
 						return profiles.map(model => ({
 							weight: weight * (model?.weight ?? 1) * chance, entries: nextEntries,
 							expand: () => {
 								const next = clonePosition(state);
 								if (model) bindOpponent(next, pokemon, model);
-								switchIn(next, side, pokemon);
+								if (simultaneous) return this.pairedEntries(next, pokemon, (paired, chance) =>
+									walk(paired, undefined, [...history, identity(pokemon)], weight * chance, nextEntries));
+								switchIn(next, side, pokemon, pending.copyVolatile);
 								return walk(next, cause === 'faint' ? undefined : { ...turn!, state: next, remaining: [...turn!.remaining] },
 									[...history, identity(pokemon)], weight * (model?.weight ?? 1) * chance, nextEntries);
 							},
@@ -302,9 +328,31 @@ export class Search extends CandidateSelector {
 			const turn = beginTurn(start, own, reply);
 			return walk(turn.state, turn, [], 1, []);
 		}
-		const next = clonePosition(start); switchIn(next, 'self', own.switchTo!);
-		if (!start.self.active[0].fainted) endTurn(next, this.matchups.damagePolicy, this.matchups.damageCache);
+		if (start.self.active[0].fainted && start.opponent.active[0].fainted) {
+			return this.pairedEntries(start, own.switchTo!, (next, chance) => walk(next, undefined, [], chance, []));
+		}
+		const next = clonePosition(start); switchIn(next, 'self', own.switchTo!, own.copyVolatile);
+		if (!start.self.active[0].fainted) {
+			const foe = next.opponent.active[0];
+			return walk(next, { state: next, startedActors: [identity(start.self.active[0]), identity(foe)],
+				remaining: awaitsOpponent(start) ? [{ side: 'opponent', actor: identity(foe), action: reply,
+					reply: { id: 'pass', prior: 0 } }] : [] }, [], 1, []);
+		}
 		return walk(next, undefined, [], 1, []);
+	}
+
+	private pairedEntries(state: BattleState, own: NonNullable<SearchAction['switchTo']>,
+		after: (next: BattleState, chance: number) => TransitionNode[]): TransitionNode[] {
+		const legal = state.opponent.reserve.filter(pokemon => !pokemon.fainted && pokemon.hp > 0);
+		const weights = this.entryProbabilities(state, legal, false);
+		return legal.flatMap(foe => modelsFor(foe).flatMap(profile => {
+			const chance = (weights.get(identity(foe)) || 0) * profile.weight;
+			if (!chance) return [];
+			const next = clonePosition(state);
+			bindOpponent(next, foe, profile);
+			simultaneousEntry(next, own, foe);
+			return after(next, chance);
+		}));
 	}
 
 	transitions(start: BattleState, own: SearchAction, reply: SearchAction, replacing: boolean):
@@ -326,8 +374,8 @@ export class Search extends CandidateSelector {
 			const bound = clonePosition(state); bindOpponent(bound, active, profile);
 			bound.opponent.active[0].presetModels = [{ ...profile, weight: 1 }];
 			snapshotPosition(bound);
-			const replies = replacing ? [{ action: { id: 'pass', prior: 0 }, probability: 1 }] :
-				this.responseProbabilities(bound);
+			const replies = replacing && !awaitsOpponent(bound) ? [{ action: { id: 'pass', prior: 0 }, probability: 1 }] :
+				this.responseProbabilities(bound, replacing ? pendingPriority(bound, bound.self.active[0]) : undefined);
 			return replies.map(({ action, probability }) => ({ config, profile, state: bound, action, probability }));
 		});
 		this.responseCache.set(key, responses); return responses;
@@ -425,7 +473,8 @@ function aggregateLeaves(branches: Leaf[]): number {
  * indistinguishable profiles and pending replies. Random entry/profile outcomes retain
  * their probability mass; they are never promoted to controllable choices.
  */
-function resolveEntries(groups: Leaf[][], combine: (values: (number | undefined)[]) => number): number[] {
+function resolveEntries(groups: Leaf[][], combine: (values: (number | undefined)[]) => number,
+	receivers?: SearchResult['receivers']): number[] {
 	const available = new Set(groups.flat());
 	const events = new Map<string, { decision: EntryDecision, members: { branch: Leaf, group: number }[] }>();
 	groups.forEach((branches, group) => branches.forEach(branch => {
@@ -452,6 +501,7 @@ function resolveEntries(groups: Leaf[][], combine: (values: (number | undefined)
 		for (const [choice, branches] of options) if (choice !== chosen) {
 			for (const group of branches) for (const branch of group) available.delete(branch);
 		}
+		if (receivers && decision.pivot && chosen) receivers.push({ ...decision.pivot, recipient: chosen });
 	}
 	return groups.map(branches => aggregateLeaves(branches.filter(branch => available.has(branch))));
 }
@@ -644,14 +694,6 @@ function runSearch(
 ): SearchResult {
 	const unsupported = transitionSupported(state);
 	if (unsupported) return { reason: unsupported, values: [], nodes: 0 };
-	if (replacing && !state.self.active[0].fainted) {
-		const actor = state.self.active[0];
-		if (rulesDex(state.field).moves.get(actor.lastMove).selfSwitch !== true ||
-			!state.actedThisTurn?.includes(`${actor.ownerSide}a`) ||
-			!state.actedThisTurn.includes(`${state.opponent.active[0].ownerSide}a`)) {
-			return { reason: 'mid-turn replacement requires pending action payload', values: [], nodes: 0 };
-		}
-	}
 	const root = clonePosition(state);
 	for (const p of state.opponent.preview || []) if (!root.opponent.team.some(q => identity(q) === identity(p))) {
 		root.opponent.team.push({ ...clonePokemon(p), active: false });
@@ -664,13 +706,16 @@ function runSearch(
 	Object.assign(root.self.active[0], { projection: { pp: Object.fromEntries(ownPP) } });
 	snapshotPosition(root);
 	const search = new Search(matchups, root);
-	const entries = replacing ? new Set(search.entryChoices(root, 'self', 'free').map(identity)) : undefined;
+	const entries = replacing ? new Set(search.entryChoices(entryView(root, 'self', actions[0]?.copyVolatile),
+		'self', awaitsOpponent(root) ? 'exposed' : 'free').map(identity)) : undefined;
 	const candidates = entries ? actions.filter(a => a.switchTo && entries.has(identity(a.switchTo))) :
 		search.choices(root, 'self', actions);
 	const order = new Map(candidates.map((action, index) => [action.id, index]));
 	const pruning = options.prune !== false;
 	const playable = candidates.filter(a => a.id !== 'pass');
-	if (pruning && playable.length === 1) return { choice: playable[0].id, values: [], nodes: 0,
+	const plansEntry = (action: SearchAction) => !!action.move && !action.zMove &&
+		!!rulesDex(root.field).moves.get(action.move).selfSwitch && root.self.reserve.some(pokemon => !pokemon.fainted);
+	if (pruning && playable.length === 1 && !plansEntry(playable[0])) return { choice: playable[0].id, values: [], nodes: 0,
 		reason: `${replacing ? 'Replacement search' : 'Two-turn search'} (0 nodes, damage-only): only retained action ${playable[0].id}; no value search needed` };
 	const responses = search.responses(root, replacing, candidates);
 	const roots = playable.map(action => {
@@ -708,7 +753,7 @@ function runSearch(
 			const unsettled = replacing || hasDelayedEffects(root) ||
 				candidate.action.move && rulesDex(root.field).moves.get(candidate.action.move).sideCondition ||
 				group.some(branch => entryConditionsChanged(root, branch.state) || needsContinuation(branch.state, search));
-			if (probability >= 0.1 && unsettled) return true;
+			if (replacing || probability >= 0.1 && unsettled) return true;
 			for (const branch of group) {
 				candidate.lower.set(branch, branch.value); candidate.upper.set(branch, branch.value);
 			}
@@ -734,7 +779,7 @@ function runSearch(
 	let winner: typeof roots[number] | undefined;
 	while (roots.length) {
 		const leader = [...roots].sort((a, b) => b.lo - a.lo || order.get(a.action.id)! - order.get(b.action.id)!)[0];
-		if (pruning && Number.isFinite(leader.lo) && roots.every(c => c === leader || c.hi < leader.lo - 1e-9) ||
+		if (pruning && (leader.done || !plansEntry(leader.action)) && Number.isFinite(leader.lo) && roots.every(c => c === leader || c.hi < leader.lo - 1e-9) ||
 			roots.every(c => c.done)) { winner = leader; break; }
 		if (pruning) for (const candidate of roots) {
 			if (!candidate.done && !candidate.rejected && candidate.hi < leader.lo - 1e-9) {
@@ -782,7 +827,9 @@ function runSearch(
 		...(!c.done ? c === winner ? { lowerBound: true, upperValue: c.hi - initial } : { upperBound: true } : {}) }))
 		.sort((a, b) => Number(b.id === winner.action.id) - Number(a.id === winner.action.id) ||
 			b.value - a.value || order.get(a.id)! - order.get(b.id)!);
-	return { choice: values[0].id, values, nodes: search.nodes,
+	const receivers: NonNullable<SearchResult['receivers']> = [];
+	if (plansEntry(winner.action)) resolveEntries([winner.branches], values => values[0] ?? -Infinity, receivers);
+	return { choice: values[0].id, values, nodes: search.nodes, receivers: receivers.length ? receivers : undefined,
 		reason: `${replacing ? 'Replacement search' : 'Two-turn search'} (${search.nodes} nodes, damage-only): ${values.map(v => `${v.id}${v.upperBound ? '<=' : v.lowerBound ? '>=' : '='}${v.value.toFixed(1)}`).join(', ')}` +
 			`; Pruned invalid=${search.pruned.invalid}, score-gap=${search.pruned.scores}, switch-purpose=${search.pruned.switches}, entry-purpose=${search.pruned.entries}` +
 			`; Reused choices=${search.reused.choices}, responses=${search.reused.responses}, continuation=${search.reused.continuations}` +

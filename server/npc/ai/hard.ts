@@ -6,14 +6,14 @@ import type { PRNG, PRNGSeed } from '../../../sim/prng';
 import { Dex } from '../../../sim/dex';
 import { NPCBattleAI, type MoveChoice, type SwitchChoice } from './index';
 import { DEFAULT_AI_CONFIG, type BattleState, type CFRUAIConfig, type MoveScore } from './cfru/types';
-import { buildBattleStateWithTracker, buildPokemonFromRequest, damagingZMove } from './cfru/state-builder';
+import { buildBattleStateWithTracker, buildPokemonFromRequest, damagingZMove, trackedPokemonToAIPokemon } from './cfru/state-builder';
 import { createBattleTracker } from './cfru/util/battle-tracker';
 import { createBattleLogger, type LogLevel } from './cfru/logger';
 import { megaEvolutionState } from './cfru/util/forms';
 import { getEffectiveSpeed } from './cfru/util/speed';
 import { HardEvaluation } from './hard/evaluation';
 import { fightingStyle, hardMove, hardMoveId } from './hard/opponent-model';
-import { searchPosition } from './hard/search';
+import { pivotObservation, searchPosition, type SearchResult } from './hard/search';
 import { MatchupEvaluator } from './hard/matchups';
 
 const leadMoves = new Set(['voltswitch', 'uturn', 'flipturn', 'stealthrock', 'spikes']);
@@ -38,6 +38,8 @@ export class HardAI extends NPCBattleAI {
 	private logger: ReturnType<typeof createBattleLogger>;
 	private lastSwitchTurn = new Map<number, number>();
 	private useSearch: boolean;
+	private pivotPlan?: { turn: number, actor: string, move: string, belief: string,
+		receivers: NonNullable<SearchResult['receivers']> };
 	private matchups = new MatchupEvaluator();
 	private sacrificePlans = new Map<string, { turn: number, recipient: number, position: string, move: string }>();
 
@@ -99,6 +101,7 @@ export class HardAI extends NPCBattleAI {
 		const state = this.state!;
 		const slot = this.activeSlot + activeIndex;
 		const actor = state.self.active.find(p => p.slot === slot);
+		this.pivotPlan = undefined;
 		if (!actor || !state.opponent.active.length) return super.makeDecision(active, moves, switches, flags, activeIndex);
 		this.sacrificePlans.delete(actor.ident || actor.species);
 		const formatId = this.configCFRU.formatId;
@@ -197,6 +200,8 @@ export class HardAI extends NPCBattleAI {
 			return { type: 'switch', target };
 		}
 		if (search?.choice) best = candidates.find(c => choiceId(c.choice) === search.choice)!;
+		if (search?.receivers) this.pivotPlan = { turn: state.turn, actor: actor.ident!, move: best.result.move.id,
+			belief: this.entryBelief(evaluator, state), receivers: search.receivers };
 		if (!search?.choice && !active.trapped) {
 			const replacements = switches.map(sw =>
 				evaluator.scoreSwitch(
@@ -243,6 +248,13 @@ export class HardAI extends NPCBattleAI {
 			zMove: best.choice.zMove, transform };
 	}
 
+	private entryBelief(evaluator: HardEvaluation, state: BattleState): string {
+		const foe = state.opponent.active[0];
+		return JSON.stringify([foe.ident, foe.itemKnown && foe.item, foe.observedAbility,
+			evaluator.opponentModels(foe).map(model => [model.name, model.weight, model.pokemon.item,
+				model.pokemon.ability, model.pokemon.baseStats, model.moves])]);
+	}
+
 	protected override chooseSwitch(active: AnyObject | undefined, switches: SwitchChoice[]): number {
 		if (!this.state || !switches.length) return super.chooseSwitch(active, switches);
 		const plan = this.sacrificePlans.get(active?.ident);
@@ -259,24 +271,53 @@ export class HardAI extends NPCBattleAI {
 		let state = this.state;
 		if (!state.isDoubles && !state.self.active.length && active) {
 			const fainted = buildPokemonFromRequest(active, 1, true, this.configCFRU.formatId);
+			fainted.ident = active.ident; fainted.ownerSide = active.ident.slice(0, 2);
 			if (fainted.fainted) state = { ...state, self: { ...state.self,
 				active: [fainted], team: [fainted, ...state.self.team] } };
 		}
+		if (!state.isDoubles && !state.opponent.active.length) {
+			const fainted = this.tracker.getFaintedOpponentAt(`${this.tracker.getOpponentSideId()}a`);
+			if (fainted) {
+				const pokemon = trackedPokemonToAIPokemon(fainted, 1, true, this.configCFRU.formatId);
+				state = { ...state, opponent: { ...state.opponent, active: [pokemon], team: [pokemon,
+					...state.opponent.team.filter(member => member.ident !== pokemon.ident)] } };
+			}
+		}
 		const evaluator = new HardEvaluation(state, this.configCFRU.formatId, undefined, this.matchups.damageCache);
 		const actor = state.self.active.find(p => p.ident === active?.ident);
-		const pending = actor && !actor.fainted ? evaluator.pendingPredictions(actor) : undefined;
-		const candidates = switches.map(sw => {
-			const mon = state.self.reserve.find(p => p.slot === sw.slot) ||
-				buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId);
-			return pending?.size ? evaluator.scoreSwitch(mon, pending, false, actor) :
-				evaluator.scoreSwitch(mon, evaluator.predictions(mon), true);
-		});
+		const pivot = actor && this.tracker.getPivotMove(`${actor.ownerSide}a`);
+		const previous = this.pivotPlan;
+		this.pivotPlan = undefined;
+		if (previous && previous.turn === state.turn && previous.actor === actor?.ident && previous.move === pivot &&
+			state.opponent.active.length && previous.belief === this.entryBelief(evaluator, state)) {
+			const observation = pivotObservation(state);
+			const health = [actor!.hpPercent, state.opponent.active[0].hpPercent];
+			const distance = (values: number[]) => health.reduce((sum, value, index) => sum + Math.abs(value - values[index]), 0);
+			const match = previous.receivers.filter(candidate => candidate.observation === observation)
+				.sort((left, right) => distance(left.health) - distance(right.health))[0];
+			const selected = match && switches.find(choice => choice.pokemon.ident === match.recipient);
+			if (selected) {
+				this.logger.logSwitchDecision(state.turn, actor!, state.self.reserve.find(member => member.ident === match.recipient)!,
+					[], 'Reuse two-turn pivot recipient', state);
+				return selected.slot;
+			}
+		}
+		const recipients = switches.map(sw => state.self.reserve.find(member => member.slot === sw.slot) ||
+			buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId));
 		const search = this.useSearch ? searchPosition(state, evaluator,
-			candidates.map(c => ({ id: `switch ${c.pokemon.slot}`, switchTo: c.pokemon, prior: c.score })),
+			recipients.map(member => ({ id: `switch ${member.slot}`, switchTo: member, prior: 0,
+				copyVolatile: !!pivot && Dex.forFormat(this.configCFRU.formatId).moves.get(pivot).selfSwitch === 'copyvolatile' })),
 			new Map(), this.matchups, true) : undefined;
+		const searched = recipients.find(member => search?.choice === `switch ${member.slot}`);
+		if (search && searched) {
+			this.logger.logSwitchDecision(state.turn, null, searched, [], search.reason, state);
+			return searched.slot;
+		}
+		const pending = actor && !actor.fainted ? evaluator.pendingPredictions(actor) : undefined;
+		const candidates = recipients.map(member => pending?.size ? evaluator.scoreSwitch(member, pending, false, actor) :
+			evaluator.scoreSwitch(member, evaluator.predictions(member), true));
 		const bestScore = Math.max(...candidates.map(c => c.score));
-		const best = candidates.find(c => search?.choice === `switch ${c.pokemon.slot}`) ||
-			this.prng.sample(candidates.filter(c => c.score === bestScore));
+		const best = this.prng.sample(candidates.filter(c => c.score === bestScore));
 		this.logger.logSwitchDecision(this.state.turn, null, best.pokemon,
 			candidates.map(c => ({ pokemon: c.pokemon.species, score: c.score, reasons: c.reasons })),
 			search?.choice ? search.reason : `CFRU replacement fallback: ${search?.reason || 'search disabled'}`, this.state);

@@ -55,6 +55,12 @@ export interface ReplacementHypothesis {
 	threat: number;
 }
 
+export function pendingPriority(state: BattleState, actor: AIPokemon): number {
+	const pivot = Dex.forFormat(state.field.formatId!).moves.get(actor.lastMove);
+	return pivot.selfSwitch && state.actedThisTurn?.includes(`${actor.ownerSide}${String.fromCharCode(96 + actor.slot)}`) ?
+		effectivePriority(actor, pivot, state.field) : Infinity;
+}
+
 export class HardEvaluation {
 	readonly dex: ReturnType<typeof Dex.forFormat>;
 	readonly state: BattleState;
@@ -135,15 +141,13 @@ export class HardEvaluation {
 	pendingPredictions(actor: AIPokemon): Map<AIPokemon, PredictedAction[]> {
 		const predictions = this.predictions(actor);
 		const position = (p: AIPokemon) => `${p.ownerSide}${String.fromCharCode(96 + p.slot)}`;
-		const pivot = this.dex.moves.get(actor.lastMove);
-		const priority = pivot.selfSwitch && this.state.actedThisTurn?.includes(position(actor)) ?
-			effectivePriority(actor, pivot, this.state.field) : undefined;
+		const priority = pendingPriority(this.state, actor);
 		for (const [foe, actions] of predictions) {
 			if (this.state.actedThisTurn?.includes(position(foe))) {
 				predictions.delete(foe);
 				continue;
 			}
-			const compatible = actions.filter(action => !action.switching && (priority === undefined ||
+			const compatible = actions.filter(action => !action.switching && (
 				!action.move || effectivePriority(action.user || foe, action.selectedMove || action.move,
 				this.state.field) <= priority));
 			// Preserve each compatible configuration's mass; condition its move weights separately.

@@ -1473,12 +1473,12 @@ describe('Hard damage-based state search', () => {
 		assert(result.reasons.some(reason => reason.startsWith('Wish recipient')));
 	});
 	it('does not discard an unsupported opponent response while returning a confident search result', () => {
-		const f = fixture([mon('Mew', ['psychic', 'psyshock'])], [mon('Mew', ['batonpass', 'splash']), mon('Magikarp', ['splash'])]);
+		const f = fixture([mon('Mew', ['psychic', 'psyshock'])], [mon('Mew', ['naturepower', 'splash']), mon('Magikarp', ['splash'])]);
 		const original = Search.prototype.responseProbabilities;
-		Search.prototype.responseProbabilities = () => [{ action: action('batonpass'), probability: 1 }];
+		Search.prototype.responseProbabilities = () => [{ action: action('naturepower'), probability: 1 }];
 		try {
 			const result = searchPosition(f.state, f.evaluator, [action('psychic'), action('psyshock')], new Map());
-			assert(!result.choice); assert(result.reason.includes('batonpass'));
+			assert(!result.choice); assert(result.reason.includes('naturepower'));
 		} finally {
 			Search.prototype.responseProbabilities = original;
 		}
@@ -1635,10 +1635,48 @@ describe('Hard damage-based state search', () => {
 		} finally { Battle.fromJSON = original; }
 	});
 	it('reports unsupported productive actions instead of silently valuing them as no-ops', () => {
-		const f = fixture([mon('Mew', ['batonpass', 'psychic']), mon('Alakazam', ['psychic'])], [mon('Mew', ['splash'])]);
-		f.state.self.active[0].boosts.spa = 2;
-		const result = searchPosition(f.state, f.evaluator, [action('batonpass'), action('psychic')], new Map());
-		assert(!result.choice); assert(result.reason.includes('batonpass'));
+		const f = fixture([mon('Mew', ['naturepower'])], [mon('Mew', ['splash'])]);
+		const result = searchPosition(f.state, f.evaluator, [action('naturepower')], new Map());
+		assert(!result.choice); assert(result.reason.includes('naturepower'));
+	});
+	it('passes boosts and the remaining Substitute HP before the receiver takes the pending attack', () => {
+		const f = fixture([mon('Mew', ['batonpass']), mon('Slowbro', ['psychic'])], [mon('Shuckle', ['tackle'])]);
+		const user = f.state.self.active[0];
+		user.boosts.spa = 2; user.volatiles.add('substitute'); user.projection = { substituteHp: 1 };
+		const next = step(f.state, 'batonpass', 'tackle');
+		const receiver = next.self.active[0];
+		assert.equal(receiver.species, 'Slowbro');
+		assert.equal(receiver.boosts.spa, 2); assert.equal(receiver.hp, receiver.maxHp);
+		assert(!receiver.volatiles.has('substitute'));
+	});
+	it('uses one opposing entry distribution for every simultaneous choice without advancing the turn', () => {
+		const f = fixture([mon('Mew', ['splash']), mon('Jolteon', ['thunderbolt']), mon('Slowbro', ['surf'])],
+			[mon('Mew', ['splash']), mon('Garchomp', ['earthquake']), mon('Venusaur', ['gigadrain'])]);
+		for (const side of ['self', 'opponent']) hp(f.state[side].active[0], 0);
+		const search = new Search(new MatchupEvaluator());
+		const distributions = f.state.self.reserve.map(receiver => {
+			const branches = search.transitions(f.state, { id: 'switch', switchTo: receiver, prior: 0 }, { id: 'pass', prior: 0 }, true);
+			assert(branches.length);
+			for (const branch of branches) {
+				assert.equal(branch.state.turn, f.state.turn);
+				assert.equal(branch.state.self.active[0].species, receiver.species);
+				assert(!branch.state.opponent.active[0].fainted);
+			}
+			return branches.map(branch => [branch.state.opponent.active[0].species, branch.weight]);
+		});
+		assert.deepEqual(distributions[0], distributions[1]);
+	});
+	it('only resolves the remaining attack at a live mid-turn entry', () => {
+		const f = fixture([mon('Jolteon', ['voltswitch']), mon('Slowbro', ['scald'])], [mon('Mew', ['tackle'])]);
+		const search = new Search(new MatchupEvaluator()), receiver = f.state.self.reserve[0];
+		const entry = { id: 'switch 2', switchTo: receiver, prior: 0 };
+		f.state.actedThisTurn = ['p1a'];
+		const pending = search.transitions(f.state, entry, action('tackle'), true)[0].state;
+		f.state.actedThisTurn.push('p2a');
+		const completed = search.transitions(f.state, entry, action('tackle'), true)[0].state;
+		assert(pending.self.active[0].hp < receiver.hp);
+		assert.equal(completed.self.active[0].hp, receiver.hp);
+		assert.equal(pending.turn, f.state.turn + 1); assert.equal(completed.turn, pending.turn);
 	});
 	it('values a status transition through the same team value function as direct attacks', () => {
 		const f = fixture([mon('Mew', ['willowisp'])], [mon('Garchomp', ['earthquake'])]);

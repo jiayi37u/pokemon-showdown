@@ -10,6 +10,14 @@ export const protectionMoves = new Set([
 	'protect', 'detect', 'kingsshield', 'spikyshield', 'banefulbunker', 'obstruct', 'silktrap', 'burningbulwark',
 ]);
 
+export function transferableVolatiles(effects: Iterable<string>, dex: typeof Dex, kind: string) {
+	return [...effects].filter(effect => {
+		if (kind === 'shedtail' && effect !== 'substitute') return false;
+		const condition = dex.conditions.get(/^perish[0-3]$/.test(effect) ? 'perishsong' : effect);
+		return condition.exists && !condition.noCopy;
+	});
+}
+
 export function nextChainedHit(move: string, hits: number): AIPokemon['moveSequence'] {
 	return hits < 5 ? { move, elapsed: hits } : undefined;
 }

@@ -16,7 +16,7 @@ import { Dex, toID } from '../../../../../sim/dex';
 import { abilityStatModifier, effectiveAbility, formeAbility, hasNeutralizingGas, normalizeWeather } from './mechanics';
 import { defaultBoosts, type AIPokemon } from '../types';
 import { BattleEvidenceTracker } from './battle-evidence';
-import { controlDuration, nextChainedHit } from './move-effects';
+import { controlDuration, nextChainedHit, transferableVolatiles } from './move-effects';
 
 /** Only facts available in our request; never store inferred models or scoring state here. */
 type RequestPokemonFacts = Pick<AIPokemon, 'species' | 'types' | 'baseStats' | 'ability' | 'moves' | 'item'>;
@@ -121,6 +121,7 @@ interface IdentityMemory {
 /** Bounded to one stay, so an Illusion reveal can reassign observations without replaying the battle. */
 interface EntryObservations {
 	turn: number;
+	pivotMove?: string;
 	chargingMove?: string;
 	rampageMove?: string;
 	moveSequence?: AIPokemon['moveSequence'];
@@ -431,6 +432,7 @@ export class BattleTracker {
 			this.teamSizes.set(parts[1], Number(parts[2]));
 			break;
 		case 'turn':
+			for (const observed of this.entries.values()) delete observed.pivotMove;
 			this.residualCompleted = false;
 			this.actedThisTurn.clear();
 			this.currentAttack = undefined;
@@ -482,6 +484,7 @@ export class BattleTracker {
 		}
 		case '-item':
 		case '-enditem':
+			if (entry && command === '-enditem' && toID(parts[2]) === 'ejectbutton') delete entry.pivotMove;
 			this.handleItem(parts);
 			break;
 		case '-sethp':
@@ -555,6 +558,7 @@ export class BattleTracker {
 			if (entry) delete entry.chargingMove;
 			if (!parts.some(p => p.startsWith('[from]'))) this.actedThisTurn.add(parts[1].split(':')[0].trim());
 			const attack = (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(parts[2]);
+			if (entry) entry.pivotMove = attack.selfSwitch ? attack.id : undefined;
 			const chain = attack.actionSequence === 'chainedHits' ?
 				{ move: attack.id, hits: 1 + (entry?.moveSequence?.move === attack.id ? entry.moveSequence.elapsed : 0) } : undefined;
 			if (chain && entry) delete entry.moveSequence;
@@ -700,6 +704,11 @@ export class BattleTracker {
 			copyEffectsPending: transfer.copyEffects,
 		};
 		this.entries.set(position, entry);
+		if (outgoingEntry?.controlExpires) {
+			for (const control of ['taunt', 'encore', 'yawn'] as const) {
+				if (transfer.volatiles.has(control)) (entry.controlExpires ||= {})[control] = outgoingEntry.controlExpires[control];
+			}
+		}
 		// PS Gen 3–4 carries the recyclable item with the position when switching.
 		if (outgoingIdent && outgoingIdent !== sleepIdent && this.formatId && Dex.forFormat(this.formatId).gen <= 4) {
 			this.updateIdentityMemory(sleepIdent, { consumedItem: this.identityMemory.get(outgoingIdent)?.consumedItem });
@@ -854,11 +863,7 @@ export class BattleTracker {
 		const boosts = kind === 'copyvolatile' ? { ...(this.opponentPokemon.get(position)?.boosts ||
 			this.ourActiveBoosts.get(position) || defaultBoosts()) } : defaultBoosts();
 		if (kind === 'copyvolatile' || kind === 'shedtail') {
-			for (const effect of this.activeVolatiles.get(position) || []) {
-				if (kind === 'shedtail' && effect !== 'substitute') continue;
-				// Perish Song exposes its countdown in the protocol instead of its condition ID.
-				const condition = dex.conditions.get(/^perish[0-3]$/.test(effect) ? 'perishsong' : effect);
-				if (!condition.exists || condition.noCopy) continue;
+			for (const effect of transferableVolatiles(this.activeVolatiles.get(position) || [], dex, kind)) {
 				volatiles.add(effect);
 				const lifetime = this.transientEffects.get(position)?.get(effect);
 				if (lifetime) transient.set(effect, lifetime);
@@ -1959,6 +1964,11 @@ export class BattleTracker {
 		return null;
 	}
 
+	getFaintedOpponentAt(position: string) {
+		const pokemon = this.opponentPokemon.get(position);
+		return pokemon?.hpPercent === 0 ? pokemon : undefined;
+	}
+
 	/**
 	 * Get all active opponent Pokemon (for doubles/multi)
 	 * Returns array of [position, TrackedPokemon] sorted by position
@@ -2323,6 +2333,7 @@ export class BattleTracker {
 	}
 
 	getTurnActions(): string[] { return [...this.actedThisTurn]; }
+	getPivotMove(position: string): string | undefined { return this.entries.get(position)?.pivotMove; }
 
 	getChargingMove(position: string): string | undefined { return this.entries.get(position)?.chargingMove; }
 	getRampageMove(position: string): string | undefined { return this.entries.get(position)?.rampageMove; }

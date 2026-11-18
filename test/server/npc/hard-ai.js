@@ -32,6 +32,63 @@ function setup(foes, team, { doubles = false, AI = HardAI, format = '' } = {}) {
 	return { ai, reveal, decide() { ai.receiveRequest(battle.p2.activeRequest); return choice; } };
 }
 
+describe('Hard live replacement requests', () => {
+	for (const move of ['voltswitch', 'uturn', 'batonpass']) {
+		it(`reuses the searched ${move} recipient on a matching public checkpoint`, () => {
+			const game = setup([mon('Snorlax', ['meanlook', 'tackle'])],
+				[mon('Jolteon', [move, 'splash']), mon('Garchomp', ['earthquake']), mon('Slowbro', ['scald'])],
+				{ format: 'gen6customgame' });
+			const play = (own, foe) => {
+				const cursor = battle.log.length;
+				battle.makeChoices(foe, own);
+				game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
+			};
+			play('move splash', 'move meanlook');
+			assert.equal(game.decide(), 'move 1');
+			play('move 1', 'move tackle');
+			let reason;
+			game.ai.logger.logSwitchDecision = (_turn, _actor, _target, _scores, message) => { reason = message; };
+			assert.match(game.decide(), /^switch [23]$/);
+			assert.match(reason, /Reuse two-turn pivot recipient/);
+		});
+	}
+	for (const switchFoe of [false, true]) {
+		it(switchFoe ? 'replans a pivot when the opponent switches' : 'replans after contact rules out an opposing item', () => {
+			const game = setup([mon('Slowbro', ['meanlook', 'psychic']), mon('Snorlax', ['tackle'])],
+				[mon('Jolteon', ['uturn', 'splash']), mon('Tyranitar', ['crunch']), mon('Blissey', ['seismictoss'])],
+				{ format: 'gen6customgame' });
+			let cursor = battle.log.length;
+			battle.makeChoices('move meanlook', 'move splash');
+			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
+			assert.equal(game.decide(), 'move 1');
+			assert(game.ai.pivotPlan?.receivers.length);
+			cursor = battle.log.length;
+			battle.makeChoices(switchFoe ? 'switch 2' : 'move psychic', 'move 1');
+			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
+			let reason;
+			game.ai.logger.logSwitchDecision = (_turn, _actor, _target, _scores, message) => { reason = message; };
+			assert.match(game.decide(), /^switch [23]$/);
+			assert.match(reason, /^Replacement search/);
+		});
+	}
+	for (const button of [true, false]) {
+		it(button ? 'searches after Eject Button activates' : 'searches a simultaneous replacement request', () => {
+			const game = setup([mon('Mew', ['tackle'], { level: button ? 100 : 1 }), mon('Pikachu', ['surf']), mon('Pelipper', ['scald'])],
+				[mon('Metagross', [button ? 'splash' : 'explosion'], { item: button ? 'Eject Button' : '' }),
+					mon('Garchomp', ['earthquake']), mon('Slowbro', ['scald'])], { format: 'gen6customgame' });
+			const cursor = battle.log.length;
+			battle.makeChoices('move 1', 'move 1');
+			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
+			assert(battle.p2.activeRequest.forceSwitch);
+			if (!button) assert(battle.p1.activeRequest.forceSwitch);
+			let reason;
+			game.ai.logger.logSwitchDecision = (_turn, _actor, _target, _scores, message) => { reason = message; };
+			assert.match(game.decide(), /^switch [23]$/);
+			assert.match(reason, /^Replacement search/);
+		});
+	}
+});
+
 describe('Hard user-authorized team preset rules', () => {
 	function evaluate(game, format = 'gen6ou') {
 		const state = buildBattleStateWithTracker(battle.p2.activeRequest, null, game.ai.getTracker(), { formatId: format });

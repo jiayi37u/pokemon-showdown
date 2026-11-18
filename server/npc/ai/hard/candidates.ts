@@ -4,7 +4,7 @@ import { hardMove, publicTargetModels } from './opponent-model';
 import { HardEvaluation } from './evaluation';
 import { actionDelay, valueWeights, type Matchup, type MatchupEvaluator } from './matchups';
 import { megaEvolutionState } from '../cfru/util/forms';
-import { rulesDex } from '../cfru/util/mechanics';
+import { effectivePriority, rulesDex } from '../cfru/util/mechanics';
 import { selectMoveCandidates } from '../cfru/scoring';
 import { bindOpponent, clonePosition, identity, knownMoves, modelsFor, moveAction, ownZAction, positionKey, switchIn,
 	usableMove, projectEntry, snapshotPosition, isTrapped, settleYawn, committedMove,
@@ -315,6 +315,24 @@ export class CandidateSelector {
 		const view = this.responseView(state);
 		const key = `${positionKey(view)}:${exposed}:${entries.map(identity).join(',')}`;
 		const cached = this.entryWeights.get(key); if (cached) return cached;
+		if (state.self.active[0].fainted && state.opponent.active[0].fainted) {
+			const distribution = new Map<string, number>();
+			const possible = state.self.reserve.filter(pokemon => !pokemon.fainted && pokemon.hp > 0);
+			for (const recipient of possible) {
+				const preview = clonePosition(state);
+				switchIn(preview, 'self', recipient);
+				const candidates = entries.map(entry => preview.opponent.team.find(pokemon => identity(pokemon) === identity(entry))!);
+				if (preview.self.active[0].fainted) continue;
+				for (const [id, weight] of this.entryProbabilities(preview, candidates, false)) {
+					distribution.set(id, (distribution.get(id) || 0) + weight);
+				}
+			}
+			if (!distribution.size) for (const entry of entries) distribution.set(identity(entry), 1);
+			const mass = [...distribution.values()].reduce((sum, weight) => sum + weight, 0);
+			for (const [id, weight] of distribution) distribution.set(id, weight / mass);
+			this.entryWeights.set(key, distribution);
+			return distribution;
+		}
 		const i = view.self.team.indexOf(view.self.active[0]);
 		const [current] = this.pairs(view, [[i, view.opponent.team.indexOf(view.opponent.active[0])]]);
 		const pairs = this.pairs(view, entries.map(p =>
@@ -357,13 +375,14 @@ export class CandidateSelector {
 	/** Score once against public beliefs, trim negligible alternatives, then normalize.
 	 * The distribution is shared by every own root action; no queued move is an input.
 	 */
-	responseProbabilities(state: BattleState): { action: SearchAction, probability: number }[] {
+	responseProbabilities(state: BattleState, pendingPriority?: number): { action: SearchAction, probability: number }[] {
 		const forced = forcedAction(state, 'opponent');
 		if (forced) return [{ action: forced, probability: 1 }];
-		const view = this.responseView(state), key = positionKey(view);
+		const view = this.responseView(state), key = `${positionKey(view)}:${pendingPriority ?? ''}`;
 		const cached = this.responseCachePolicy.get(key); if (cached) return cached;
 		const actor = view.opponent.active[0];
-		const moves = knownMoves(actor).filter(id => usableMove(view, 'opponent', id))
+		const moves = knownMoves(actor).filter(id => usableMove(view, 'opponent', id) && (pendingPriority === undefined ||
+			effectivePriority(actor, rulesDex(view.field).moves.get(id), view.field) <= pendingPriority))
 			.map(id => moveAction(state, 'opponent', id));
 		const scores = this.scoreActions(view, 'opponent', moves);
 		const retained = new Set(selectMoveCandidates([...scores.values()], SEARCH_SCORE_GAP));
@@ -378,7 +397,7 @@ export class CandidateSelector {
 		const stayView = stayAfterYawn(view, 'opponent');
 		const [pair] = this.pairs(stayView, [[i, j]]);
 		const finishing = this.canFinish(stayView, 'opponent', pair.opponent);
-		const entries = !finishing && !isTrapped(view, 'opponent') && !actor.volatiles.has('trapped') ?
+		const entries = pendingPriority === undefined && !finishing && !isTrapped(view, 'opponent') && !actor.volatiles.has('trapped') ?
 			this.entryProbabilities(state, state.opponent.reserve.filter(p => !p.fainted && p.hp > 0)) : new Map<string, number>();
 		// Retreat needs both a losing matchup and an improvement after conceding entry.
 		// Reuse the same matrix cells that selected/weighted the recipients.

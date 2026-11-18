@@ -17,7 +17,7 @@ import { directRecoveryAmount, entryHazardDamage, flinchesOnHit } from '../cfru/
 import { getActualWeight, getEffectiveHpAfterSecondary, getExpectedHitCount } from '../cfru/util/damage-calc';
 import {
 	boostsCanChange, boostChanges, statusFailure, protectionMoves, volatileEffectFailure, moveSelectionFailure,
-	pendingWishRecovery, wishCasterRecovery, controlDuration, chargePhase, chargeHitPower, nextChainedHit,
+	pendingWishRecovery, wishCasterRecovery, controlDuration, chargePhase, chargeHitPower, nextChainedHit, transferableVolatiles,
 } from '../cfru/util/move-effects';
 import { getMoveInteraction, getEffectiveAbilityTypeImmunity } from '../cfru/util/type-calc';
 import { itemMoveFailure, itemRemovalFailure } from '../cfru/util/items';
@@ -30,6 +30,7 @@ export interface SearchAction {
 	calledMove?: string;
 	mega?: boolean;
 	switchTo?: AIPokemon;
+	copyVolatile?: boolean;
 	prior: number;
 }
 export type Side = 'self' | 'opponent';
@@ -292,11 +293,31 @@ function releaseTraps(state: BattleState, source: AIPokemon): void {
 	}
 }
 
-export function switchIn(state: BattleState, side: Side, selected: AIPokemon): void {
+function transferEntryEffects(outgoing: ProjectedPokemon, incoming: ProjectedPokemon, field: BattleState['field']) {
+	incoming.boosts = { ...outgoing.boosts };
+	for (const effect of transferableVolatiles(outgoing.volatiles, rulesDex(field), 'copyvolatile')) {
+		incoming.volatiles.add(effect);
+		const control = effect as keyof NonNullable<AIPokemon['volatileTurns']>;
+		if (outgoing.volatileTurns?.[control]) (incoming.volatileTurns ||= {})[control] = outgoing.volatileTurns[control];
+		if (effect === 'substitute') (incoming.projection ||= {}).substituteHp =
+			outgoing.projection?.substituteHp ?? Math.floor(outgoing.maxHp / 4);
+		if (effect === 'partiallytrapped') incoming.trapSource = outgoing.trapSource;
+	}
+}
+
+export function entryView(state: BattleState, side: Side, copyVolatile?: boolean): BattleState {
+	if (!copyVolatile) return state;
+	const next = clonePosition(state);
+	for (const candidate of next[side].reserve) transferEntryEffects(next[side].active[0], candidate, next.field);
+	return next;
+}
+
+function installEntry(state: BattleState, side: Side, selected: AIPokemon, copyVolatile = false): AIPokemon | undefined {
 	const party = state[side], outgoing = party.active[0];
 	const incoming = party.team.find(p => identity(p) === identity(selected))!;
 	if (!incoming || incoming.fainted || incoming === outgoing) return;
 	if (outgoing) {
+		if (copyVolatile) transferEntryEffects(outgoing, incoming, state.field);
 		releaseTraps(state, outgoing);
 		const ability = effectiveAbility(outgoing, state.field);
 		if (!outgoing.fainted && ability === 'regenerator') hp(outgoing, outgoing.hp + Math.floor(outgoing.maxHp / 3));
@@ -329,11 +350,29 @@ export function switchIn(state: BattleState, side: Side, selected: AIPokemon): v
 	}
 	incoming.active = true; incoming.lastMove = ''; incoming.activeMoveActions = 0;
 	party.active = [incoming]; party.reserve = party.team.filter(p => p !== incoming && !p.fainted);
+	return incoming;
+}
+
+export function switchIn(state: BattleState, side: Side, selected: AIPokemon, copyVolatile = false): void {
+	const incoming = installEntry(state, side, selected, copyVolatile);
+	if (!incoming) return;
+	const party = state[side];
 	applyEntryEffects(incoming, party.conditions, state.field);
 	if (incoming.fainted) return;
 	entryAbility(state, side);
 	const waiting = state[other(side)].active[0];
 	if (waiting && tracedAbility(waiting, state[side].active, state.field)) entryAbility(state, other(side));
+}
+
+export function simultaneousEntry(state: BattleState, own: AIPokemon, foe: AIPokemon): void {
+	installEntry(state, 'self', own); installEntry(state, 'opponent', foe);
+	const sides: Side[] = compareSpeedOrder(state.self.active[0], state.opponent.active[0], state.field,
+		state.self.conditions, state.opponent.conditions) >= 0 ?
+		['self', 'opponent'] : ['opponent', 'self'];
+	for (const side of sides) {
+		applyEntryEffects(state[side].active[0], state[side].conditions, state.field);
+		entryAbility(state, side);
+	}
 }
 
 /** Apply entry mechanics once; callers own both the Pokemon and the side-condition copy. */
@@ -472,7 +511,8 @@ export function transitionSupported(state: BattleState): string | undefined {
 export function supportsMove(state: BattleState, id: string): boolean {
 	const move = rulesDex(state.field).moves.get(id); id = move.id;
 	if ((id === 'taunt' || id === 'encore') && controlDuration(id, state.field, true, false) === undefined) return false;
-	if (move.selfSwitch === 'copyvolatile' || move.ohko) return false;
+	if (move.selfSwitch === 'copyvolatile') return true;
+	if (move.ohko) return false;
 	if (id === 'naturepower') return false;
 	if (move.category !== 'Status') return true;
 	return !!(move.boosts || move.heal || move.status || move.sideCondition || move.weather || move.terrain || id === 'yawn' ||
@@ -482,7 +522,7 @@ export function supportsMove(state: BattleState, id: string): boolean {
 }
 
 export type ChooseEntry = (state: BattleState, side: Side, cause: 'pivot' | 'phaze') => AIPokemon | undefined;
-interface PendingEntry { side: Side; cause: 'pivot' | 'phaze' }
+interface PendingEntry { side: Side; cause: 'pivot' | 'phaze'; copyVolatile?: boolean }
 
 function execute(state: BattleState, side: Side, action: SearchAction, reply: SearchAction,
 	policy: DamagePolicy, remaining: TurnCheckpoint['remaining'], startedActors: readonly string[],
@@ -823,7 +863,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 
 	triggerHealthItem(actor, state);
 	if (data.forceSwitch && target.hp) return { side: other(side), cause: 'phaze' };
-	if (data.selfSwitch && actor.hp) return { side, cause: 'pivot' };
+	if (data.selfSwitch && actor.hp) return { side, cause: 'pivot', copyVolatile: data.selfSwitch === 'copyvolatile' };
 }
 
 function futureAttackSource(state: BattleState, side: Side, slot: number) {
@@ -1106,7 +1146,7 @@ export function advancePosition(state: BattleState, own: SearchAction, foe: Sear
 	while (!continueTurn(turn, policy, cache)) {
 		const { side, cause } = turn.pending!;
 		const entrant = chooseEntry(turn.state, side, cause);
-		if (entrant) switchIn(turn.state, side, entrant);
+		if (entrant) switchIn(turn.state, side, entrant, turn.pending!.copyVolatile);
 		if (!entrant) turn.pending = undefined;
 	}
 	return turn.state;

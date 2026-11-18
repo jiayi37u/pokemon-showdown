@@ -597,7 +597,22 @@ describe('Hard gen7 OU inference and tactics', () => {
 		const foe = battle.p1.active[0];
 		foe.hp = Math.floor(foe.maxhp * 0.65);
 		z.ai.getTracker().parseMessage(`|-damage|p1a: Mew|${foe.hp}/${foe.maxhp}`);
+		z.ai.getLogger().logMoveDecision = (...args) => { reasoning = args[5]; };
 		assert(/ zmove$/.test(z.decide()));
+		assert(reasoning.some(line => line.startsWith('Two-turn search') && line.includes('move 1 zmove')));
+	});
+
+	it('scores Normal damaging Z moves with their engine power and category', () => {
+		const { NormalAI } = require('../../../dist/server/npc/ai/normal');
+		const game = setup([mon('Mew', ['splash'])], [mon('Mew', ['earthquake', 'earthpower'], { item: 'Groundium Z' })],
+			{ format: 'gen7customgame', AI: NormalAI });
+		const active = battle.p2.activeRequest.active[0];
+		const moves = game.ai.convertToAIMoves(active.canZMove.map((choice, index) =>
+			({ ...choice, slot: index + 1, zMove: true })), active);
+		for (const [index, move] of moves.entries()) {
+			const actual = battle.actions.getActiveZMove(battle.dex.moves.get(active.moves[index].id), battle.p2.active[0]);
+			assert.deepEqual([move.basePower, move.category], [actual.basePower, actual.category]);
+		}
 	});
 });
 

@@ -123,6 +123,19 @@ export function buildAIMove(moveData: AnyObject, slot: number, formatId = ''): A
 	};
 }
 
+export function damagingZMove(base: Move, name: string, slot: number, formatId: string): AIMove | undefined {
+	const dex = formatId ? Dex.forFormat(formatId) : Dex;
+	const data = dex.moves.get(name);
+	if (!data.isZ || data.category === 'Status') return;
+	const move = buildAIMove({ move: name, zMove: true }, slot, formatId);
+	if (!dex.items.get(data.isZ as string).zMoveFrom) {
+		move.basePower = base.zMove!.basePower!;
+		move.category = base.category;
+		move.priority = base.priority;
+	}
+	return move;
+}
+
 /**
  * Build AIMove array from request move data
  */
@@ -215,7 +228,7 @@ export function buildBattleStateFromRequests(
 		if (pokemon?.status === 'slp') pokemon.sleepTurns = tracker.getSleepTurns(position, effectiveAbility(pokemon, field));
 	}
 	const state: BattleState = {
-		turn, isDoubles,
+		turn, isDoubles, ownZUsed: tracker.ownZUsed,
 		self: { active: selfActive, reserve: selfReserve, team: [...selfActive, ...selfReserve],
 			megaUsedByOwner: Object.fromEntries([...selfActive, ...selfReserve].filter(p =>
 				(formatId ? Dex.forFormat(formatId) : Dex).species.get(p.species).isMega).map(p => [p.ownerSide!, true])),

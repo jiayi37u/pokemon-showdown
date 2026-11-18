@@ -13,7 +13,7 @@ function project(observed: AIPokemon, candidate: AIPokemon): AIPokemon {
 	const hp = Math.max(1, Math.floor(candidate.maxHp * observed.hpPercent / 100));
 	return { ...observed, baseStats: candidate.baseStats, maxHp: candidate.maxHp, hp,
 		item: observed.itemKnown || observed.itemLost ? observed.item : candidate.originalItem || candidate.item,
-		itemAssumed: candidate.itemAssumed !== false,
+		itemAssumed: candidate.itemAssumed,
 		ability: observed.observedAbility || observed.abilityChanged ? observed.ability :
 		candidate.observedAbility || candidate.ability,
 	};

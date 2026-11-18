@@ -4,7 +4,9 @@ const assert = require('assert').strict;
 const { Dex } = require('../../../dist/sim');
 const { createBattleTracker } = require('../../../dist/server/npc/ai/cfru/util/battle-tracker');
 const { trackedPokemonToAIPokemon } = require('../../../dist/server/npc/ai/cfru/state-builder');
-const { inferOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
+const { hardMove, inferOpponent } = require('../../../dist/server/npc/ai/hard/opponent-model');
+const { calculateDamage } = require('../../../dist/server/npc/ai/hard/damage');
+const { modelsFor } = require('../../../dist/server/npc/ai/hard/projection');
 const { computeStatsFromPreset, getOpponentPreset } = require('../../../dist/server/npc/ai/cfru/util/opponent-presets');
 
 function infer(species, format, events = []) {
@@ -44,6 +46,22 @@ describe('Hard local tier presets', () => {
 		const models = infer('Tornadus', 'gen6uu', ['|-ability|p1a: Foe|Defiant']);
 		assert(models.length && models.every(m => m.matched && m.pokemon.item === ''));
 		assert(models.some(m => m.moves.some(move => move.id === 'acrobatics')));
+		const [model] = modelsFor({ ...models[0].pokemon, itemAssumed: false, presetModels: models });
+		const attacker = model.pokemon;
+		assert(!attacker.itemKnown);
+		const damage = user => calculateDamage(user, attacker, hardMove('acrobatics', 1, 'gen6uu'), { formatId: 'gen6uu', weather: '' }).average;
+		assert.equal(damage(attacker), damage({ ...attacker, itemKnown: true }));
+		assert(damage(attacker) > damage({ ...attacker, itemAssumed: false }));
+	});
+
+	it('removes tier bans before weighting alternatives, but retains observed moves', () => {
+		const uxie = infer('Uxie', 'gen4ou');
+		assert(uxie.every(model => !model.moves.some(move => move.id === 'yawn')));
+		assert(uxie.some(model => model.moves.some(move => move.id === 'knockoff' && move.availability === 0.5)));
+		const volbeat = infer('Volbeat', 'gen5uu');
+		assert(volbeat.every(model => !model.moves.some(move => move.id === 'batonpass')));
+		const revealed = infer('Volbeat', 'gen5uu', ['|move|p1a: Foe|Baton Pass|p1a: Foe']);
+		assert(revealed.every(model => model.moves.some(move => move.id === 'batonpass' && move.availability === 1)));
 	});
 
 	it('keeps the generic and average-EV fallback chain', () => {

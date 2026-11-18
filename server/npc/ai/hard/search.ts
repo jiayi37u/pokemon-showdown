@@ -152,7 +152,7 @@ export class Search extends CandidateSelector {
 
 	override choices(state: BattleState, side: Side, supplied?: SearchAction[]): SearchAction[] {
 		const actions = super.choices(state, side, supplied);
-		const unsupported = actions.find(action => action.move && !supportsMove(state, action.move));
+		const unsupported = actions.find(action => action.move && !supportsMove(state, action.zMove?.id || action.move));
 		if (unsupported) throw new UnsupportedTransition(unsupported.move!, this.nodes);
 		return actions;
 	}
@@ -160,7 +160,7 @@ export class Search extends CandidateSelector {
 	/** Work ordering only: no action is removed for having expensive random/replacement outcomes. */
 	expansionCost(state: BattleState, side: Side, action: SearchAction): number {
 		if (action.switchTo) return side === 'opponent' ? modelsFor(action.switchTo).length : 1;
-		const move = rulesDex(state.field).moves.get(action.move || '');
+		const move = rulesDex(state.field).moves.get(action.zMove?.id || action.move || '');
 		const recipient = move.forceSwitch ? (side === 'self' ? 'opponent' : 'self') : side;
 		if (!move.forceSwitch && !move.selfSwitch) return 1;
 		return Math.max(1, state[recipient].reserve.filter(p => !p.fainted).reduce((n, p) =>

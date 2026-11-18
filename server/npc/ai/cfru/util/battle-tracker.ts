@@ -237,6 +237,7 @@ export class BattleTracker {
 	};
 
 	/** Our side conditions (for tracking hazards on our side) */
+	ownZUsed = false;
 	private ourSideConditions: {
 		stealthrock: boolean,
 		spikes: number,
@@ -398,6 +399,9 @@ export class BattleTracker {
 		if (entry && ['-status', '-curestatus'].includes(parts[0])) entry.toxicTicks = 0;
 
 		switch (command) {
+		case '-zpower':
+			if (parts[1].startsWith(this.ourSide)) this.ownZUsed = true;
+			break;
 		case 'clearpoke':
 			this.opponentPreview = [];
 			break;
@@ -1883,9 +1887,9 @@ export class BattleTracker {
 	/**
 	 * Get the currently active opponent Pokemon (for singles)
 	 */
-	getActiveOpponent(): TrackedPokemon | null {
+	getActiveOpponent(targetPosition?: string): TrackedPokemon | null {
 		for (const [position, mon] of this.opponentPokemon) {
-			if (mon.active && position.startsWith(this.opponentSide)) {
+			if (mon.active && (targetPosition ? position === targetPosition : position.startsWith(this.opponentSide))) {
 				return { ...mon, types: this.getTypes(position, mon.types) };
 			}
 		}
@@ -2089,8 +2093,7 @@ export class BattleTracker {
 	/**
 	 * Check if a move type is immune due to opponent's ability
 	 */
-	isAbilityImmune(moveType: string): boolean {
-		const opponent = this.getActiveOpponent();
+	isAbilityImmune(moveType: string, opponent = this.getActiveOpponent()): boolean {
 		if (!opponent || !opponent.ability) return false;
 
 		const abilityId = this.getEffectiveAbility(opponent.position);
@@ -2137,8 +2140,7 @@ export class BattleTracker {
 	/**
 	 * Check if a move type is immune due to opponent's item
 	 */
-	isItemImmune(moveType: string): boolean {
-		const opponent = this.getActiveOpponent();
+	isItemImmune(moveType: string, opponent = this.getActiveOpponent()): boolean {
 		if (!opponent || !opponent.item) return false;
 
 		const itemId = toID(opponent.item);
@@ -2155,8 +2157,7 @@ export class BattleTracker {
 	/**
 	 * Check if a move type is immune (type + ability + item)
 	 */
-	isImmune(moveType: string): boolean {
-		const opponent = this.getActiveOpponent();
+	isImmune(moveType: string, opponent = this.getActiveOpponent()): boolean {
 		if (!opponent) return false;
 
 		// Check type immunity first
@@ -2169,11 +2170,11 @@ export class BattleTracker {
 				return true;
 			}
 			// Levitate ability
-			if (this.isAbilityImmune(moveType)) {
+			if (this.isAbilityImmune(moveType, opponent)) {
 				return true;
 			}
 			// Air Balloon
-			if (this.isItemImmune(moveType)) {
+			if (this.isItemImmune(moveType, opponent)) {
 				return true;
 			}
 		}
@@ -2216,12 +2217,12 @@ export class BattleTracker {
 		}
 
 		// Check ability immunities
-		if (this.isAbilityImmune(moveType)) {
+		if (this.isAbilityImmune(moveType, opponent)) {
 			return true;
 		}
 
 		// Check item immunities
-		if (this.isItemImmune(moveType)) {
+		if (this.isItemImmune(moveType, opponent)) {
 			return true;
 		}
 
@@ -2231,13 +2232,13 @@ export class BattleTracker {
 	/**
 	 * Get type effectiveness considering all immunities
 	 */
-	getEffectiveness(moveType: string): number {
+	getEffectiveness(moveType: string, targetPosition?: string): number {
+		const opponent = this.getActiveOpponent(targetPosition);
 		// Check full immunity first
-		if (this.isImmune(moveType)) {
+		if (this.isImmune(moveType, opponent)) {
 			return 0;
 		}
 
-		const opponent = this.getActiveOpponent();
 		if (!opponent) return 1;
 
 		// Calculate type effectiveness
@@ -2513,6 +2514,7 @@ export class BattleTracker {
 
 	/** Reset tracker state for a new battle. */
 	reset(): void {
+		this.ownZUsed = false;
 		this.residualCompleted = false;
 		this.itemExchange = undefined;
 		this.opponentPreview = [];

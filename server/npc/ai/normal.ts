@@ -36,7 +36,7 @@ import {
 } from './cfru/types';
 import { createScoringEngine, ScoringEngine } from './cfru/scoring';
 import {
-	buildBattleStateWithTracker, buildAIMove, buildPokemonFromRequest,
+	buildBattleStateWithTracker, buildAIMove, buildPokemonFromRequest, damagingZMove,
 } from './cfru/state-builder';
 import { calculateDamage, getEffectiveHpAfterSecondary } from './cfru/util/damage-calc';
 import { resolveMove } from './cfru/util/type-calc';
@@ -470,7 +470,13 @@ export class NormalAI extends NPCBattleAI {
 	 */
 	private convertToAIMoves(moves: MoveChoice[], active: AnyObject): AIMove[] {
 		// 直接委托给 state-builder 的统一实现；MoveChoice 的字段是 buildAIMove 入参的超集
-		return moves.map(m => buildAIMove(m, m.slot, this.cfruConfig.formatId));
+		const format = this.cfruConfig.formatId;
+		const dex = format ? Dex.forFormat(format) : Dex;
+		return moves.map(choice => {
+			const base = active.moves?.[choice.slot - 1];
+			return (choice.zMove && base && damagingZMove(dex.moves.get(base.id), choice.move, choice.slot, format)) ||
+				buildAIMove(choice, choice.slot, format);
+		});
 	}
 
 	/** Switch evaluation thresholds

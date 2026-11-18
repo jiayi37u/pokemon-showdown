@@ -31,6 +31,46 @@ const scoresFor = (search, state, moves, side = 'self') => Object.fromEntries(
 
 describe('Hard damage-based state search', () => {
 	afterEach(() => battles.splice(0).forEach(b => b.destroy()));
+	it('spends Z once per friendly branch across switches and charges only the base PP', () => {
+		const { ownZAction } = require('../../../dist/server/npc/ai/hard/projection');
+		const holder = species => mon(species, ['earthpower'], { item: 'Groundium Z' });
+		const battle = new Battle({ formatid: 'gen7customgame', p1: { name: 'Own', team: [holder('Mew'), holder('Nidoking')] },
+			p2: { name: 'Foe', team: [mon('Blissey', ['protect'])] } });
+		battles.push(battle); battle.makeChoices();
+		const state = projectedState(battle);
+		state.self.active[0].projection = { pp: { earthpower: 2 } };
+		const spent = advancePosition(state, ownZAction(state, 'earthpower'), action('protect'), () => undefined);
+		assert(spent.opponent.active[0].hp < state.opponent.active[0].hp);
+		assert.equal(spent.self.active[0].projection.pp.earthpower, 1);
+		assert(!ownZAction(spent, 'earthpower'));
+		switchIn(spent, 'self', spent.self.reserve[0]);
+		assert(!ownZAction(spent, 'earthpower'));
+		const saved = advancePosition(state, { id: 'switch 2', switchTo: state.self.reserve[0], prior: 0 },
+			action('protect'), () => undefined);
+		assert(ownZAction(saved, 'earthpower'));
+	});
+	for (const [formatid, weather, remaining] of [
+		['gen4customgame', 'hail', 0], ['gen5customgame', 'hail', 0], ['gen6customgame', 'hail', 7],
+		['gen7customgame', 'hail', 7], ['gen9customgame', 'snowscape', 7], ['gen5pokemmoou', 'snowscape', 7],
+	]) {
+		it(`projects move and ability weather against the engine in ${formatid}`, () => {
+			const battle = new Battle({ formatid, seed: '1,2,3,4', p1: { name: 'Own', team: [
+				mon('Mew', ['raindance'], { item: 'Damp Rock' }), mon('Abomasnow', ['splash'], { ability: 'Snow Warning', item: 'Icy Rock' }),
+			] }, p2: { name: 'Foe', team: [mon('Mew', ['splash'])] } });
+			battles.push(battle);
+			if (battle.requestState === 'teampreview') battle.makeChoices();
+			let state = projectedState(battle);
+			for (const [choice, expected] of [['move 1', 7], ['move 1', 6], ['switch 2', remaining]]) {
+				const own = choice === 'switch 2' ? { id: choice, switchTo: state.self.reserve[0], prior: 0 } : action('raindance');
+				state = advancePosition(state, own, action('splash'), () => undefined);
+				battle.makeChoices(choice, 'move 1');
+				assert.equal(state.field.weatherId, choice === 'switch 2' ? weather : 'raindance');
+				assert.equal(state.field.weatherId, battle.field.weather);
+				assert.equal(state.field.weatherTurns, expected);
+				assert.equal(state.field.weatherTurns, battle.field.weatherState.duration);
+			}
+		});
+	}
 	for (const move of ['roost', 'swordsdance', 'reflect', 'spikes', 'sunnyday', 'thunderwave']) {
 		it(`resolves ${move} after the opposing attacker faints to contact damage`, () => {
 			const f = fixture([mon('Espeon', ['tackle'], { ability: 'Magic Bounce' }), mon('Mew', ['splash'])],

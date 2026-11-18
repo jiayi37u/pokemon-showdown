@@ -299,6 +299,7 @@ export interface FieldConditions {
 
 /** Complete battle state for AI evaluation */
 export interface BattleState {
+	ownZUsed?: boolean;
 	/** Public positions that have spent their action this turn, including voluntary switches. */
 	actedThisTurn?: readonly string[];
 	/** Historical public observations; only Hard uses them to refine hidden configurations. */

@@ -12,10 +12,10 @@ const { NormalAI } = require('../../../dist/server/npc/ai/normal');
 
 let games = [];
 const passive = { species: 'Mew', ability: 'Synchronize', moves: ['splash'] };
-function game({ format = 'gen9customgame', mode = 'singles', actor = passive, foe = passive, ally = passive, reserve = [], allyReserve = [] } = {}) {
+function game({ format = 'gen9customgame', mode = 'singles', actor = passive, foe = passive, ally = passive, reserve = [], foeReserve = [], allyReserve = [] } = {}) {
 	const multi = mode === 'multi';
 	const b = new Battle({ format: { ...Dex.formats.get(format), gameType: mode, playerCount: multi ? 4 : 2 }, seed: [1, 2, 3, 4],
-		p1: { name: 'Foe', team: mode === 'doubles' ? [foe, passive] : [foe] }, p2: { name: 'Actor', team: [actor, ...(mode === 'doubles' ? [ally] : []), ...reserve] },
+		p1: { name: 'Foe', team: [foe, ...(mode === 'doubles' ? [passive] : []), ...foeReserve] }, p2: { name: 'Actor', team: [actor, ...(mode === 'doubles' ? [ally] : []), ...reserve] },
 		...(multi ? { p3: { name: 'Foe2', team: [passive] }, p4: { name: 'Ally', team: [ally, ...allyReserve] } } : {}) });
 	if (b.requestState === 'teampreview')b.makeChoices();
 	games.push(b);
@@ -380,6 +380,48 @@ describe('NPC shared mechanism families', () => {
 		assert.deepEqual(s.self.active[0].stellarBoostedTypes, ['Psychic']);
 		oracle(g, 'psychic');
 	});
+	it('evaluates each doubles target after one opponent reveals Tera Dark', () => {
+		const tracker = createBattleTracker('p2');
+		tracker.setFormat('gen9doublescustomgame');
+		tracker.parseMessage('|switch|p1a: Left|Mew|100/100\n|switch|p1b: Right|Mew|100/100\n|-terastallize|p1b: Right|Dark');
+		assert.equal(tracker.getEffectiveness('Psychic', 'p1a'), 0.5);
+		assert.equal(tracker.getEffectiveness('Psychic', 'p1b'), 0);
+	});
+	for (const teraType of ['Dark', 'Stellar']) {
+		it(`uses only revealed opponent Tera ${teraType} for incoming and outgoing damage across switches`, () => {
+			const { calculateDamage: hardDamage, DamageCache } = require('../../../dist/server/npc/ai/hard/damage');
+			const cache = new DamageCache();
+			const battle = game({ foe: { ...passive, teraType, moves: ['psychic', 'darkpulse'] },
+				foeReserve: [{ ...passive, name: 'Chansey', species: 'Chansey' }] });
+			const readings = () => {
+				const state = battle.state(), foe = state.opponent.active[0], own = state.self.active[0];
+				return [calculateDamage, hardDamage].map(calc => {
+					const hit = (source, target, id) => calc(source, target, buildAIMove({ id }, 1, battle.format),
+						state.field, undefined, { cache }).max;
+					return [hit(foe, own, 'psychic'), hit(foe, own, 'darkpulse'), hit(own, foe, 'psychic')];
+				});
+			};
+			assert.equal(battle.state().opponent.active[0].terastallized, undefined);
+			const before = readings();
+			battle.b.actions.terastallize(battle.b.p1.active[0]);
+			const after = readings();
+			after.forEach(([psychic, dark, incoming], index) => {
+				const [original, coverage, defense] = before[index];
+				assert.equal(psychic, teraType === 'Dark' ? original : Math.floor(original * 4 / 3));
+				assert(dark > coverage);
+				assert.equal(incoming, teraType === 'Dark' ? 0 : defense);
+			});
+			battle.b.makeChoices('move 1', 'move 1');
+			battle.b.makeChoices('switch 2', 'move 1');
+			assert.equal(battle.state().opponent.reserve[0]?.terastallized, teraType, battle.b.log.slice(-18).join('\n'));
+			battle.b.makeChoices('switch 2', 'move 1');
+			readings().forEach(([psychic, dark, incoming], index) => {
+				assert.equal(psychic, before[index][0]);
+				assert.equal(dark, after[index][1]);
+				assert.equal(incoming, after[index][2]);
+			});
+		});
+	}
 	for (const tera of ['Psychic', 'Fire']) {
 		it(`matches both original and new STAB after Tera ${tera}`, () => {
 			const g = game({ actor: { ...passive, teraType: tera, moves: ['psychic', 'terablast'] } });

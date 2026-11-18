@@ -1,13 +1,15 @@
 /** Deterministic, decision-oriented state transitions. Never instantiate a PS Battle here. */
 import { toID } from '../../../../sim/dex';
 import type { PokemonConditionData } from '../../../../sim/dex-conditions';
-import type { AIPokemon, BattleState, OpponentModel } from '../cfru/types';
+import type { AIMove, AIPokemon, BattleState, OpponentModel } from '../cfru/types';
+import { BattleActions } from '../../../../sim/battle-actions';
+import { damagingZMove } from '../cfru/state-builder';
 import { hardMove } from './opponent-model';
 import { calculateDamage, selectDamage, type DamageCache, type DamagePolicy } from './damage';
 import { canHaveOpponentMoves } from '../cfru/util/opponent-presets';
 import {
 	effectiveAbility, defensiveAbility, effectiveItem, effectivePriority, fieldWithActivePokemon,
-	grounded, rulesDex, tracedAbility,
+	grounded, projectWeather, rulesDex, tracedAbility,
 } from '../cfru/util/mechanics';
 import { compareActionOrder, compareSpeedOrder } from '../cfru/util/speed';
 import { megaEvolutionState } from '../cfru/util/forms';
@@ -23,6 +25,7 @@ import { itemMoveFailure, itemRemovalFailure } from '../cfru/util/items';
 export interface SearchAction {
 	id: string;
 	move?: string;
+	zMove?: AIMove;
 	/** A deterministic outcome of a calling move; never sampled. */
 	calledMove?: string;
 	mega?: boolean;
@@ -52,6 +55,19 @@ export function moveAction(state: BattleState, side: Side, move: string): Search
 export function hp(p: AIPokemon, amount: number): void {
 	p.hp = Math.max(0, Math.min(p.maxHp, amount)); p.hpPercent = 100 * p.hp / p.maxHp;
 	p.fainted = p.hp <= 0;
+}
+
+export function ownZAction(state: BattleState, id: string): SearchAction | undefined {
+	const dex = rulesDex(state.field), actor = state.self.active[0] as ProjectedPokemon;
+	if (state.ownZUsed || dex.gen !== 7 || actor.fainted || actor.projection?.chargingMove) return;
+	const item = dex.items.get(actor.item);
+	if (!item.zMove || item.itemUser && !item.itemUser.includes(actor.species)) return;
+	const base = dex.moves.get(hardMove(id, 1, state.field.formatId || '').id);
+	if (!hasMovePP(actor, base.id) || base.category === 'Status') return;
+	const name = item.zMoveFrom === base.name ? item.zMove as string :
+		item.zMove === true && base.type === item.zMoveType && base.zMove?.basePower ? BattleActions.Z_MOVES[base.type] : '';
+	const zMove = name && damagingZMove(base, name, 1, state.field.formatId || '');
+	if (zMove) return { id: `move ${id} zmove`, move: id, zMove, prior: 0 };
 }
 
 function revealItem(pokemon: AIPokemon, lost = false): void {
@@ -126,7 +142,7 @@ export function positionKey(state: BattleState): string {
 	const cached = snapshotKeys.get(state); if (cached !== undefined) return cached;
 	const pokemon = (p: ProjectedPokemon) => [identity(p), p.slot, p.species, p.hp, p.maxHp, p.active, p.fainted,
 		p.status, p.sleepTurns, p.toxicCounter, p.boosts, p.baseStats, p.statSpread, p.trapSource,
-		p.types, p.item, p.itemKnown, p.itemLost,
+		p.types, p.item, p.itemKnown, p.itemLost, p.itemAssumed,
 		p.itemChanged, p.itemExchange, p.ability, p.observedAbility, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
 		[...p.volatiles].sort(), p.volatileTurns?.taunt, p.volatileTurns?.encore, p.projection,
 		p.queuedSpeed, p.queuedPriorityAbility, p.publicKnowledge,
@@ -143,7 +159,7 @@ export function positionKey(state: BattleState): string {
 		wishSources: side.conditions.wishSources || {}, wishAmounts: side.conditions.wishAmounts || {},
 		healingWishes: side.conditions.healingWishes || {}, futureAttacks: side.conditions.futureAttacks || {} });
 	return JSON.stringify([state.self.team.map(pokemon), state.opponent.team.map(pokemon), state.field,
-		conditions(state.self), conditions(state.opponent),
+		conditions(state.self), conditions(state.opponent), !!state.ownZUsed,
 		state.self.megaUsedByOwner || {}, state.opponent.megaUsedByOwner || {}]);
 }
 
@@ -167,6 +183,7 @@ export function modelsFor(p: AIPokemon): OpponentModel[] {
 		pokemon: { ...p, baseStats: m.pokemon.baseStats, statSpread: m.spread || p.statSpread, maxHp,
 			hp: maxHp === p.maxHp ? p.hp : Math.ceil(p.hpPercent * maxHp / 100),
 			item: p.itemKnown || p.itemChanged || p.itemLost ? p.item : m.pokemon.item,
+			itemAssumed: m.pokemon.itemAssumed,
 			ability: p.abilityChanged ? p.ability : m.pokemon.ability,
 			moveKnowledge: m.pokemon.moveKnowledge, presetModels: undefined } };
 	});
@@ -237,11 +254,8 @@ function entryAbility(state: BattleState, side: Side): void {
 	}
 	const ability = effectiveAbility(actor, state.field);
 	if (ability === 'intimidate' && foe && !foe.fainted) boosts(foe, { atk: -1 }, state, true);
-	const weather: Record<string, string> = {
-		drought: 'sunnyday', drizzle: 'raindance', sandstream: 'sandstorm', snowwarning: 'hail',
-	};
-	if (weather[ability]) { state.field.weatherId = weather[ability]; state.field.weatherTurns = 5; }
-	if (copied || ability === 'intimidate' || weather[ability]) revealAbility(actor);
+	const startedWeather = projectWeather(state.field, actor);
+	if (copied || ability === 'intimidate' || startedWeather) revealAbility(actor);
 	state.field = fieldWithActivePokemon(state.field, [...state.self.active, ...state.opponent.active]);
 }
 
@@ -445,11 +459,11 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 	const dex = rulesDex(state.field);
 	// Override at execution time without rescheduling the selected action.
 	const lockedMove = actor.volatiles.has('encore') ? toID(actor.lastMove) : '';
-	const overridden = action.move !== 'struggle' && lockedMove && lockedMove !== action.move;
+	const overridden = !action.zMove && action.move !== 'struggle' && lockedMove && lockedMove !== action.move;
 	if (overridden) action = { ...action, move: lockedMove, calledMove: undefined };
-	const selected = dex.moves.get(action.move);
-	const data = dex.moves.get(action.calledMove || action.move), id = data.id;
-	const baseMove = hardMove(action.calledMove || action.move!, 1, state.field.formatId || '');
+	const selected = dex.moves.get(action.zMove ? hardMove(action.move!, 1, state.field.formatId || '').id : action.move);
+	const data = dex.moves.get(action.zMove?.id || action.calledMove || action.move), id = data.id;
+	const baseMove = action.zMove || hardMove(action.calledMove || action.move!, 1, state.field.formatId || '');
 	const move = overridden && queuedMove ? { ...baseMove, priorityOverride: queuedMove.priority,
 		pranksterBoosted: queuedMove.pranksterBoosted } : baseMove;
 	actor.projection ||= {};
@@ -461,13 +475,17 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		else if (!selected.sleepUsable) return;
 	}
 	if (actor.status === 'frz') { if (data.flags.defrost) actor.status = ''; else return; }
-	if (selected.id !== 'struggle' && !usableMove(state, side, selected.id)) return;
+	if (action.zMove) {
+		if (state.ownZUsed || !hasMovePP(actor, selected.id)) return;
+		state.ownZUsed = true;
+		revealItem(actor);
+	} else if (selected.id !== 'struggle' && !usableMove(state, side, selected.id)) return;
 	if (selected.id === 'sleeptalk' && actor.status !== 'slp' &&
 		effectiveAbility(actor, state.field) !== 'comatose') return;
 	const previous = actor.lastMove;
 	const actionActor = { ...actor, lastMove: previous, activeMoveActions: actor.activeMoveActions || 0 };
-	actor.lastMove = selected.id; actor.activeMoveActions = (actor.activeMoveActions || 0) + 1;
-	if (actor.publicKnowledge && selected.id !== 'struggle') {
+	actor.lastMove = action.zMove?.id || selected.id; actor.activeMoveActions = (actor.activeMoveActions || 0) + 1;
+	if (!action.zMove && actor.publicKnowledge && selected.id !== 'struggle') {
 		actor.publicKnowledge.moves = [...new Set([...actor.publicKnowledge.moves, selected.id])];
 	}
 	if (!actor.projection.chargingMove && actor.projection.pp?.[selected.id] !== undefined) {
@@ -521,7 +539,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 	if (id === 'fakeout' && (actor.activeMoveActions || 0) > 1) return;
 	if (id === 'focuspunch' && actor.hp < actor.projection.startHp! && !actor.volatiles.has('substitute')) return;
 	const targetCanRespond = !targetsSelf && !target.fainted;
-	if (targetCanRespond && target.projection?.protect && data.flags.protect && !data.breaksProtect) return;
+	if (!action.zMove && targetCanRespond && target.projection?.protect && data.flags.protect && !data.breaksProtect) return;
 	const interaction = getMoveInteraction(actionActor, target, move, state.field);
 	if (targetCanRespond && (interaction.failed || data.category === 'Status' && interaction.blockedBy)) return;
 	if (data.category === 'Status' && targetCanRespond && data.flags.reflectable &&
@@ -554,6 +572,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 				cache, attackerSideConditions: party.conditions, defenderSideConditions: foeParty.conditions,
 				defenderSwitching: id === 'pursuit' && !!reply.switchTo,
 				activePokemon: [...party.active, ...foeParty.active] }), policy));
+		if (dealt && action.zMove && target.projection?.protect && !data.breaksProtect) dealt = Math.max(1, Math.floor(dealt / 4));
 		if (!dealt) return;
 		hitSubstitute = target.volatiles.has('substitute') &&
 			!data.flags.sound && effectiveAbility(actor, state.field) !== 'infiltrator';
@@ -573,7 +592,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 				dealt = Math.min(dealt, target.hp - 1);
 			}
 			dealt = Math.min(dealt, target.hp); hp(target, target.hp - dealt);
-			target.projection ||= {}; target.projection.damageTaken = dealt; target.projection.damageCategory = data.category;
+			target.projection ||= {}; target.projection.damageTaken = dealt; target.projection.damageCategory = move.category;
 			if (target.item === 'airballoon') {
 				revealItem(target, true);
 				target.item = ''; target.itemLost = true;
@@ -722,7 +741,10 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		actor.itemChanged = target.itemChanged = true; actor.itemLost = !actor.item; target.itemLost = !target.item;
 	}
 	if (['healbell', 'aromatherapy'].includes(id)) for (const p of party.team) { p.status = ''; p.sleepTurns = 0; }
-	if (data.weather) { state.field.weatherId = data.weather; state.field.weatherTurns = 5; }
+	if (data.weather) {
+		projectWeather(state.field, actor, data.weather);
+		state.field = fieldWithActivePokemon(state.field, [...state.self.active, ...state.opponent.active]);
+	}
 	if (data.terrain) { state.field.terrain = data.terrain.replace('terrain', ''); state.field.terrainTurns = 5; }
 	if (id === 'trickroom') {
 		state.field.trickroom = !state.field.trickroom; state.field.trickroomTurns = state.field.trickroom ? 5 : 0;
@@ -909,10 +931,10 @@ export function beginTurn(state: BattleState, own: SearchAction, foe: SearchActi
 	if (!deferMega) next = evolveQueued(next, queued);
 	const a = next.self.active[0], b = next.opponent.active[0];
 	for (const p of [a, b] as ProjectedPokemon[]) { p.projection ||= {}; p.projection.startHp = p.hp; }
-	const first = own.move === 'pursuit' && foe.switchTo ? true :
+	const first = !own.zMove && own.move === 'pursuit' && foe.switchTo ? true :
 		foe.move === 'pursuit' && own.switchTo ? false : own.switchTo || foe.switchTo ? own.switchTo && foe.switchTo ?
 			compareSpeedOrder(a, b, next.field) >= 0 : !!own.switchTo :
-		compareActionOrder(a, b, hardMove(own.move || 'splash', 1, next.field.formatId || ''),
+		compareActionOrder(a, b, own.zMove || hardMove(own.move || 'splash', 1, next.field.formatId || ''),
 			[hardMove(foe.move || 'splash', 1, next.field.formatId || '')], next.field,
 			next.self.conditions, next.opponent.conditions) > 0;
 	// Speed ties conservatively let the opponent act first; no random tie samples.

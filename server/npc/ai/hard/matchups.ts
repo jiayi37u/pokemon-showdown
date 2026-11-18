@@ -76,7 +76,8 @@ function fingerprint(p: AIPokemon, currentHP = true): string {
 	return JSON.stringify([p.species, p.level, currentHP ? p.hp : undefined, p.maxHp, p.types, p.status, p.ability, p.item,
 		p.itemLost, p.itemKnown, p.itemAssumed, p.baseStats, p.boosts, [...p.volatiles].sort(), p.moves,
 		p.lastMove, p.active, p.activeMoveActions, p.sleepTurns, p.toxicCounter, p.sleepSelfInflicted,
-		p.queuedSpeed, p.queuedPriorityAbility, p.abilityStatMod, p.terastallized, p.gender, p.fainted, p.ownerSide]);
+		p.queuedSpeed, p.queuedPriorityAbility, p.abilityStatMod, p.terastallized,
+		p.terastallized && p.originalTypes, p.stellarBoostedTypes, p.gender, p.fainted, p.ownerSide]);
 }
 
 /** Static matchup races do not advance field clocks. Search positions still keep them. */
@@ -522,7 +523,8 @@ export class MatchupEvaluator {
 		if (!estimates) {
 			this.attacks.set(key, estimates = new Map());
 		}
-		const id = hardMoveId(move), cached = estimates.get(id);
+		const id = move.isZMove ? `${move.id}:${move.basePower}:${move.category}:${move.priority}` : hardMoveId(move);
+		const cached = estimates.get(id);
 		if (cached) return cached;
 		const calculated = calculateDamage(actor, target, move, state.field, undefined, {
 			cache: this.damageCache, isDoubles: false, numAliveTargets: 1,

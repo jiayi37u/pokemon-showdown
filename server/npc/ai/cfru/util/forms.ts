@@ -1,7 +1,7 @@
 /** Project an authorized own Mega evolution without changing tracked battle facts. */
 import { Dex } from '../../../../../sim/dex';
 import type { AIPokemon, BattleState } from '../types';
-import { effectiveAbility, fieldWithActivePokemon, replaceActivePokemon, tracedAbility } from './mechanics';
+import { effectiveAbility, fieldWithActivePokemon, projectWeather, replaceActivePokemon, tracedAbility } from './mechanics';
 import { getEffectiveSpeed } from './speed';
 import { computeStatsFromPreset } from './opponent-presets';
 
@@ -28,11 +28,7 @@ export function megaEvolutionState(state: BattleState, actor: AIPokemon, resolve
 	if (!resolveEntry) return result;
 	const copied = tracedAbility(mega, result.opponent.active, result.field);
 	if (copied) { mega.ability = copied; mega.abilityChanged = true; }
-	if (!['primordialsea', 'desolateland', 'deltastream'].includes(result.field.weatherId || '')) {
-		const ability = effectiveAbility(mega, result.field);
-		if (ability === 'drought') result.field.weatherId = 'sunnyday';
-		if (ability === 'drizzle') result.field.weatherId = 'raindance';
-	}
+	projectWeather(result.field, mega);
 	result.field = fieldWithActivePokemon(result.field, [...result.self.active, ...result.opponent.active]);
 	return result;
 }

@@ -211,6 +211,7 @@ export class BasicAI extends NPCBattleAI {
 			let totalDamage = 0;
 			for (const { pokemon: target } of opponents) {
 				const opponentInfo = {
+					position: target.position,
 					species: target.species,
 					types: target.types,
 					ability: this.tracker.getEffectiveAbility(target.position),
@@ -239,6 +240,7 @@ export class BasicAI extends NPCBattleAI {
 			const targetSlot = slotChar === 'a' ? 1 : 2;
 
 			const opponentInfo = {
+				position: target.position,
 				species: target.species,
 				types: target.types,
 				ability: this.tracker.getEffectiveAbility(target.position),
@@ -361,14 +363,7 @@ export class BasicAI extends NPCBattleAI {
 			power *= 1.5;
 		}
 
-		// Type effectiveness (including ability and item immunities)
-		// Use tracker for comprehensive immunity check
-		if (this.tracker.isImmune(moveType)) {
-			return 0;
-		}
-
-		// Get effectiveness from tracker (considers type matchup)
-		const effectiveness = this.tracker.getEffectiveness(moveType);
+		const effectiveness = this.tracker.getEffectiveness(moveType, defender?.position);
 		power *= effectiveness;
 
 		return power;

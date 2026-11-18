@@ -6,7 +6,7 @@ import { actionDelay, valueWeights, type Matchup, type MatchupEvaluator } from '
 import { megaEvolutionState } from '../cfru/util/forms';
 import { rulesDex } from '../cfru/util/mechanics';
 import { selectMoveCandidates } from '../cfru/scoring';
-import { bindOpponent, clonePosition, identity, knownMoves, modelsFor, moveAction, positionKey, switchIn,
+import { bindOpponent, clonePosition, identity, knownMoves, modelsFor, moveAction, ownZAction, positionKey, switchIn,
 	usableMove, projectEntry, snapshotPosition, isTrapped,
 	type SearchAction, type Side } from './projection';
 
@@ -250,7 +250,7 @@ export class CandidateSelector {
 				group.actions.push(a);
 			}
 			for (const group of groups.values()) {
-				const results = evaluator.scoreMoves(group.actor, group.actions.map(a => hardMove(a.move!, 1, format)),
+				const results = evaluator.scoreMoves(group.actor, group.actions.map(a => a.zMove || hardMove(a.move!, 1, format)),
 					foe, predictions, replacements);
 				group.actions.forEach((a, i) => { a.prior = results[i].score; scores.set(a, results[i]); });
 			}
@@ -394,11 +394,14 @@ export class CandidateSelector {
 		const known = knownMoves(actor).filter(id => usableMove(state, side, id));
 		let actions: SearchAction[] = supplied || [
 			...known.map(move => moveAction(state, side, move)),
+			...(side === 'self' ? knownMoves(actor).flatMap(id => ownZAction(state, id) || []) : []),
 			...(!actor.volatiles.has('trapped') && !isTrapped(state, side) ? view.self.reserve.filter(p => !p.fainted)
 				.map(p => ({ id: `switch ${p.slot}`, switchTo: p, prior: 0 })) : []),
 		];
 		actions = actions.filter(action => {
-			if (action.move && !usableMove(state, side, action.move)) { this.pruned.invalid++; return false; }
+			if (action.move && (action.zMove ? state.ownZUsed : !usableMove(state, side, action.move))) {
+				this.pruned.invalid++; return false;
+			}
 			return true;
 		});
 		const switches = this.switchChoices(state, side, actions);
@@ -423,5 +426,5 @@ export function observationKey(state: BattleState): string {
 		p.lastMove, p.itemKnown ? p.item : '', p.itemExchange, p.moves, p.species, p.types, [...p.volatiles].sort(),
 		p.volatileTurns?.taunt, p.volatileTurns?.encore,
 		p.observedAbility || p.abilityChanged ? p.ability : '']),
-	state.field, state.self.conditions, state.opponent.conditions]);
+	state.field, state.self.conditions, state.opponent.conditions, !!state.ownZUsed]);
 }

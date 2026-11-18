@@ -884,7 +884,7 @@ export function calculateDamage(
 		`-${spreadInfo?.activePokemon?.map(pokemonCacheId).join(',')}`;
 	const hpKey = `${attacker.hp}/${attacker.maxHp}-${defender.hp}/${defender.maxHp}`;
 	const cacheKey = `${pokemonCacheId(attacker)}-${pokemonCacheId(defender)}-${move.id}-${move.type}-${move.basePower}` +
-		`-${hpKey}${spreadKey}-${protectionKey}-${JSON.stringify(field)}` +
+		`-${move.category}-${hpKey}${spreadKey}-${protectionKey}-${JSON.stringify(field)}` +
 		JSON.stringify([spreadInfo?.attackerSideConditions, spreadInfo?.defenderSideConditions]);
 	if (cache?.damageCalc.has(cacheKey)) {
 		return cache.damageCalc.get(cacheKey)!;

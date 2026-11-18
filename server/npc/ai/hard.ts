@@ -6,7 +6,7 @@ import type { PRNG, PRNGSeed } from '../../../sim/prng';
 import { Dex } from '../../../sim/dex';
 import { NPCBattleAI, type MoveChoice, type SwitchChoice } from './index';
 import { DEFAULT_AI_CONFIG, type BattleState, type CFRUAIConfig, type MoveScore } from './cfru/types';
-import { buildBattleStateWithTracker, buildPokemonFromRequest } from './cfru/state-builder';
+import { buildBattleStateWithTracker, buildPokemonFromRequest, damagingZMove } from './cfru/state-builder';
 import { createBattleTracker } from './cfru/util/battle-tracker';
 import { createBattleLogger, type LogLevel } from './cfru/logger';
 import { megaEvolutionState } from './cfru/util/forms';
@@ -116,18 +116,9 @@ export class HardAI extends NPCBattleAI {
 			// Return/Frustration power and Hidden Power type are public in our own side request.
 			const requestId = moveActor.moves[choice.slot - 1] || choice.move;
 			const base = hardMove(requestId, choice.slot, formatId);
-			const move = { ...(choice.zMove ? hardMove(choice.move, choice.slot, formatId) : base),
-				target: choice.target, isZMove: choice.zMove };
-			if (choice.zMove) {
-				const item = dex.items.get(actor.item);
-				if (!item.zMoveFrom) {
-					move.category = base.category;
-					move.basePower = dex.moves.get(base.id).zMove?.basePower || base.basePower;
-					move.priority = base.priority;
-				}
-				// Status Z effects need their own resource valuation; don't spend the crystal for the base effect.
-				if (move.category === 'Status') continue;
-			}
+			const attack = choice.zMove ? damagingZMove(dex.moves.get(base.id), choice.move, choice.slot, formatId) : base;
+			if (!attack) continue;
+			const move = { ...attack, target: choice.target };
 			const targets = moveTargets(state, actor, move);
 			for (const target of targets) {
 				const result = moveEvaluator.scoreMoves(moveActor, [move], target, predictions)[0];
@@ -172,11 +163,13 @@ export class HardAI extends NPCBattleAI {
 		// A status move may affect a replacement or recover after incoming damage. The
 		// search owns contextual pruning; a failure against the current occupant is not final.
 		// Preserve the existing tie preference when search values are exactly equal.
-		const searchActions = [best, ...candidates.filter(c => c !== best)].filter(c => !c.choice.zMove).map(c => ({
-			id: `move ${c.choice.slot}${transform ? ' mega' : ''}`, move: hardMoveId(c.result.move),
+		const choiceId = (choice: MoveChoice) => `move ${choice.slot}${choice.zMove ? ' zmove' : transform ? ' mega' : ''}`;
+		const searchActions = [best, ...candidates.filter(c => c !== best)].map(c => ({
+			id: choiceId(c.choice), move: c.choice.zMove ? actor.moves[c.choice.slot - 1] : hardMoveId(c.result.move),
+			zMove: c.choice.zMove ? c.result.move : undefined,
 			mega: !!transform, prior: c.result.score,
 		}));
-		const search = this.useSearch && !flags.canZMove ? searchPosition(state, evaluator, [...searchActions,
+		const search = this.useSearch ? searchPosition(state, evaluator, [...searchActions,
 			...(!active.trapped ? switches.map(sw => ({ id: `switch ${sw.slot}`,
 				switchTo: state.self.reserve.find(p => p.ident === sw.pokemon.ident)!, prior: 100 }))
 				.filter(a => a.switchTo) : [])],
@@ -197,8 +190,7 @@ export class HardAI extends NPCBattleAI {
 			})), search.reason, state);
 			return { type: 'switch', target };
 		}
-		if (search?.choice) best = candidates.find(c =>
-			`move ${c.choice.slot}${transform ? ' mega' : ''}` === search.choice)!;
+		if (search?.choice) best = candidates.find(c => choiceId(c.choice) === search.choice)!;
 		if (!search?.choice && !active.trapped) {
 			const replacements = switches.map(sw =>
 				evaluator.scoreSwitch(

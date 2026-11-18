@@ -204,6 +204,8 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	const species = dex.species.get(opponent.species);
 	const revealed: string[] = [...new Set(opponent.moves.map(toID))];
 	const data = strategyData(formatId);
+	const rules = formatId ? dex.formats.getRuleTable(dex.formats.get(formatId)) : undefined;
+	const allowedMove = (id: string) => !rules?.isBanned('move:' + dex.moves.get(id).id);
 	// Mega forms share their base species' loadouts; battle stats still use the public form.
 	const presetSpecies = species.isMega ? species.baseSpecies : opponent.species;
 	const sets = data[toID(presetSpecies)] || data[presetSpeciesId(presetSpecies, formatId)] || [];
@@ -228,15 +230,17 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 				Object.values(species.abilities).some(b => toID(b) === a) ? a : toID(species.abilities[0]));
 		const possibleAbilities = [...new Set(abilities)].filter(a => !native || a === native);
 		if (!items.length || !possibleAbilities.length) continue;
-		const candidates = [...new Set([...revealed, ...set.moves.flat()])].filter(id =>
-			!(id === 'hiddenpower' && set.moves.flat().some(m => m.startsWith('hiddenpower'))));
+		const slots = set.moves.map(slot => slot.filter(allowedMove));
+		const pool = slots.flat();
+		const candidates = [...new Set([...revealed, ...pool])].filter(id =>
+			!(id === 'hiddenpower' && pool.some(m => m.startsWith('hiddenpower'))));
 		// Open-format presets describe candidates, not an exhaustive legal four-slot set.
 		const remainingSlots = Math.max(0, 4 - revealed.length);
 		const moves = candidates.filter(id => dex.moves.get(id).exists &&
 			(revealed.includes(id) || remainingSlots > 0 ||
 				id.startsWith('hiddenpower') && revealed.includes('hiddenpower'))).map(id => ({
 			id, availability: revealed.includes(id) ? 1 : Math.min(1,
-				set.moves.reduce((n, slot) => n + (slot.includes(id) ? 1 / slot.length : 0), 0)),
+				slots.reduce((n, slot) => n + (slot.includes(id) ? 1 / slot.length : 0), 0)),
 		}));
 		const variants: OpponentHypothesis[] = [];
 		for (const item of items) for (const ability of possibleAbilities) for (const nature of set.natures) {
@@ -253,6 +257,7 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 							!revealed.includes(id)), remainingSlots },
 						hp: Math.max(opponent.fainted ? 0 : 1, Math.floor(stats.hp * opponent.hpPercent / 100)),
 						item: opponent.itemKnown ? opponent.item : item,
+						itemAssumed: !opponent.itemKnown,
 						ability: opponent.abilityChanged ? opponent.ability : (opponent.ability || ability),
 					},
 				});
@@ -269,7 +274,7 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	const generic = getOpponentPreset(opponent.species, formatId);
 	const preset = generic?.item && excludedItem(generic.item) ? null : generic;
 	const knowledge = getOpponentMoveKnowledge(opponent.species, opponent.moves, formatId);
-	if (generic && !preset) knowledge.presetCandidates = [];
+	knowledge.presetCandidates = generic && !preset ? [] : knowledge.presetCandidates.filter(allowedMove);
 	const stats = computeStatsFromPreset(species.baseStats, opponent.level, preset || {});
 	if (species.baseStats.hp === 1) stats.hp = 1;
 	const fallback = { ...opponent, baseStats: stats, maxHp: stats.hp, moveKnowledge: knowledge,

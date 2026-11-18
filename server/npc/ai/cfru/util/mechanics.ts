@@ -1,5 +1,6 @@
 /** Shared rule primitives over AI snapshots. No simulator objects or strategic scores. */
 import { Dex, toID } from '../../../../../sim/dex';
+import { weatherDuration } from '../../../../../sim/weather';
 import type { AIPokemon, AIMove, BattleState, FieldConditions } from '../types';
 
 /** Protocol names and engine IDs share one vocabulary in AI calculations. */
@@ -13,6 +14,20 @@ export function normalizeWeather(weather: string): string {
 }
 
 type AbilityField = Partial<Pick<FieldConditions, 'formatId' | 'magicroom' | 'neutralizingGas'>>;
+
+export function projectWeather(field: FieldConditions, source: AIPokemon, moveWeather?: string): boolean {
+	const dex = rulesDex(field);
+	const weather = toID(moveWeather) || ({
+		drizzle: 'raindance', drought: 'sunnyday', sandstream: 'sandstorm',
+		snowwarning: dex.gen >= 9 || dex.currentMod === 'mmo' ? 'snowscape' : 'hail',
+	} as Record<string, string>)[effectiveAbility(source, field)];
+	if (!weather || ['desolateland', 'primordialsea', 'deltastream'].includes(field.weatherId || '')) return false;
+	const turns = weatherDuration(weather, item => effectiveItem(source, field) === item, dex.gen, dex.currentMod, !moveWeather);
+	if (field.weatherId === weather && (turns !== 0 || field.weatherTurns === 0)) return false;
+	field.weatherId = weather;
+	field.weatherTurns = turns;
+	return true;
+}
 type AbilityPokemon = Pick<AIPokemon, 'ability' | 'item' | 'itemLost' | 'volatiles'>;
 
 /** Configuration/state copies retain the same participant identity. Slots alone overlap across players. */

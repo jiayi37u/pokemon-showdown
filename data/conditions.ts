@@ -1,3 +1,5 @@
+import { weatherDuration } from '../sim/weather';
+
 export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 	brn: {
 		name: 'brn',
@@ -477,11 +479,8 @@ export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 		name: 'RainDance',
 		effectType: 'Weather',
 		duration: 5,
-		durationCallback(source, effect) {
-			if (source?.hasItem('damprock')) {
-				return 8;
-			}
-			return 5;
+		durationCallback(source, target, effect) {
+			return weatherDuration('raindance', item => source.hasItem(item), this.gen, this.dex.currentMod, effect?.effectType === 'Ability');
 		},
 		onWeatherModifyDamage(damage, attacker, defender, move) {
 			if (defender.hasItem('utilityumbrella')) return;
@@ -496,7 +495,6 @@ export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 		},
 		onFieldStart(field, source, effect) {
 			if (effect?.effectType === 'Ability') {
-				if (this.gen <= 5) this.effectState.duration = 0;
 				this.add('-weather', 'RainDance', '[from] ability: ' + effect.name, `[of] ${source}`);
 			} else {
 				this.add('-weather', 'RainDance');
@@ -547,11 +545,8 @@ export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 		name: 'SunnyDay',
 		effectType: 'Weather',
 		duration: 5,
-		durationCallback(source, effect) {
-			if (source?.hasItem('heatrock')) {
-				return 8;
-			}
-			return 5;
+		durationCallback(source, target, effect) {
+			return weatherDuration('sunnyday', item => source.hasItem(item), this.gen, this.dex.currentMod, effect?.effectType === 'Ability');
 		},
 		onWeatherModifyDamage(damage, attacker, defender, move) {
 			if (move.id === 'hydrosteam' && !attacker.hasItem('utilityumbrella')) {
@@ -570,7 +565,6 @@ export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 		},
 		onFieldStart(battle, source, effect) {
 			if (effect?.effectType === 'Ability') {
-				if (this.gen <= 5) this.effectState.duration = 0;
 				this.add('-weather', 'SunnyDay', '[from] ability: ' + effect.name, `[of] ${source}`);
 			} else {
 				this.add('-weather', 'SunnyDay');
@@ -629,11 +623,8 @@ export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 		name: 'Sandstorm',
 		effectType: 'Weather',
 		duration: 5,
-		durationCallback(source, effect) {
-			if (source?.hasItem('smoothrock')) {
-				return 8;
-			}
-			return 5;
+		durationCallback(source, target, effect) {
+			return weatherDuration('sandstorm', item => source.hasItem(item), this.gen, this.dex.currentMod, effect?.effectType === 'Ability');
 		},
 		// This should be applied directly to the stat before any of the other modifiers are chained
 		// So we give it increased priority.
@@ -645,7 +636,6 @@ export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 		},
 		onFieldStart(field, source, effect) {
 			if (effect?.effectType === 'Ability') {
-				if (this.gen <= 5) this.effectState.duration = 0;
 				this.add('-weather', 'Sandstorm', '[from] ability: ' + effect.name, `[of] ${source}`);
 			} else {
 				this.add('-weather', 'Sandstorm');
@@ -667,15 +657,11 @@ export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 		name: 'Hail',
 		effectType: 'Weather',
 		duration: 5,
-		durationCallback(source, effect) {
-			if (source?.hasItem('icyrock')) {
-				return 8;
-			}
-			return 5;
+		durationCallback(source, target, effect) {
+			return weatherDuration('hail', item => source.hasItem(item), this.gen, this.dex.currentMod, effect?.effectType === 'Ability');
 		},
 		onFieldStart(field, source, effect) {
 			if (effect?.effectType === 'Ability') {
-				if (this.gen <= 5) this.effectState.duration = 0;
 				this.add('-weather', 'Hail', '[from] ability: ' + effect.name, `[of] ${source}`);
 			} else {
 				this.add('-weather', 'Hail');
@@ -697,11 +683,8 @@ export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 		name: 'Snowscape',
 		effectType: 'Weather',
 		duration: 5,
-		durationCallback(source, effect) {
-			if (source?.hasItem('icyrock')) {
-				return 8;
-			}
-			return 5;
+		durationCallback(source, target, effect) {
+			return weatherDuration('snowscape', item => source.hasItem(item), this.gen, this.dex.currentMod, effect?.effectType === 'Ability');
 		},
 		onModifyDefPriority: 10,
 		onModifyDef(def, pokemon) {
@@ -711,7 +694,6 @@ export const Conditions: import('../sim/dex-conditions').ConditionDataTable = {
 		},
 		onFieldStart(field, source, effect) {
 			if (effect?.effectType === 'Ability') {
-				if (this.gen <= 5) this.effectState.duration = 0;
 				this.add('-weather', 'Snowscape', '[from] ability: ' + effect.name, `[of] ${source}`);
 			} else {
 				this.add('-weather', 'Snowscape');

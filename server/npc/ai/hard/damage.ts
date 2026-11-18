@@ -108,21 +108,24 @@ export function calculateDamage(
 	const ownOptions = options(attacker, ownAbilityName, ownItemName), foeOptions = options(defender);
 	const stats = (p: AIPokemon) => [p.maxHp, p.baseStats.atk, p.baseStats.def, p.baseStats.spa,
 		p.baseStats.spd, p.baseStats.spe];
+	const calcTypes = (pokemon: AIPokemon) =>
+		((pokemon.terastallized && pokemon.originalTypes) || pokemon.types).slice(0, 2);
 	const monKey = (p: AIPokemon, settings: ReturnType<typeof options>) =>
-		[dex.species.get(p.species).name, settings, stats(p), p.types.slice(0, 2)];
+		[dex.species.get(p.species).name, settings, stats(p), calcTypes(p)];
 	const gen = Generations.get(dex.gen as GenerationNum);
 	const reads = { attacker: false, defender: false };
 	const pokemon = (p: AIPokemon, settings: ReturnType<typeof options>, side: keyof typeof reads) => {
 		const mon = new KnownPokemon(gen, dex.species.get(p.species).name, settings);
 		mon.rawStats = { ...p.baseStats, hp: p.maxHp };
 		mon.stats = { ...mon.rawStats }; mon.originalCurHP = p.hp;
-		mon.types = p.types.slice(0, 2) as typeof mon.types;
+		mon.types = calcTypes(p) as typeof mon.types;
 		mon.onReadHP = () => { reads[side] = true; };
 		return mon;
 	};
 	const data = dex.moves.get(move.calledMove || move.id);
 	const hits = Math.max(1, Math.round(getExpectedHitCount(move, ownAbility, ownItem, attacker.species)));
 	const moveOptions = { hits,
+		isStellarFirstUse: attacker.terastallized === 'Stellar' && !attacker.stellarBoostedTypes?.includes(move.type),
 		ability: ownAbilityName as AbilityName,
 		item: ownItemName as ItemName,
 		// Re-resolve dynamic power/type inside calc, never apply an already resolved boost twice.

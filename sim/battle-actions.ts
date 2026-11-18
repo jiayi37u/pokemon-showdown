@@ -28,7 +28,7 @@ export class BattleActions {
 		Dragon: 'Max Wyrmwind',
 	};
 
-	readonly Z_MOVES: { readonly [k: string]: string } = {
+	static readonly Z_MOVES: { readonly [k: string]: string } = {
 		Poison: "Acid Downpour",
 		Fighting: "All-Out Pummeling",
 		Dark: "Black Hole Eclipse",
@@ -48,6 +48,8 @@ export class BattleActions {
 		Ground: "Tectonic Rage",
 		Fairy: "Twinkle Tackle",
 	};
+
+	readonly Z_MOVES = BattleActions.Z_MOVES;
 
 	constructor(battle: Battle) {
 		this.battle = battle;

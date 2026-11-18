@@ -75,7 +75,7 @@ export function hardMoveId(move: Pick<AIMove, 'id' | 'type' | 'basePower'>): str
 
 interface StrategySet {
 	name: string;
-	abilities: string[];
+	abilities?: string[];
 	items: string[];
 	natures: string[];
 	moves: string[][];
@@ -84,7 +84,9 @@ interface StrategySet {
 }
 
 const strategyFormats: Record<string, string> = {
-	gen6ou: 'gen6ou', gen6customgame: 'gen6ou', gen7ou: 'gen7ou', gen7customgame: 'gen7ou',
+	gen4ou: 'gen4ou', gen5ou: 'gen5ou', gen5uu: 'gen5uu',
+	gen6ou: 'gen6ou', gen6uu: 'gen6uu', gen6customgame: 'gen6ou',
+	gen7ou: 'gen7ou', gen7uu: 'gen7uu', gen7customgame: 'gen7ou', gen9ou: 'gen9ou',
 };
 const strategies = new Map<string, Record<string, StrategySet[]>>();
 function strategyData(formatId: string): Record<string, StrategySet[]> {
@@ -214,7 +216,7 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	const listedItem = sets.some(set => set.items.includes(originalItem));
 	for (const set of sets) {
 		// A public Mega form requires a matching stone in the source loadout.
-		const presetItems = set.items.filter(item => !species.isMega ||
+		const presetItems = set.items.map(item => item === 'noitem' ? '' : item).filter(item => !species.isMega ||
 			dex.items.get(item).megaStone?.[species.baseSpecies] === species.name);
 		// An unlisted public item replaces the item, not the preset's spread or move pool.
 		const items = (originalItem && !listedItem && !species.isMega ? [originalItem] : presetItems)
@@ -222,7 +224,8 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 		const native = toID(opponent.observedAbility);
 		// Sources sometimes list the Mega ability even for a pre-evolution set.
 		const abilities = species.isMega ? [toID(species.abilities[0])] :
-			set.abilities.map(a => Object.values(species.abilities).some(b => toID(b) === a) ? a : toID(species.abilities[0]));
+			(set.abilities || Object.values(species.abilities).map(toID)).map(a =>
+				Object.values(species.abilities).some(b => toID(b) === a) ? a : toID(species.abilities[0]));
 		const possibleAbilities = [...new Set(abilities)].filter(a => !native || a === native);
 		if (!items.length || !possibleAbilities.length) continue;
 		const candidates = [...new Set([...revealed, ...set.moves.flat()])].filter(id =>

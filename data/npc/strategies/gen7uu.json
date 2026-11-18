@@ -1,0 +1,7084 @@
+{
+  "format": "gen7uu",
+  "source": "pokemon-core/data/strategies/gen7uu/pokemon.jsonl",
+  "sourceSha256": "5afd9066b60abc4b584fe688d5b06cf396110bb484d10ff5c656248e5c115527",
+  "reference": "https://www.smogon.com/dex/sm/formats/uu/",
+  "species": {
+    "blastoise": [
+      {
+        "name": "Offensive Wallbreaker",
+        "abilities": [
+          "raindish"
+        ],
+        "items": [
+          "blastoisinite"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "waterpulse",
+            "hydropump"
+          ],
+          [
+            "darkpulse"
+          ],
+          [
+            "aurasphere",
+            "icebeam"
+          ],
+          [
+            "icebeam",
+            "rapidspin"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 104,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 152
+          }
+        ]
+      }
+    ],
+    "beedrill": [
+      {
+        "name": "Offensive Pivot",
+        "abilities": [
+          "swarm"
+        ],
+        "items": [
+          "beedrillite"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "uturn"
+          ],
+          [
+            "poisonjab"
+          ],
+          [
+            "drillrun"
+          ],
+          [
+            "knockoff",
+            "toxicspikes",
+            "pursuit"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "pidgeot": [
+      {
+        "name": "Special Attacker",
+        "abilities": [
+          "bigpecks"
+        ],
+        "items": [
+          "pidgeotite"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "hurricane"
+          ],
+          [
+            "heatwave"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "sandslashalola": [
+      {
+        "name": "Aurora Veil Setter",
+        "abilities": [
+          "slushrush"
+        ],
+        "items": [
+          "lightclay"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "auroraveil"
+          ],
+          [
+            "rapidspin"
+          ],
+          [
+            "iciclecrash"
+          ],
+          [
+            "earthquake",
+            "knockoff",
+            "toxic"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "nidoqueen": [
+      {
+        "name": "Offensive Hazard Setter",
+        "abilities": [
+          "sheerforce"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "toxicspikes",
+            "stealthrock"
+          ],
+          [
+            "sludgewave"
+          ],
+          [
+            "earthpower"
+          ],
+          [
+            "icebeam"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 128,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 128
+          }
+        ]
+      },
+      {
+        "name": "Defensive",
+        "abilities": [
+          "sheerforce"
+        ],
+        "items": [
+          "blacksludge"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "toxicspikes",
+            "stealthrock"
+          ],
+          [
+            "sludgewave"
+          ],
+          [
+            "earthpower"
+          ],
+          [
+            "icebeam"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 108,
+            "spa": 0,
+            "spd": 72,
+            "spe": 76
+          }
+        ]
+      }
+    ],
+    "nidoking": [
+      {
+        "name": "Wallbreaker",
+        "abilities": [
+          "sheerforce"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "sludgewave"
+          ],
+          [
+            "earthpower"
+          ],
+          [
+            "icebeam"
+          ],
+          [
+            "substitute",
+            "taunt"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "venomoth": [
+      {
+        "name": "Quiver Dance",
+        "abilities": [
+          "tintedlens"
+        ],
+        "items": [
+          "buginiumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "quiverdance"
+          ],
+          [
+            "sleeppowder"
+          ],
+          [
+            "bugbuzz"
+          ],
+          [
+            "sludgebomb"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "tentacruel": [
+      {
+        "name": "Defensive",
+        "abilities": [
+          "clearbody"
+        ],
+        "items": [
+          "blacksludge",
+          "iciumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "rapidspin"
+          ],
+          [
+            "haze"
+          ],
+          [
+            "sludgebomb",
+            "toxicspikes",
+            "knockoff"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 112,
+            "spa": 0,
+            "spd": 0,
+            "spe": 144
+          }
+        ]
+      }
+    ],
+    "slowbro": [
+      {
+        "name": "Mega Calm Mind",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "slowbronite"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "calmmind"
+          ],
+          [
+            "slackoff"
+          ],
+          [
+            "icebeam",
+            "psyshock"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 76,
+            "spa": 0,
+            "spd": 180,
+            "spe": 0
+          }
+        ]
+      },
+      {
+        "name": "Calm Mind",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "leftovers",
+          "wateriumz",
+          "psychiumz"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "calmmind"
+          ],
+          [
+            "scald"
+          ],
+          [
+            "psyshock"
+          ],
+          [
+            "slackoff"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ]
+      },
+      {
+        "name": "Defensive",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "leftovers",
+          "colburberry"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "psyshock",
+            "icebeam"
+          ],
+          [
+            "slackoff"
+          ],
+          [
+            "toxic",
+            "thunderwave"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ]
+      },
+      {
+        "name": "Block",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "colburberry",
+          "slowbronite"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "block"
+          ],
+          [
+            "rest"
+          ],
+          [
+            "scald"
+          ],
+          [
+            "toxic",
+            "calmmind"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ]
+      },
+      {
+        "name": "Tank",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "slowbronite"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "icebeam"
+          ],
+          [
+            "psyshock",
+            "fireblast"
+          ],
+          [
+            "slackoff"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 76,
+            "spa": 0,
+            "spd": 180,
+            "spe": 0
+          }
+        ]
+      },
+      {
+        "name": "Special Attacker",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "slowbronite"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "slackoff"
+          ],
+          [
+            "icebeam"
+          ],
+          [
+            "psyshock",
+            "fireblast"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 212,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 44
+          }
+        ]
+      },
+      {
+        "name": "Future Sight Attacker",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "slowbronite"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "futuresight"
+          ],
+          [
+            "scald"
+          ],
+          [
+            "slackoff"
+          ],
+          [
+            "icebeam"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 212,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 44
+          }
+        ]
+      }
+    ],
+    "magneton": [
+      {
+        "name": "Choice Specs",
+        "abilities": [
+          "magnetpull"
+        ],
+        "items": [
+          "choicespecs"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "thunderbolt"
+          ],
+          [
+            "hiddenpowerfire"
+          ],
+          [
+            "flashcannon"
+          ],
+          [
+            "voltswitch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Scarf",
+        "abilities": [
+          "magnetpull"
+        ],
+        "items": [
+          "choicescarf"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "thunderbolt"
+          ],
+          [
+            "hiddenpowerfire"
+          ],
+          [
+            "flashcannon"
+          ],
+          [
+            "voltswitch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "mukalola": [
+      {
+        "name": "Pursuit Trapper",
+        "abilities": [
+          "poisontouch"
+        ],
+        "items": [
+          "assaultvest"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "pursuit"
+          ],
+          [
+            "gunkshot",
+            "poisonjab"
+          ],
+          [
+            "knockoff"
+          ],
+          [
+            "firepunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 4,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 252,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "gengar": [
+      {
+        "name": "Substitute",
+        "abilities": [
+          "cursedbody"
+        ],
+        "items": [
+          "ghostiumz",
+          "fightiniumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "substitute"
+          ],
+          [
+            "shadowball"
+          ],
+          [
+            "sludgewave"
+          ],
+          [
+            "focusblast"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "marowakalola": [
+      {
+        "name": "Offensive Wallbreaker",
+        "abilities": [
+          "rockhead",
+          "lightningrod"
+        ],
+        "items": [
+          "thickclub"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "shadowbone"
+          ],
+          [
+            "flareblitz",
+            "firepunch"
+          ],
+          [
+            "stealthrock"
+          ],
+          [
+            "lowkick",
+            "bonemerang"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 84,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 172
+          }
+        ]
+      }
+    ],
+    "starmie": [
+      {
+        "name": "Offensive",
+        "abilities": [
+          "analytic"
+        ],
+        "items": [
+          "lifeorb",
+          "colburberry"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "hydropump"
+          ],
+          [
+            "icebeam"
+          ],
+          [
+            "psyshock",
+            "thunderbolt"
+          ],
+          [
+            "rapidspin",
+            "thunderbolt"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Bulky Spinner",
+        "abilities": [
+          "naturalcure"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "toxic",
+            "protect"
+          ],
+          [
+            "recover"
+          ],
+          [
+            "rapidspin"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 0,
+            "spa": 4,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "aerodactyl": [
+      {
+        "name": "Offensive",
+        "abilities": [
+          "unnerve"
+        ],
+        "items": [
+          "aerodactylite"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "stoneedge"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "pursuit",
+            "roost"
+          ],
+          [
+            "roost",
+            "icefang"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Stealth Rock",
+        "abilities": [
+          "unnerve"
+        ],
+        "items": [
+          "aerodactylite"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "stoneedge"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "icefang"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "snorlax": [
+      {
+        "name": "Papa Lax (Curse + Recycle)",
+        "abilities": [
+          "gluttony"
+        ],
+        "items": [
+          "iapapaberry"
+        ],
+        "natures": [
+          "careful"
+        ],
+        "moves": [
+          [
+            "curse"
+          ],
+          [
+            "facade"
+          ],
+          [
+            "recycle"
+          ],
+          [
+            "firepunch",
+            "earthquake"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 152,
+            "spa": 0,
+            "spd": 104,
+            "spe": 0
+          }
+        ]
+      },
+      {
+        "name": "RestTalk",
+        "abilities": [
+          "thickfat"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "careful"
+        ],
+        "moves": [
+          [
+            "curse"
+          ],
+          [
+            "return",
+            "bodyslam"
+          ],
+          [
+            "rest"
+          ],
+          [
+            "sleeptalk",
+            "firepunch",
+            "earthquake"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 152,
+            "spa": 0,
+            "spd": 104,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "articuno": [
+      {
+        "name": "Specially Defensive",
+        "abilities": [
+          "pressure"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "calm"
+        ],
+        "moves": [
+          [
+            "defog"
+          ],
+          [
+            "healbell"
+          ],
+          [
+            "freezedry"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 248,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 160,
+            "spe": 96
+          }
+        ]
+      }
+    ],
+    "moltres": [
+      {
+        "name": "Offensive",
+        "abilities": [
+          "flamebody"
+        ],
+        "items": [
+          "flyiniumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "hurricane"
+          ],
+          [
+            "fireblast"
+          ],
+          [
+            "roost"
+          ],
+          [
+            "uturn",
+            "defog",
+            "agility"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Defensive",
+        "abilities": [
+          "pressure"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "roost"
+          ],
+          [
+            "defog"
+          ],
+          [
+            "flamethrower"
+          ],
+          [
+            "toxic",
+            "willowisp",
+            "roar"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 248,
+            "atk": 0,
+            "def": 36,
+            "spa": 0,
+            "spd": 0,
+            "spe": 224
+          }
+        ]
+      },
+      {
+        "name": "Choice Specs",
+        "abilities": [
+          "flamebody"
+        ],
+        "items": [
+          "choicespecs"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "hurricane"
+          ],
+          [
+            "fireblast"
+          ],
+          [
+            "flamethrower",
+            "airslash"
+          ],
+          [
+            "airslash",
+            "uturn",
+            "sleeptalk"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "mew": [
+      {
+        "name": "Stallbreaker",
+        "abilities": [
+          "synchronize"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "seismictoss",
+            "knockoff"
+          ],
+          [
+            "taunt"
+          ],
+          [
+            "willowisp",
+            "toxic"
+          ],
+          [
+            "softboiled"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Defensive Utility",
+        "abilities": [
+          "synchronize"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "seismictoss",
+            "knockoff"
+          ],
+          [
+            "defog",
+            "stealthrock"
+          ],
+          [
+            "taunt"
+          ],
+          [
+            "softboiled"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 80,
+            "spa": 0,
+            "spd": 0,
+            "spe": 176
+          }
+        ]
+      }
+    ],
+    "feraligatr": [
+      {
+        "name": "Dragon Dance",
+        "abilities": [
+          "sheerforce"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "jolly",
+          "adamant"
+        ],
+        "moves": [
+          [
+            "dragondance"
+          ],
+          [
+            "liquidation"
+          ],
+          [
+            "icepunch"
+          ],
+          [
+            "crunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 4,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Agility",
+        "abilities": [
+          "sheerforce"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "agility"
+          ],
+          [
+            "liquidation"
+          ],
+          [
+            "crunch"
+          ],
+          [
+            "icepunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "crobat": [
+      {
+        "name": "Stallbreaker",
+        "abilities": [
+          "infiltrator"
+        ],
+        "items": [
+          "flyiniumz",
+          "sharpbeak"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "bravebird"
+          ],
+          [
+            "superfang"
+          ],
+          [
+            "taunt"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "xatu": [
+      {
+        "name": "Dual Screens",
+        "abilities": [
+          "magicbounce"
+        ],
+        "items": [
+          "lightclay"
+        ],
+        "natures": [
+          "calm"
+        ],
+        "moves": [
+          [
+            "reflect"
+          ],
+          [
+            "lightscreen"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "thunderwave"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 108,
+            "spa": 0,
+            "spd": 76,
+            "spe": 72
+          }
+        ]
+      }
+    ],
+    "umbreon": [
+      {
+        "name": "Specially Defensive",
+        "abilities": [
+          "synchronize"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "calm"
+        ],
+        "moves": [
+          [
+            "foulplay"
+          ],
+          [
+            "healbell",
+            "toxic"
+          ],
+          [
+            "wish"
+          ],
+          [
+            "protect",
+            "moonlight"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 252,
+            "spe": 4
+          }
+        ]
+      }
+    ],
+    "gligar": [
+      {
+        "name": "Defensive Utility",
+        "abilities": [
+          "immunity"
+        ],
+        "items": [
+          "eviolite"
+        ],
+        "natures": [
+          "impish"
+        ],
+        "moves": [
+          [
+            "earthquake"
+          ],
+          [
+            "roost"
+          ],
+          [
+            "defog",
+            "stealthrock"
+          ],
+          [
+            "uturn",
+            "toxic",
+            "knockoff"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 156,
+            "spa": 0,
+            "spd": 100,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "steelix": [
+      {
+        "name": "Offensive Stealth Rock",
+        "abilities": [
+          "sturdy"
+        ],
+        "items": [
+          "steelixite"
+        ],
+        "natures": [
+          "brave"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "gyroball"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "curse"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 208,
+            "def": 0,
+            "spa": 0,
+            "spd": 48,
+            "spe": 0
+          }
+        ],
+        "ivs": [
+          {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "scizor": [
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "technician"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "bulletpunch"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "superpower"
+          ],
+          [
+            "pursuit",
+            "knockoff"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 164,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 92
+          }
+        ]
+      },
+      {
+        "name": "Life Orb + Swords Dance",
+        "abilities": [
+          "technician"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "bulletpunch"
+          ],
+          [
+            "superpower",
+            "knockoff"
+          ],
+          [
+            "bugbite",
+            "quickattack"
+          ],
+          [
+            "swordsdance"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Bulky Swords Dance",
+        "abilities": [
+          "technician"
+        ],
+        "items": [
+          "buginiumz",
+          "leftovers"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "uturn"
+          ],
+          [
+            "bulletpunch"
+          ],
+          [
+            "swordsdance"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 248,
+            "atk": 16,
+            "def": 144,
+            "spa": 0,
+            "spd": 96,
+            "spe": 4
+          }
+        ]
+      },
+      {
+        "name": "Offensive Swords Dance",
+        "abilities": [
+          "technician"
+        ],
+        "items": [
+          "fightiniumz",
+          "metalcoat"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "bulletpunch"
+          ],
+          [
+            "superpower",
+            "knockoff"
+          ],
+          [
+            "roost",
+            "knockoff"
+          ],
+          [
+            "swordsdance"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 204,
+            "def": 48,
+            "spa": 0,
+            "spd": 0,
+            "spe": 4
+          }
+        ]
+      },
+      {
+        "name": "Choice Scarf",
+        "abilities": [
+          "technician"
+        ],
+        "items": [
+          "choicescarf"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "uturn"
+          ],
+          [
+            "bulletpunch"
+          ],
+          [
+            "pursuit"
+          ],
+          [
+            "superpower"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 40,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 216
+          }
+        ]
+      }
+    ],
+    "heracross": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "guts"
+        ],
+        "items": [
+          "flameorb"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "knockoff"
+          ],
+          [
+            "facade"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "mantine": [
+      {
+        "name": "Defensive",
+        "abilities": [
+          "waterabsorb"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "roost"
+          ],
+          [
+            "defog"
+          ],
+          [
+            "haze",
+            "toxic"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "houndoom": [
+      {
+        "name": "Nasty Plot",
+        "abilities": [
+          "flashfire"
+        ],
+        "items": [
+          "houndoominite"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "nastyplot"
+          ],
+          [
+            "fireblast"
+          ],
+          [
+            "darkpulse"
+          ],
+          [
+            "sludgebomb"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "porygon2": [
+      {
+        "name": "Z-Conversion",
+        "abilities": [
+          "download"
+        ],
+        "items": [
+          "normaliumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "thunderbolt"
+          ],
+          [
+            "icebeam"
+          ],
+          [
+            "conversion"
+          ],
+          [
+            "recover"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "blissey": [
+      {
+        "name": "Defensive",
+        "abilities": [
+          "naturalcure"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "seismictoss"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "softboiled"
+          ],
+          [
+            "healbell",
+            "stealthrock"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "entei": [
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "pressure"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "sacredfire"
+          ],
+          [
+            "extremespeed"
+          ],
+          [
+            "stoneedge"
+          ],
+          [
+            "flareblitz"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ],
+        "shiny": true
+      }
+    ],
+    "suicune": [
+      {
+        "name": "Calm Mind + Protect",
+        "abilities": [
+          "pressure"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "calmmind"
+          ],
+          [
+            "protect"
+          ],
+          [
+            "scald"
+          ],
+          [
+            "substitute"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 40,
+            "spe": 216
+          }
+        ]
+      },
+      {
+        "name": "CroCune",
+        "abilities": [
+          "pressure"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "calmmind"
+          ],
+          [
+            "rest"
+          ],
+          [
+            "sleeptalk"
+          ],
+          [
+            "scald"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 160,
+            "spa": 0,
+            "spd": 0,
+            "spe": 96
+          }
+        ]
+      }
+    ],
+    "celebi": [
+      {
+        "name": "Nasty Plot",
+        "abilities": [
+          "naturalcure"
+        ],
+        "items": [
+          "psychiumz",
+          "grassiumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "nastyplot"
+          ],
+          [
+            "psychic"
+          ],
+          [
+            "gigadrain",
+            "leafstorm"
+          ],
+          [
+            "dazzlinggleam",
+            "recover"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "sceptile": [
+      {
+        "name": "All-out Attacker",
+        "abilities": [
+          "overgrow"
+        ],
+        "items": [
+          "sceptilite"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "leafstorm"
+          ],
+          [
+            "dragonpulse"
+          ],
+          [
+            "earthquake",
+            "gigadrain",
+            "focusblast"
+          ],
+          [
+            "hiddenpowerfire",
+            "focusblast"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "swampert": [
+      {
+        "name": "Defensive",
+        "abilities": [
+          "torrent"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "relaxed"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "scald"
+          ],
+          [
+            "toxic",
+            "roar"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ]
+      },
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "torrent"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "earthquake"
+          ],
+          [
+            "waterfall"
+          ],
+          [
+            "icepunch"
+          ],
+          [
+            "toxic",
+            "superpower"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 88,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 168
+          }
+        ]
+      },
+      {
+        "name": "Offensive Stealth Rock",
+        "abilities": [
+          "torrent"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "waterfall"
+          ],
+          [
+            "icepunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 92,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 164
+          }
+        ]
+      }
+    ],
+    "linoone": [
+      {
+        "name": "Belly Drum Sweeper",
+        "abilities": [
+          "gluttony"
+        ],
+        "items": [
+          "figyberry"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "bellydrum"
+          ],
+          [
+            "extremespeed"
+          ],
+          [
+            "stompingtantrum"
+          ],
+          [
+            "seedbomb"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 148,
+            "atk": 248,
+            "def": 8,
+            "spa": 0,
+            "spd": 88,
+            "spe": 16
+          }
+        ]
+      }
+    ],
+    "aggron": [
+      {
+        "name": "Stealth Rock",
+        "abilities": [
+          "sturdy"
+        ],
+        "items": [
+          "aggronite"
+        ],
+        "natures": [
+          "careful"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "heavyslam"
+          ],
+          [
+            "earthquake",
+            "firepunch"
+          ],
+          [
+            "toxic",
+            "firepunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 252,
+            "spe": 0
+          }
+        ]
+      },
+      {
+        "name": "Curse",
+        "abilities": [
+          "sturdy"
+        ],
+        "items": [
+          "aggronite"
+        ],
+        "natures": [
+          "careful"
+        ],
+        "moves": [
+          [
+            "heavyslam"
+          ],
+          [
+            "curse"
+          ],
+          [
+            "rest"
+          ],
+          [
+            "sleeptalk"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 252,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "manectric": [
+      {
+        "name": "All-out Attacker",
+        "abilities": [
+          "lightningrod"
+        ],
+        "items": [
+          "manectite"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "voltswitch"
+          ],
+          [
+            "overheat",
+            "flamethrower"
+          ],
+          [
+            "thunderbolt"
+          ],
+          [
+            "hiddenpowerice",
+            "hiddenpowergrass"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "sharpedo": [
+      {
+        "name": "Cleaner",
+        "abilities": [
+          "speedboost"
+        ],
+        "items": [
+          "sharpedonite"
+        ],
+        "natures": [
+          "adamant",
+          "jolly"
+        ],
+        "moves": [
+          [
+            "crunch"
+          ],
+          [
+            "icefang"
+          ],
+          [
+            "earthquake",
+            "psychicfangs"
+          ],
+          [
+            "protect"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 4,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "altaria": [
+      {
+        "name": "Dragon Dance",
+        "abilities": [
+          "naturalcure"
+        ],
+        "items": [
+          "altarianite"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "dragondance"
+          ],
+          [
+            "return",
+            "facade"
+          ],
+          [
+            "earthquake",
+            "fireblast"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Refresh",
+        "abilities": [
+          "naturalcure"
+        ],
+        "items": [
+          "altarianite"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "dragondance"
+          ],
+          [
+            "return"
+          ],
+          [
+            "refresh"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Defensive",
+        "abilities": [
+          "naturalcure"
+        ],
+        "items": [
+          "altarianite"
+        ],
+        "natures": [
+          "impish"
+        ],
+        "moves": [
+          [
+            "return"
+          ],
+          [
+            "flamethrower",
+            "dragondance",
+            "defog"
+          ],
+          [
+            "healbell",
+            "defog"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 200,
+            "spa": 0,
+            "spd": 0,
+            "spe": 56
+          }
+        ]
+      },
+      {
+        "name": "Special Tank",
+        "abilities": [
+          "naturalcure"
+        ],
+        "items": [
+          "altarianite"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "hypervoice"
+          ],
+          [
+            "fireblast"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 248,
+            "atk": 0,
+            "def": 4,
+            "spa": 160,
+            "spd": 0,
+            "spe": 96
+          }
+        ]
+      }
+    ],
+    "crawdaunt": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "adaptability"
+        ],
+        "items": [
+          "wateriumz",
+          "lifeorb"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "crabhammer"
+          ],
+          [
+            "knockoff"
+          ],
+          [
+            "aquajet"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 4,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "adaptability"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "knockoff"
+          ],
+          [
+            "crabhammer"
+          ],
+          [
+            "aquajet"
+          ],
+          [
+            "superpower",
+            "crunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "absol": [
+      {
+        "name": "All-out Attacker",
+        "abilities": [
+          "justified"
+        ],
+        "items": [
+          "absolite"
+        ],
+        "natures": [
+          "naive",
+          "jolly"
+        ],
+        "moves": [
+          [
+            "knockoff"
+          ],
+          [
+            "pursuit"
+          ],
+          [
+            "fireblast",
+            "superpower"
+          ],
+          [
+            "suckerpunch",
+            "irontail"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "glalie": [
+      {
+        "name": "Offensive Spiker",
+        "abilities": [
+          "innerfocus"
+        ],
+        "items": [
+          "glalitite"
+        ],
+        "natures": [
+          "naive",
+          "jolly"
+        ],
+        "moves": [
+          [
+            "spikes"
+          ],
+          [
+            "return",
+            "doubleedge"
+          ],
+          [
+            "freezedry",
+            "iceshard"
+          ],
+          [
+            "earthquake",
+            "hiddenpowerfire",
+            "explosion"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 4,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "metagross": [
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "clearbody"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "meteormash"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "pursuit"
+          ],
+          [
+            "explosion",
+            "bulletpunch",
+            "trick"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 40,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 216
+          }
+        ]
+      },
+      {
+        "name": "Offensive Stealth Rock",
+        "abilities": [
+          "clearbody"
+        ],
+        "items": [
+          "lifeorb",
+          "shucaberry",
+          "colburberry"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "meteormash"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "explosion",
+            "bulletpunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 40,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 216
+          }
+        ]
+      },
+      {
+        "name": "Mixed Offensive Lure",
+        "abilities": [
+          "clearbody"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "hasty"
+        ],
+        "moves": [
+          [
+            "meteormash",
+            "explosion"
+          ],
+          [
+            "hiddenpowerfire"
+          ],
+          [
+            "grassknot"
+          ],
+          [
+            "stealthrock"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 4,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "registeel": [
+      {
+        "name": "Specially Defensive",
+        "abilities": [
+          "clearbody"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "calm"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "seismictoss"
+          ],
+          [
+            "protect",
+            "counter"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 252,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "latias": [
+      {
+        "name": "Calm Mind",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "dragoniumz",
+          "lifeorb"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "calmmind"
+          ],
+          [
+            "dracometeor"
+          ],
+          [
+            "psyshock",
+            "psychic"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Electrium Z",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "electriumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "calmmind"
+          ],
+          [
+            "thunder",
+            "thunderbolt"
+          ],
+          [
+            "icebeam",
+            "dracometeor"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Specs",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "choicespecs"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "dracometeor"
+          ],
+          [
+            "psyshock"
+          ],
+          [
+            "surf"
+          ],
+          [
+            "trick",
+            "healingwish"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "3 Attacks + Roost",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "dracometeor"
+          ],
+          [
+            "psychic"
+          ],
+          [
+            "hiddenpowerfire",
+            "thunderbolt"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Scarf",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "choicescarf"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "dracometeor"
+          ],
+          [
+            "psychic"
+          ],
+          [
+            "trick",
+            "defog"
+          ],
+          [
+            "healingwish"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "infernape": [
+      {
+        "name": "Nasty Plot",
+        "abilities": [
+          "blaze"
+        ],
+        "items": [
+          "fightiniumz",
+          "lifeorb"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "nastyplot"
+          ],
+          [
+            "fireblast"
+          ],
+          [
+            "focusblast"
+          ],
+          [
+            "vacuumwave"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Scarf",
+        "abilities": [
+          "blaze"
+        ],
+        "items": [
+          "choicescarf"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "flareblitz"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "gunkshot",
+            "stoneedge"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Mixed Attacker",
+        "abilities": [
+          "blaze"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "naive"
+        ],
+        "moves": [
+          [
+            "overheat",
+            "fireblast"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "slackoff",
+            "gunkshot"
+          ],
+          [
+            "grassknot",
+            "gunkshot"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 168,
+            "def": 0,
+            "spa": 88,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "ironfist",
+          "blaze"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "flareblitz"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "machpunch",
+            "gunkshot",
+            "stoneedge"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "ironfist"
+        ],
+        "items": [
+          "fightiniumz",
+          "electriumz"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "flareblitz"
+          ],
+          [
+            "machpunch",
+            "thunderpunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "empoleon": [
+      {
+        "name": "Utility",
+        "abilities": [
+          "torrent"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "calm"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "stealthrock",
+            "defog"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "protect",
+            "knockoff",
+            "roar"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 76,
+            "spa": 0,
+            "spd": 180,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "roserade": [
+      {
+        "name": "3 Attacks",
+        "abilities": [
+          "technician"
+        ],
+        "items": [
+          "poisoniumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "sleeppowder"
+          ],
+          [
+            "leafstorm"
+          ],
+          [
+            "sludgebomb"
+          ],
+          [
+            "hiddenpowerfire"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "gastrodon": [
+      {
+        "name": "Specially Defensive",
+        "abilities": [
+          "stormdrain"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "sassy"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "recover"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 252,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "bronzong": [
+      {
+        "name": "Specially Defensive",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "sassy"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "gyroball"
+          ],
+          [
+            "psywave",
+            "protect"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 252,
+            "spe": 0
+          }
+        ],
+        "ivs": [
+          {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "lucario": [
+      {
+        "name": "Nasty Plot",
+        "abilities": [
+          "innerfocus"
+        ],
+        "items": [
+          "fightiniumz",
+          "lifeorb"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "nastyplot"
+          ],
+          [
+            "focusblast",
+            "aurasphere"
+          ],
+          [
+            "flashcannon"
+          ],
+          [
+            "vacuumwave"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "justified"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "jolly",
+          "adamant"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "extremespeed"
+          ],
+          [
+            "meteormash",
+            "bulletpunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "hippowdon": [
+      {
+        "name": "Mixed Wall",
+        "abilities": [
+          "sandstream",
+          "sandforce"
+        ],
+        "items": [
+          "leftovers",
+          "rockyhelmet"
+        ],
+        "natures": [
+          "impish"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "slackoff"
+          ],
+          [
+            "toxic",
+            "whirlwind"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 80,
+            "spa": 0,
+            "spd": 176,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "toxicroak": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "dryskin"
+        ],
+        "items": [
+          "lifeorb",
+          "poisoniumz",
+          "darkiniumz"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "drainpunch"
+          ],
+          [
+            "gunkshot"
+          ],
+          [
+            "suckerpunch",
+            "icepunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "rhyperior": [
+      {
+        "name": "Tank",
+        "abilities": [
+          "solidrock"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "stoneedge",
+            "rockblast"
+          ],
+          [
+            "icepunch",
+            "toxic",
+            "swordsdance"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 16,
+            "def": 0,
+            "spa": 0,
+            "spd": 240,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "togekiss": [
+      {
+        "name": "Nasty Plot",
+        "abilities": [
+          "serenegrace"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "nastyplot"
+          ],
+          [
+            "healbell",
+            "thunderwave"
+          ],
+          [
+            "airslash"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 0,
+            "spa": 4,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Offensive Nasty Plot",
+        "abilities": [
+          "serenegrace"
+        ],
+        "items": [
+          "fightiniumz",
+          "babiriberry"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "nastyplot"
+          ],
+          [
+            "airslash"
+          ],
+          [
+            "aurasphere",
+            "flamethrower"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Support",
+        "abilities": [
+          "serenegrace"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "airslash"
+          ],
+          [
+            "healbell",
+            "thunderwave"
+          ],
+          [
+            "roost"
+          ],
+          [
+            "defog",
+            "thunderwave"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 160,
+            "spa": 0,
+            "spd": 0,
+            "spe": 96
+          }
+        ]
+      },
+      {
+        "name": "Choice Scarf",
+        "abilities": [
+          "serenegrace"
+        ],
+        "items": [
+          "choicescarf"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "airslash"
+          ],
+          [
+            "thunderwave"
+          ],
+          [
+            "trick"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "mamoswine": [
+      {
+        "name": "Life Orb",
+        "abilities": [
+          "thickfat"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "adamant",
+          "jolly"
+        ],
+        "moves": [
+          [
+            "iceshard"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "iciclecrash"
+          ],
+          [
+            "knockoff"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "froslass": [
+      {
+        "name": "Suicide Lead",
+        "abilities": [
+          "cursedbody"
+        ],
+        "items": [
+          "focussash"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "spikes"
+          ],
+          [
+            "taunt"
+          ],
+          [
+            "icywind"
+          ],
+          [
+            "destinybond"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 4,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "rotomheat": [
+      {
+        "name": "Fast Bulky Pivot",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "wikiberry",
+          "leftovers"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "defog",
+            "painsplit"
+          ],
+          [
+            "voltswitch"
+          ],
+          [
+            "overheat"
+          ],
+          [
+            "toxic",
+            "willowisp"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 236,
+            "atk": 0,
+            "def": 0,
+            "spa": 20,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Offensive Pivot",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "firiumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "overheat"
+          ],
+          [
+            "voltswitch"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "painsplit"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "rotommow": [
+      {
+        "name": "Offensive Pivot",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "grassiumz",
+          "iapapaberry"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "thunderbolt"
+          ],
+          [
+            "voltswitch"
+          ],
+          [
+            "leafstorm"
+          ],
+          [
+            "defog",
+            "hiddenpowerfire"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "uxie": [
+      {
+        "name": "Trick Room Setter",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "mentalherb",
+          "colburberry"
+        ],
+        "natures": [
+          "relaxed"
+        ],
+        "moves": [
+          [
+            "trickroom"
+          ],
+          [
+            "stealthrock"
+          ],
+          [
+            "memento",
+            "uturn"
+          ],
+          [
+            "magiccoat",
+            "psychic"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ],
+        "ivs": [
+          {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "azelf": [
+      {
+        "name": "Nasty Plot",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "adrenalineorb",
+          "lifeorb"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "nastyplot"
+          ],
+          [
+            "psyshock",
+            "psychic"
+          ],
+          [
+            "flamethrower",
+            "fireblast"
+          ],
+          [
+            "dazzlinggleam"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Suicide Lead",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "focussash"
+        ],
+        "natures": [
+          "jolly",
+          "naive"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "explosion"
+          ],
+          [
+            "taunt"
+          ],
+          [
+            "knockoff",
+            "fireblast"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 4,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Dual Screens",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "lightclay"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "reflect"
+          ],
+          [
+            "lightscreen"
+          ],
+          [
+            "taunt"
+          ],
+          [
+            "uturn",
+            "explosion"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 40,
+            "spe": 216
+          }
+        ]
+      }
+    ],
+    "cresselia": [
+      {
+        "name": "Defensive Z-Move",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "fairiumz"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "psyshock"
+          ],
+          [
+            "moonblast"
+          ],
+          [
+            "moonlight"
+          ],
+          [
+            "calmmind"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 240,
+            "spa": 0,
+            "spd": 0,
+            "spe": 16
+          }
+        ]
+      }
+    ],
+    "shaymin": [
+      {
+        "name": "Z-Celebrate",
+        "abilities": [
+          "naturalcure"
+        ],
+        "items": [
+          "normaliumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "celebrate"
+          ],
+          [
+            "seedflare"
+          ],
+          [
+            "dazzlinggleam"
+          ],
+          [
+            "hiddenpowerfire"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "seismitoad": [
+      {
+        "name": "Offensive Stealth Rock",
+        "abilities": [
+          "waterabsorb"
+        ],
+        "items": [
+          "leftovers",
+          "expertbelt"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "hydropump"
+          ],
+          [
+            "earthpower"
+          ],
+          [
+            "hiddenpowerfire"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 72,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 184
+          }
+        ]
+      },
+      {
+        "name": "Defensive Stealth Rock",
+        "abilities": [
+          "waterabsorb"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "relaxed"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "scald"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "toxic",
+            "refresh"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "krookodile": [
+      {
+        "name": "Choice Scarf",
+        "abilities": [
+          "intimidate"
+        ],
+        "items": [
+          "choicescarf"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "knockoff"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "pursuit"
+          ],
+          [
+            "stoneedge",
+            "crunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Stealth Rock",
+        "abilities": [
+          "intimidate"
+        ],
+        "items": [
+          "iapapaberry",
+          "groundiumz",
+          "focussash"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "knockoff"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "taunt",
+            "pursuit"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "darmanitan": [
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "sheerforce"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "flareblitz"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "rockslide",
+            "firepunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "cofagrigus": [
+      {
+        "name": "Trick Room",
+        "abilities": [
+          "mummy"
+        ],
+        "items": [
+          "ghostiumz"
+        ],
+        "natures": [
+          "quiet"
+        ],
+        "moves": [
+          [
+            "shadowball"
+          ],
+          [
+            "hiddenpowerfighting"
+          ],
+          [
+            "trickroom"
+          ],
+          [
+            "nastyplot"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 0
+          }
+        ],
+        "ivs": [
+          {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "reuniclus": [
+      {
+        "name": "Defensive Calm Mind",
+        "abilities": [
+          "magicguard"
+        ],
+        "items": [
+          "fightiniumz",
+          "leftovers"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "calmmind"
+          ],
+          [
+            "psyshock"
+          ],
+          [
+            "focusblast"
+          ],
+          [
+            "recover"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 212,
+            "spa": 0,
+            "spd": 0,
+            "spe": 44
+          }
+        ]
+      },
+      {
+        "name": "Offensive Trick Room",
+        "abilities": [
+          "magicguard"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "quiet"
+        ],
+        "moves": [
+          [
+            "psychic",
+            "psyshock"
+          ],
+          [
+            "shadowball"
+          ],
+          [
+            "focusblast"
+          ],
+          [
+            "trickroom"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "amoonguss": [
+      {
+        "name": "Defensive Pivot",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "rockyhelmet",
+          "blacksludge"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "spore"
+          ],
+          [
+            "gigadrain"
+          ],
+          [
+            "hiddenpowerfire"
+          ],
+          [
+            "sludgebomb"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 176,
+            "spa": 0,
+            "spd": 80,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "jellicent": [
+      {
+        "name": "Physically Defensive",
+        "abilities": [
+          "waterabsorb"
+        ],
+        "items": [
+          "leftovers",
+          "colburberry"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "hex",
+            "scald"
+          ],
+          [
+            "taunt"
+          ],
+          [
+            "willowisp"
+          ],
+          [
+            "recover"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 212,
+            "spa": 0,
+            "spd": 0,
+            "spe": 44
+          }
+        ]
+      }
+    ],
+    "alomomola": [
+      {
+        "name": "Defensive",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "leftovers",
+          "rockyhelmet"
+        ],
+        "natures": [
+          "bold",
+          "impish"
+        ],
+        "moves": [
+          [
+            "wish"
+          ],
+          [
+            "protect"
+          ],
+          [
+            "toxic",
+            "knockoff"
+          ],
+          [
+            "scald",
+            "knockoff"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 40,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 216,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "ferroseed": [
+      {
+        "name": "Bulky Entry Hazard Setter",
+        "abilities": [
+          "ironbarbs"
+        ],
+        "items": [
+          "eviolite"
+        ],
+        "natures": [
+          "sassy"
+        ],
+        "moves": [
+          [
+            "stealthrock",
+            "spikes"
+          ],
+          [
+            "gyroball"
+          ],
+          [
+            "leechseed"
+          ],
+          [
+            "toxic",
+            "protect"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 80,
+            "spa": 0,
+            "spd": 176,
+            "spe": 0
+          }
+        ],
+        "ivs": [
+          {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "chandelure": [
+      {
+        "name": "Substitute + Calm Mind",
+        "abilities": [
+          "flamebody",
+          "flashfire"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "substitute"
+          ],
+          [
+            "calmmind"
+          ],
+          [
+            "shadowball"
+          ],
+          [
+            "flamethrower"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Scarf",
+        "abilities": [
+          "flamebody",
+          "flashfire"
+        ],
+        "items": [
+          "choicescarf"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "shadowball"
+          ],
+          [
+            "fireblast"
+          ],
+          [
+            "trick"
+          ],
+          [
+            "memento",
+            "hiddenpowerice",
+            "flamethrower"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "haxorus": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "moldbreaker"
+        ],
+        "items": [
+          "dragoniumz",
+          "lumberry"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "outrage"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "poisonjab"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Dragon Dance",
+        "abilities": [
+          "moldbreaker"
+        ],
+        "items": [
+          "dragoniumz",
+          "lumberry"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "dragondance"
+          ],
+          [
+            "outrage"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "poisonjab"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "mienshao": [
+      {
+        "name": "Assault Vest",
+        "abilities": [
+          "regenerator"
+        ],
+        "items": [
+          "assaultvest"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "highjumpkick"
+          ],
+          [
+            "knockoff"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "fakeout"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 100,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 156,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "bisharp": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "defiant"
+        ],
+        "items": [
+          "lifeorb",
+          "dreadplate",
+          "darkiniumz"
+        ],
+        "natures": [
+          "adamant",
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "knockoff"
+          ],
+          [
+            "ironhead"
+          ],
+          [
+            "suckerpunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Assault Vest",
+        "abilities": [
+          "defiant"
+        ],
+        "items": [
+          "assaultvest"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "pursuit"
+          ],
+          [
+            "knockoff"
+          ],
+          [
+            "ironhead"
+          ],
+          [
+            "suckerpunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 188,
+            "atk": 236,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 84
+          }
+        ]
+      }
+    ],
+    "mandibuzz": [
+      {
+        "name": "Utility Birb",
+        "abilities": [
+          "overcoat"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "careful"
+        ],
+        "moves": [
+          [
+            "foulplay"
+          ],
+          [
+            "taunt"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 248,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 124,
+            "spe": 136
+          }
+        ]
+      }
+    ],
+    "durant": [
+      {
+        "name": "Hone Claws",
+        "abilities": [
+          "hustle"
+        ],
+        "items": [
+          "steeliumz"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "honeclaws"
+          ],
+          [
+            "ironhead"
+          ],
+          [
+            "superpower"
+          ],
+          [
+            "crunch",
+            "rockslide"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 4,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "hydreigon": [
+      {
+        "name": "Choice Scarf",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "choicescarf"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "dracometeor"
+          ],
+          [
+            "darkpulse"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "fireblast"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Defog",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "dragoniumz",
+          "dreadplate"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "defog"
+          ],
+          [
+            "darkpulse"
+          ],
+          [
+            "roost"
+          ],
+          [
+            "dracometeor"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Taunt",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "lifeorb",
+          "dragoniumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "taunt"
+          ],
+          [
+            "darkpulse"
+          ],
+          [
+            "roost"
+          ],
+          [
+            "dracometeor"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Life Orb Attacker",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "dracometeor"
+          ],
+          [
+            "darkpulse"
+          ],
+          [
+            "flashcannon"
+          ],
+          [
+            "roost",
+            "fireblast"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Specs",
+        "abilities": [
+          "levitate"
+        ],
+        "items": [
+          "choicespecs"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "dracometeor"
+          ],
+          [
+            "darkpulse"
+          ],
+          [
+            "flashcannon",
+            "uturn"
+          ],
+          [
+            "fireblast",
+            "uturn"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "cobalion": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "justified"
+        ],
+        "items": [
+          "fightiniumz",
+          "rockyhelmet",
+          "shucaberry"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "ironhead"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "stealthrock",
+            "rockpolish"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Calm Mind",
+        "abilities": [
+          "justified"
+        ],
+        "items": [
+          "fightiniumz",
+          "electriumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "calmmind"
+          ],
+          [
+            "flashcannon"
+          ],
+          [
+            "focusblast"
+          ],
+          [
+            "hiddenpowergrass",
+            "voltswitch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "terrakion": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "justified"
+        ],
+        "items": [
+          "rockiumz",
+          "fightiniumz"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "stoneedge"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "earthquake",
+            "stealthrock"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "justified"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "closecombat"
+          ],
+          [
+            "stoneedge"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "toxic",
+            "quickattack"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "tornadus": [
+      {
+        "name": "Life Orb",
+        "abilities": [
+          "defiant",
+          "prankster"
+        ],
+        "items": [
+          "lifeorb"
+        ],
+        "natures": [
+          "hasty"
+        ],
+        "moves": [
+          [
+            "hurricane"
+          ],
+          [
+            "heatwave"
+          ],
+          [
+            "superpower"
+          ],
+          [
+            "grassknot",
+            "defog",
+            "tailwind"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 4,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Offensive Support",
+        "abilities": [
+          "prankster"
+        ],
+        "items": [
+          "flyiniumz"
+        ],
+        "natures": [
+          "hasty",
+          "timid"
+        ],
+        "moves": [
+          [
+            "hurricane"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "superpower",
+            "heatwave"
+          ],
+          [
+            "defog",
+            "tailwind"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 4,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "kyurem": [
+      {
+        "name": "SubRoost",
+        "abilities": [
+          "pressure"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "icebeam"
+          ],
+          [
+            "substitute"
+          ],
+          [
+            "earthpower"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 56,
+            "atk": 0,
+            "def": 0,
+            "spa": 200,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Specs",
+        "abilities": [
+          "pressure"
+        ],
+        "items": [
+          "choicespecs"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "dracometeor"
+          ],
+          [
+            "icebeam"
+          ],
+          [
+            "hiddenpowerfire"
+          ],
+          [
+            "earthpower"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "chesnaught": [
+      {
+        "name": "Spikes",
+        "abilities": [
+          "bulletproof"
+        ],
+        "items": [
+          "leftovers",
+          "rockyhelmet"
+        ],
+        "natures": [
+          "impish"
+        ],
+        "moves": [
+          [
+            "spikes"
+          ],
+          [
+            "woodhammer",
+            "roar"
+          ],
+          [
+            "drainpunch"
+          ],
+          [
+            "synthesis"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 244,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 0,
+            "spe": 12
+          }
+        ]
+      }
+    ],
+    "talonflame": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "galewings"
+        ],
+        "items": [
+          "flyiniumz"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "bravebird"
+          ],
+          [
+            "flareblitz",
+            "flamecharge"
+          ],
+          [
+            "taunt",
+            "roost",
+            "flamecharge"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "florges": [
+      {
+        "name": "Cleric",
+        "abilities": [
+          "symbiosis"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "moonblast"
+          ],
+          [
+            "synthesis"
+          ],
+          [
+            "aromatherapy"
+          ],
+          [
+            "wish",
+            "toxic"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "doublade": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "noguard"
+        ],
+        "items": [
+          "eviolite"
+        ],
+        "natures": [
+          "brave",
+          "adamant"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "gyroball",
+            "ironhead"
+          ],
+          [
+            "shadowclaw",
+            "sacredsword"
+          ],
+          [
+            "shadowsneak"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 240,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 16,
+            "spe": 0
+          }
+        ],
+        "ivs": [
+          {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "barbaracle": [
+      {
+        "name": "Shell Smash",
+        "abilities": [
+          "toughclaws"
+        ],
+        "items": [
+          "rockiumz"
+        ],
+        "natures": [
+          "naive",
+          "jolly"
+        ],
+        "moves": [
+          [
+            "shellsmash"
+          ],
+          [
+            "stoneedge"
+          ],
+          [
+            "liquidation"
+          ],
+          [
+            "grassknot",
+            "earthquake"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 4,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "aurorus": [
+      {
+        "name": "Aurora Veil Lead",
+        "abilities": [
+          "snowwarning"
+        ],
+        "items": [
+          "focussash"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "freezedry"
+          ],
+          [
+            "hiddenpowerfire",
+            "blizzard"
+          ],
+          [
+            "encore",
+            "thunderwave"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "sylveon": [
+      {
+        "name": "Cleric",
+        "abilities": [
+          "pixilate"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "hypervoice"
+          ],
+          [
+            "wish"
+          ],
+          [
+            "protect"
+          ],
+          [
+            "healbell"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 4,
+            "spd": 0,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "klefki": [
+      {
+        "name": "Support",
+        "abilities": [
+          "prankster"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "careful"
+        ],
+        "moves": [
+          [
+            "spikes"
+          ],
+          [
+            "thunderwave"
+          ],
+          [
+            "toxic",
+            "magnetrise"
+          ],
+          [
+            "playrough"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 248,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 252,
+            "spe": 8
+          }
+        ]
+      }
+    ],
+    "zygarde10": [
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "aurabreak"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "thousandarrows"
+          ],
+          [
+            "outrage"
+          ],
+          [
+            "extremespeed"
+          ],
+          [
+            "toxic",
+            "earthquake"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "diancie": [
+      {
+        "name": "Support",
+        "abilities": [
+          "clearbody"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "calm",
+          "sassy"
+        ],
+        "moves": [
+          [
+            "stealthrock",
+            "diamondstorm"
+          ],
+          [
+            "healbell",
+            "diamondstorm"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "moonblast"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 252,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "hoopa": [
+      {
+        "name": "Nasty Plot",
+        "abilities": [
+          "magician"
+        ],
+        "items": [
+          "fightiniumz",
+          "ghostiumz"
+        ],
+        "natures": [
+          "modest",
+          "timid"
+        ],
+        "moves": [
+          [
+            "nastyplot"
+          ],
+          [
+            "shadowball"
+          ],
+          [
+            "focusblast"
+          ],
+          [
+            "substitute"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "volcanion": [
+      {
+        "name": "Defog",
+        "abilities": [
+          "waterabsorb"
+        ],
+        "items": [
+          "shucaberry",
+          "leftovers"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "defog"
+          ],
+          [
+            "steameruption"
+          ],
+          [
+            "flamethrower"
+          ],
+          [
+            "sludgebomb"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 40,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 216
+          }
+        ]
+      },
+      {
+        "name": "Choice Specs",
+        "abilities": [
+          "waterabsorb"
+        ],
+        "items": [
+          "choicespecs"
+        ],
+        "natures": [
+          "modest",
+          "timid"
+        ],
+        "moves": [
+          [
+            "steameruption"
+          ],
+          [
+            "fireblast",
+            "flamethrower"
+          ],
+          [
+            "earthpower",
+            "hiddenpowerelectric"
+          ],
+          [
+            "sludgebomb"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Toxic",
+        "abilities": [
+          "waterabsorb"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "steameruption"
+          ],
+          [
+            "flamethrower"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "protect",
+            "substitute"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 248,
+            "atk": 0,
+            "def": 0,
+            "spa": 44,
+            "spd": 0,
+            "spe": 216
+          }
+        ]
+      }
+    ],
+    "decidueye": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "overgrow"
+        ],
+        "items": [
+          "decidiumz"
+        ],
+        "natures": [
+          "jolly",
+          "adamant"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "substitute"
+          ],
+          [
+            "leafblade"
+          ],
+          [
+            "spiritshackle"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 32,
+            "atk": 224,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "primarina": [
+      {
+        "name": "Choice Specs",
+        "abilities": [
+          "torrent"
+        ],
+        "items": [
+          "choicespecs"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "hydropump"
+          ],
+          [
+            "moonblast"
+          ],
+          [
+            "sparklingaria"
+          ],
+          [
+            "psychic"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 40,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 216
+          }
+        ]
+      },
+      {
+        "name": "Defensive",
+        "abilities": [
+          "torrent"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "scald"
+          ],
+          [
+            "moonblast"
+          ],
+          [
+            "rest"
+          ],
+          [
+            "sleeptalk"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 252,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "araquanid": [
+      {
+        "name": "Sticky Web",
+        "abilities": [
+          "waterbubble"
+        ],
+        "items": [
+          "splashplate",
+          "focussash"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "stickyweb"
+          ],
+          [
+            "liquidation"
+          ],
+          [
+            "leechlife"
+          ],
+          [
+            "magiccoat"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 148,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 108
+          }
+        ]
+      }
+    ],
+    "salazzle": [
+      {
+        "name": "Nasty Plot",
+        "abilities": [
+          "oblivious"
+        ],
+        "items": [
+          "poisoniumz"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "nastyplot"
+          ],
+          [
+            "sludgewave"
+          ],
+          [
+            "fireblast"
+          ],
+          [
+            "hiddenpowergrass"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 24,
+            "spa": 232,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Corrosion",
+        "abilities": [
+          "corrosion"
+        ],
+        "items": [
+          "blacksludge"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "toxic"
+          ],
+          [
+            "protect"
+          ],
+          [
+            "flamethrower"
+          ],
+          [
+            "substitute",
+            "taunt"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 248,
+            "atk": 0,
+            "def": 8,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "bewear": [
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "fluffy"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "jolly",
+          "adamant"
+        ],
+        "moves": [
+          [
+            "return"
+          ],
+          [
+            "superpower"
+          ],
+          [
+            "shadowclaw",
+            "earthquake"
+          ],
+          [
+            "facade"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "fluffy"
+        ],
+        "items": [
+          "normaliumz"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "drainpunch"
+          ],
+          [
+            "doubleedge"
+          ],
+          [
+            "earthquake"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "tsareena": [
+      {
+        "name": "Choice Band",
+        "abilities": [
+          "queenlymajesty"
+        ],
+        "items": [
+          "choiceband"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "powerwhip"
+          ],
+          [
+            "knockoff",
+            "rapidspin"
+          ],
+          [
+            "highjumpkick"
+          ],
+          [
+            "uturn"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Offensive Utility",
+        "abilities": [
+          "queenlymajesty"
+        ],
+        "items": [
+          "lumberry"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "rapidspin"
+          ],
+          [
+            "powerwhip"
+          ],
+          [
+            "uturn"
+          ],
+          [
+            "highjumpkick",
+            "knockoff"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "palossand": [
+      {
+        "name": "Stealth Rock",
+        "abilities": [
+          "watercompaction"
+        ],
+        "items": [
+          "leftovers",
+          "colburberry"
+        ],
+        "natures": [
+          "bold"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "earthpower"
+          ],
+          [
+            "shoreup"
+          ],
+          [
+            "toxic"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 164,
+            "spa": 0,
+            "spd": 92,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "pyukumuku": [
+      {
+        "name": "Specially Defensive",
+        "abilities": [
+          "unaware"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "calm"
+        ],
+        "moves": [
+          [
+            "block"
+          ],
+          [
+            "toxic",
+            "spite"
+          ],
+          [
+            "soak",
+            "rest"
+          ],
+          [
+            "recover"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 252,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "silvallysteel": [
+      {
+        "name": "Defog Pivot",
+        "abilities": [
+          "rkssystem"
+        ],
+        "items": [
+          "steelmemory"
+        ],
+        "natures": [
+          "calm"
+        ],
+        "moves": [
+          [
+            "defog"
+          ],
+          [
+            "partingshot"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "flamethrower"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 200,
+            "spe": 56
+          }
+        ]
+      }
+    ],
+    "mimikyu": [
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "disguise"
+        ],
+        "items": [
+          "lifeorb",
+          "ghostiumz"
+        ],
+        "natures": [
+          "adamant",
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "shadowclaw"
+          ],
+          [
+            "playrough"
+          ],
+          [
+            "shadowsneak"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "nihilego": [
+      {
+        "name": "3 Attacks",
+        "abilities": [
+          "beastboost"
+        ],
+        "items": [
+          "blacksludge",
+          "electriumz",
+          "lifeorb"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "sludgewave"
+          ],
+          [
+            "thunderbolt"
+          ],
+          [
+            "grassknot",
+            "hiddenpowerice",
+            "powergem"
+          ],
+          [
+            "stealthrock",
+            "protect",
+            "toxicspikes"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Choice Scarf",
+        "abilities": [
+          "beastboost"
+        ],
+        "items": [
+          "choicescarf"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "powergem"
+          ],
+          [
+            "sludgewave"
+          ],
+          [
+            "grassknot"
+          ],
+          [
+            "thunderbolt",
+            "dazzlinggleam"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Stall Utility",
+        "abilities": [
+          "beastboost"
+        ],
+        "items": [
+          "blacksludge"
+        ],
+        "natures": [
+          "timid"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "sludgewave"
+          ],
+          [
+            "protect",
+            "painsplit"
+          ],
+          [
+            "powergem",
+            "thunderbolt"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 4,
+            "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ],
+    "necrozma": [
+      {
+        "name": "Stealth Rock",
+        "abilities": [
+          "prismarmor"
+        ],
+        "items": [
+          "metronome",
+          "iapapaberry"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "photongeyser"
+          ],
+          [
+            "heatwave"
+          ],
+          [
+            "signalbeam"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 108,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 144
+          }
+        ]
+      },
+      {
+        "name": "Choice Specs",
+        "abilities": [
+          "prismarmor"
+        ],
+        "items": [
+          "choicespecs"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "photongeyser"
+          ],
+          [
+            "earthpower"
+          ],
+          [
+            "heatwave"
+          ],
+          [
+            "signalbeam"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Calm Mind",
+        "abilities": [
+          "prismarmor"
+        ],
+        "items": [
+          "psychiumz",
+          "wikiberry"
+        ],
+        "natures": [
+          "modest"
+        ],
+        "moves": [
+          [
+            "calmmind"
+          ],
+          [
+            "photongeyser"
+          ],
+          [
+            "heatwave"
+          ],
+          [
+            "signalbeam"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 68,
+            "atk": 0,
+            "def": 0,
+            "spa": 252,
+            "spd": 0,
+            "spe": 188
+          }
+        ]
+      }
+    ],
+    "stakataka": [
+      {
+        "name": "Offensive Trick Room",
+        "abilities": [
+          "beastboost"
+        ],
+        "items": [
+          "rockiumz"
+        ],
+        "natures": [
+          "lonely"
+        ],
+        "moves": [
+          [
+            "trickroom"
+          ],
+          [
+            "gyroball"
+          ],
+          [
+            "stoneedge"
+          ],
+          [
+            "earthquake"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 0
+          }
+        ],
+        "ivs": [
+          {
+            "hp": 31,
+            "atk": 31,
+            "def": 15,
+            "spa": 31,
+            "spd": 31,
+            "spe": 0
+          }
+        ]
+      },
+      {
+        "name": "Defensive",
+        "abilities": [
+          "beastboost"
+        ],
+        "items": [
+          "leftovers"
+        ],
+        "natures": [
+          "sassy"
+        ],
+        "moves": [
+          [
+            "gyroball"
+          ],
+          [
+            "rockblast"
+          ],
+          [
+            "stealthrock"
+          ],
+          [
+            "protect",
+            "toxic"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 4,
+            "spa": 0,
+            "spd": 252,
+            "spe": 0
+          }
+        ],
+        "ivs": [
+          {
+            "hp": 31,
+            "atk": 31,
+            "def": 31,
+            "spa": 31,
+            "spd": 31,
+            "spe": 0
+          }
+        ]
+      }
+    ],
+    "zeraora": [
+      {
+        "name": "Mixed Attacker",
+        "abilities": [
+          "voltabsorb"
+        ],
+        "items": [
+          "lifeorb",
+          "expertbelt",
+          "shucaberry"
+        ],
+        "natures": [
+          "naive"
+        ],
+        "moves": [
+          [
+            "plasmafists"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "grassknot"
+          ],
+          [
+            "knockoff",
+            "voltswitch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 4,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Bulk Up",
+        "abilities": [
+          "voltabsorb"
+        ],
+        "items": [
+          "electriumz",
+          "shucaberry",
+          "normaliumz"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "bulkup"
+          ],
+          [
+            "plasmafists"
+          ],
+          [
+            "closecombat"
+          ],
+          [
+            "knockoff",
+            "gigaimpact"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -201,23 +201,20 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	const species = dex.species.get(opponent.species);
 	const revealed: string[] = [...new Set(opponent.moves.map(toID))];
 	const data = strategyData(formatId);
-	// Forme identity comes from public protocol, never from a guessed Mega Stone.
-	const nativeSets = data[species.id] || data[presetSpeciesId(opponent.species, formatId)] || [];
-	// Gen 7 stores Mega sets under separate forme keys. They describe possible loadouts
-	// before evolution too; still compute current stats/types/ability from the public base forme.
-	const megaSets = !species.isMega && ['gen6ou', 'gen7ou'].includes(toID(formatId)) ?
-		megaPresetForms(opponent.species, formatId).flatMap(forme =>
-			nativeSets.some(set => set.items.includes(toID(forme.requiredItem))) ? [] : data[forme.id] || []) : [];
-	const sets = [...nativeSets, ...megaSets];
+	// Mega forms share their base species' loadouts; battle stats still use the public form.
+	const presetSpecies = species.isMega ? species.baseSpecies : opponent.species;
+	const sets = data[toID(presetSpecies)] || data[presetSpeciesId(presetSpecies, formatId)] || [];
 	const hypotheses: OpponentHypothesis[] = [];
 	const originalItem = toID(opponent.originalItem ||
 		(opponent.itemKnown && !opponent.itemChanged && !opponent.itemLost ? opponent.item : ''));
 	const listedItem = sets.some(set => set.items.includes(originalItem));
 	for (const set of sets) {
+		// A public Mega form requires a matching stone in the source loadout.
+		const presetItems = set.items.filter(item => !species.isMega ||
+			dex.items.get(item).megaStone?.[species.baseSpecies] === species.name);
 		// An unlisted public item replaces the item, not the preset's spread or move pool.
-		const items = (originalItem && !listedItem ? [originalItem] : set.items).filter(item =>
-			(!originalItem || item === originalItem) &&
-			(!species.isMega || dex.items.get(item).megaStone?.[species.baseSpecies] === species.name));
+		const items = (originalItem && !listedItem && !species.isMega ? [originalItem] : presetItems)
+			.filter(item => !originalItem || item === originalItem);
 		const native = toID(opponent.observedAbility);
 		// Sources sometimes list the Mega ability even for a pre-evolution set.
 		const abilities = species.isMega ? [toID(species.abilities[0])] :

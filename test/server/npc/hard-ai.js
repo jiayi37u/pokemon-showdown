@@ -747,6 +747,33 @@ describe('Hard generic opponent presets', () => {
 			evaluator.damage({ ...actor, item: 'Sitrus Berry' }, state.opponent.active[0], move).average * 1.8);
 	});
 
+	for (const format of ['gen6ou', 'gen6customgame', 'gen7ou', 'gen7customgame']) {
+		it(`uses species loadouts before and after Mega evolution in ${format}`, () => {
+			const game = setup([mon('Garchomp', ['earthquake'])], [mon('Blissey', ['icebeam'])], { format });
+			const infer = () => {
+				const state = buildBattleStateWithTracker(battle.p2.activeRequest, null, game.ai.getTracker(), { formatId: format });
+				return inferOpponent(state.opponent.active[0], format);
+			};
+			const source = require(`../../../data/npc/strategies/gen${Dex.forFormat(format).gen}ou.json`).species;
+			assert.equal(source.garchompmega, undefined);
+			const before = infer();
+			assert(before.some(m => m.pokemon.item === 'garchompite'));
+			assert(before.some(m => m.pokemon.item !== 'garchompite'));
+			assert(before.every(m => m.matched && m.pokemon.species === 'Garchomp'));
+			game.ai.getTracker().parseMessage('|detailschange|p1a: Garchomp|Garchomp-Mega, M');
+			const after = infer();
+			assert(after.length);
+			assert(after.every(m => m.matched && m.pokemon.item === 'garchompite' &&
+				m.pokemon.species === 'Garchomp-Mega' && Dex.toID(m.pokemon.ability) === 'sandforce'));
+			assert.deepEqual(new Set(after.map(m => m.name)),
+				new Set(source.garchomp.filter(set => set.items.includes('garchompite')).map(set => set.name)));
+			for (const model of after) {
+				assert.deepEqual(model.pokemon.baseStats,
+					computeStatsFromPreset(Dex.forFormat(format).species.get('Garchomp-Mega').baseStats, 100, model.spread));
+			}
+		});
+	}
+
 	for (const format of ['gen7ou', 'gen9nationaldex']) {
 		it(`uses Venusaur until public Mega evolution in ${format}`, () => {
 			const game = setup([mon('Venusaur', ['gigadrain'], { item: 'Venusaurite' })], [mon('Blissey', ['icebeam'])], { format });

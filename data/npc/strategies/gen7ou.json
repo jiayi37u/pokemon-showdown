@@ -4,7 +4,7 @@
   "sourceSha256": "09d920f033c693576b0841849451a6c66f208a43e9737fb8286baf14ca7f5e14",
   "reference": "https://www.smogon.com/dex/sm/formats/ou/",
   "species": {
-    "venusaurmega": [
+    "venusaur": [
       {
         "name": "Defensive",
         "abilities": [
@@ -42,7 +42,7 @@
         ]
       }
     ],
-    "charizardmegax": [
+    "charizard": [
       {
         "name": "Dragon Dance",
         "abilities": [
@@ -81,44 +81,6 @@
         ]
       },
       {
-        "name": "Swords Dance",
-        "abilities": [
-          "toughclaws"
-        ],
-        "items": [
-          "charizarditex"
-        ],
-        "natures": [
-          "jolly"
-        ],
-        "moves": [
-          [
-            "swordsdance"
-          ],
-          [
-            "flareblitz"
-          ],
-          [
-            "dragonclaw"
-          ],
-          [
-            "roost"
-          ]
-        ],
-        "evs": [
-          {
-            "hp": 0,
-            "atk": 252,
-            "def": 4,
-            "spa": 0,
-            "spd": 0,
-            "spe": 252
-          }
-        ]
-      }
-    ],
-    "charizardmegay": [
-      {
         "name": "Drought Wallbreaker Y",
         "abilities": [
           "blaze"
@@ -151,6 +113,42 @@
             "atk": 0,
             "def": 4,
             "spa": 252,
+            "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Swords Dance",
+        "abilities": [
+          "toughclaws"
+        ],
+        "items": [
+          "charizarditex"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "swordsdance"
+          ],
+          [
+            "flareblitz"
+          ],
+          [
+            "dragonclaw"
+          ],
+          [
+            "roost"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 4,
+            "spa": 0,
             "spd": 0,
             "spe": 252
           }
@@ -396,7 +394,7 @@
         ]
       }
     ],
-    "alakazammega": [
+    "alakazam": [
       {
         "name": "Offensive",
         "abilities": [
@@ -522,9 +520,7 @@
             "spe": 0
           }
         ]
-      }
-    ],
-    "slowbromega": [
+      },
       {
         "name": "Paper Shell (Mega)",
         "abilities": [
@@ -779,7 +775,7 @@
         ]
       }
     ],
-    "pinsirmega": [
+    "pinsir": [
       {
         "name": "Swords Dance",
         "abilities": [
@@ -820,45 +816,6 @@
     ],
     "gyarados": [
       {
-        "name": "Flyinium Z",
-        "abilities": [
-          "moxie"
-        ],
-        "items": [
-          "flyiniumz"
-        ],
-        "natures": [
-          "jolly"
-        ],
-        "moves": [
-          [
-            "dragondance"
-          ],
-          [
-            "waterfall"
-          ],
-          [
-            "bounce"
-          ],
-          [
-            "taunt",
-            "earthquake"
-          ]
-        ],
-        "evs": [
-          {
-            "hp": 0,
-            "atk": 252,
-            "def": 0,
-            "spa": 0,
-            "spd": 4,
-            "spe": 252
-          }
-        ]
-      }
-    ],
-    "gyaradosmega": [
-      {
         "name": "Mega Dragon Dance",
         "abilities": [
           "intimidate"
@@ -883,6 +840,43 @@
           [
             "earthquake",
             "waterfall"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Flyinium Z",
+        "abilities": [
+          "moxie"
+        ],
+        "items": [
+          "flyiniumz"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "dragondance"
+          ],
+          [
+            "waterfall"
+          ],
+          [
+            "bounce"
+          ],
+          [
+            "taunt",
+            "earthquake"
           ]
         ],
         "evs": [
@@ -1249,7 +1243,7 @@
         ]
       }
     ],
-    "scizormega": [
+    "scizor": [
       {
         "name": "Swords Dance",
         "abilities": [
@@ -1288,7 +1282,7 @@
         ]
       }
     ],
-    "heracrossmega": [
+    "heracross": [
       {
         "name": "Wallbreaker",
         "abilities": [
@@ -1488,6 +1482,84 @@
     ],
     "tyranitar": [
       {
+        "name": "Pursuit",
+        "abilities": [
+          "sandstream"
+        ],
+        "items": [
+          "tyranitarite"
+        ],
+        "natures": [
+          "adamant"
+        ],
+        "moves": [
+          [
+            "stealthrock",
+            "crunch",
+            "icepunch"
+          ],
+          [
+            "stoneedge"
+          ],
+          [
+            "pursuit"
+          ],
+          [
+            "firepunch",
+            "earthquake",
+            "crunch",
+            "icepunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 132,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 0,
+            "spe": 124
+          }
+        ]
+      },
+      {
+        "name": "Dragon Dance",
+        "abilities": [
+          "sandstream"
+        ],
+        "items": [
+          "tyranitarite"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "dragondance"
+          ],
+          [
+            "stoneedge"
+          ],
+          [
+            "firepunch",
+            "earthquake"
+          ],
+          [
+            "icepunch"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 0,
+            "atk": 252,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
+            "spe": 252
+          }
+        ]
+      },
+      {
         "name": "Choice Scarf",
         "abilities": [
           "sandstream"
@@ -1602,87 +1674,7 @@
         ]
       }
     ],
-    "tyranitarmega": [
-      {
-        "name": "Pursuit",
-        "abilities": [
-          "sandstream"
-        ],
-        "items": [
-          "tyranitarite"
-        ],
-        "natures": [
-          "adamant"
-        ],
-        "moves": [
-          [
-            "stealthrock",
-            "crunch",
-            "icepunch"
-          ],
-          [
-            "stoneedge"
-          ],
-          [
-            "pursuit"
-          ],
-          [
-            "firepunch",
-            "earthquake",
-            "crunch",
-            "icepunch"
-          ]
-        ],
-        "evs": [
-          {
-            "hp": 132,
-            "atk": 252,
-            "def": 0,
-            "spa": 0,
-            "spd": 0,
-            "spe": 124
-          }
-        ]
-      },
-      {
-        "name": "Dragon Dance",
-        "abilities": [
-          "sandstream"
-        ],
-        "items": [
-          "tyranitarite"
-        ],
-        "natures": [
-          "jolly"
-        ],
-        "moves": [
-          [
-            "dragondance"
-          ],
-          [
-            "stoneedge"
-          ],
-          [
-            "firepunch",
-            "earthquake"
-          ],
-          [
-            "icepunch"
-          ]
-        ],
-        "evs": [
-          {
-            "hp": 0,
-            "atk": 252,
-            "def": 0,
-            "spa": 0,
-            "spd": 4,
-            "spe": 252
-          }
-        ]
-      }
-    ],
-    "swampertmega": [
+    "swampert": [
       {
         "name": "Rain Sweeper",
         "abilities": [
@@ -1866,7 +1858,7 @@
         ]
       }
     ],
-    "sableyemega": [
+    "sableye": [
       {
         "name": "Utility",
         "abilities": [
@@ -1904,7 +1896,7 @@
         ]
       }
     ],
-    "mawilemega": [
+    "mawile": [
       {
         "name": "Swords Dance",
         "abilities": [
@@ -2017,7 +2009,7 @@
         ]
       }
     ],
-    "aggronmega": [
+    "aggron": [
       {
         "name": "Mega Tank",
         "abilities": [
@@ -2057,7 +2049,7 @@
         ]
       }
     ],
-    "medichammega": [
+    "medicham": [
       {
         "name": "All-out Attacker",
         "abilities": [
@@ -2098,7 +2090,7 @@
         ]
       }
     ],
-    "cameruptmega": [
+    "camerupt": [
       {
         "name": "Offensive Stealth Rock",
         "abilities": [
@@ -2149,7 +2141,7 @@
         ]
       }
     ],
-    "altariamega": [
+    "altaria": [
       {
         "name": "Utility",
         "abilities": [
@@ -2266,7 +2258,7 @@
         ]
       }
     ],
-    "latiasmega": [
+    "latias": [
       {
         "name": "Utility",
         "abilities": [
@@ -2346,7 +2338,7 @@
         ]
       }
     ],
-    "latiosmega": [
+    "latios": [
       {
         "name": "Mega Mixed Attacker",
         "abilities": [
@@ -2535,7 +2527,7 @@
         ]
       }
     ],
-    "lopunnymega": [
+    "lopunny": [
       {
         "name": "All-out Attacker",
         "abilities": [
@@ -2656,46 +2648,6 @@
         ]
       },
       {
-        "name": "Tank",
-        "abilities": [
-          "roughskin"
-        ],
-        "items": [
-          "rockyhelmet"
-        ],
-        "natures": [
-          "jolly"
-        ],
-        "moves": [
-          [
-            "stealthrock"
-          ],
-          [
-            "earthquake"
-          ],
-          [
-            "toxic"
-          ],
-          [
-            "fireblast",
-            "roar",
-            "dragontail"
-          ]
-        ],
-        "evs": [
-          {
-            "hp": 252,
-            "atk": 0,
-            "def": 0,
-            "spa": 0,
-            "spd": 4,
-            "spe": 252
-          }
-        ]
-      }
-    ],
-    "garchompmega": [
-      {
         "name": "Mixed Mega",
         "abilities": [
           "roughskin"
@@ -2729,6 +2681,44 @@
             "def": 0,
             "spa": 252,
             "spd": 0,
+            "spe": 252
+          }
+        ]
+      },
+      {
+        "name": "Tank",
+        "abilities": [
+          "roughskin"
+        ],
+        "items": [
+          "rockyhelmet"
+        ],
+        "natures": [
+          "jolly"
+        ],
+        "moves": [
+          [
+            "stealthrock"
+          ],
+          [
+            "earthquake"
+          ],
+          [
+            "toxic"
+          ],
+          [
+            "fireblast",
+            "roar",
+            "dragontail"
+          ]
+        ],
+        "evs": [
+          {
+            "hp": 252,
+            "atk": 0,
+            "def": 0,
+            "spa": 0,
+            "spd": 4,
             "spe": 252
           }
         ]
@@ -3157,7 +3147,7 @@
         ]
       }
     ],
-    "gallademega": [
+    "gallade": [
       {
         "name": "Swords Dance",
         "abilities": [
@@ -5277,7 +5267,7 @@
         ]
       }
     ],
-    "dianciemega": [
+    "diancie": [
       {
         "name": "Offensive",
         "abilities": [

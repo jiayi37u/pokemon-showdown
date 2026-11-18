@@ -109,6 +109,16 @@ export function getOpponentPreset(species: string, formatId = ''): OpponentPrese
 	return entry;
 }
 
+export function filterPresetMoves(moves: readonly string[], formatId: string): string[] {
+	const dex = formatId ? Dex.forFormat(formatId) : Dex;
+	const rules = formatId ? dex.formats.getRuleTable(dex.formats.get(formatId)) : undefined;
+	return moves.filter(name => {
+		if (typeof name !== 'string') return false;
+		const move = dex.moves.get(name);
+		return move.exists && move.gen <= dex.gen && !rules?.isBanned('move:' + move.id);
+	});
+}
+
 /** Keep facts and possible moves separate, including the number of unobserved slots. */
 export function getOpponentMoveKnowledge(
 	species: string, revealedMoves: readonly string[], formatId = ''
@@ -121,10 +131,9 @@ export function getOpponentMoveKnowledge(
 	const candidates = new Set<string>();
 	const presetMoves = getOpponentPreset(species, formatId)?.moves;
 	if (remainingSlots && Array.isArray(presetMoves)) {
-		for (const name of presetMoves) {
-			if (typeof name !== 'string') continue;
+		for (const name of filterPresetMoves(presetMoves, formatId)) {
 			const move = dex.moves.get(name);
-			if (move.exists && move.gen <= dex.gen && !revealed.has(move.id) &&
+			if (!revealed.has(move.id) &&
 				!(revealed.has('hiddenpower' as ID) && move.id.startsWith('hiddenpower'))) candidates.add(move.id);
 		}
 	}

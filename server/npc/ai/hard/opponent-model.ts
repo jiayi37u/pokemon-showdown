@@ -19,7 +19,7 @@ import { buildAIMove } from '../cfru/state-builder';
 import { megaEvolutionState } from '../cfru/util/forms';
 import {
 	computeStatsFromPreset, getOpponentPreset, getOpponentMoveKnowledge,
-	canHaveOpponentMoves, presetSpeciesId,
+	canHaveOpponentMoves, filterPresetMoves, presetSpeciesId,
 } from '../cfru/util/opponent-presets';
 
 export type FightingStyle = 'attacker' | 'setup' | 'stall' | 'hazards' | 'screens' | 'cleric' | 'phazer' |
@@ -204,8 +204,6 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	const species = dex.species.get(opponent.species);
 	const revealed: string[] = [...new Set(opponent.moves.map(toID))];
 	const data = strategyData(formatId);
-	const rules = formatId ? dex.formats.getRuleTable(dex.formats.get(formatId)) : undefined;
-	const allowedMove = (id: string) => !rules?.isBanned('move:' + dex.moves.get(id).id);
 	// Mega forms share their base species' loadouts; battle stats still use the public form.
 	const presetSpecies = species.isMega ? species.baseSpecies : opponent.species;
 	const sets = data[toID(presetSpecies)] || data[presetSpeciesId(presetSpecies, formatId)] || [];
@@ -230,7 +228,7 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 				Object.values(species.abilities).some(b => toID(b) === a) ? a : toID(species.abilities[0]));
 		const possibleAbilities = [...new Set(abilities)].filter(a => !native || a === native);
 		if (!items.length || !possibleAbilities.length) continue;
-		const slots = set.moves.map(slot => slot.filter(allowedMove));
+		const slots = set.moves.map(slot => filterPresetMoves(slot, formatId));
 		const pool = slots.flat();
 		const candidates = [...new Set([...revealed, ...pool])].filter(id =>
 			!(id === 'hiddenpower' && pool.some(m => m.startsWith('hiddenpower'))));
@@ -274,7 +272,7 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	const generic = getOpponentPreset(opponent.species, formatId);
 	const preset = generic?.item && excludedItem(generic.item) ? null : generic;
 	const knowledge = getOpponentMoveKnowledge(opponent.species, opponent.moves, formatId);
-	knowledge.presetCandidates = generic && !preset ? [] : knowledge.presetCandidates.filter(allowedMove);
+	if (generic && !preset) knowledge.presetCandidates = [];
 	const stats = computeStatsFromPreset(species.baseStats, opponent.level, preset || {});
 	if (species.baseStats.hp === 1) stats.hp = 1;
 	const fallback = { ...opponent, baseStats: stats, maxHp: stats.hp, moveKnowledge: knowledge,

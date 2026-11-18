@@ -33,6 +33,13 @@ function scenario(revealed, { safeReserve = true } = {}) {
 }
 
 describe('Opponent preset threat moves', () => {
+	it('filters format bans from predictions while retaining revealed moves', () => {
+		const threats = (format, revealed = []) => getOpponentThreatMoves('Ninjask', revealed, format);
+		assert(!threats('gen6ou').includes('batonpass'));
+		assert(threats('gen6customgame').includes('batonpass'));
+		assert(threats('gen6ou', ['Baton Pass']).includes('batonpass'));
+	});
+
 	it('should merge and normalize common moves without changing revealed moves', () => {
 		const revealed = ['Stone Edge', 'Ice Punch'];
 		assert.deepEqual(getOpponentThreatMoves('Tyranitar', revealed), ['stoneedge', 'icepunch', 'crunch']);

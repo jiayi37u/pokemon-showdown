@@ -1770,6 +1770,9 @@ describe('Shared public state pipeline across game types', () => {
 					game.play('move 1', 'move 1 1');
 					let state = game.build();
 					assert.equal(state.opponent.conditions.futureMoves[1], 2);
+					const cast = state.opponent.conditions.futureAttacks[1].castDamage;
+					if (formatId === 'gen4customgame') assert(cast?.average > 0);
+					else assert.equal(cast, undefined);
 					assert(!state.self.active[0].volatiles.has(moveId));
 					const score = target => new ScoringEngine(DEFAULT_AI_CONFIG, createAICache(state.turn))
 						.scoreMove(state, state.self.active[0], buildAIMove({ id: moveId }, 1, formatId), target);

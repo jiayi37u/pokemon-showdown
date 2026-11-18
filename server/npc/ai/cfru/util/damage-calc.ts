@@ -9,6 +9,7 @@
  */
 
 import { Dex, toID } from '../../../../../sim/dex';
+import type { FieldConditionData } from '../../../../../sim/dex-conditions';
 import type { AIPokemon, AIMove, DamageResult, AICache, FieldConditions, SideConditions } from '../types';
 import { getSTABMultiplier, getMoveInteraction, resolveMove, type MoveInteractionContext } from './type-calc';
 import { compareSpeedOrder, getEffectiveSpeed } from './speed';
@@ -1569,7 +1570,9 @@ function residualEvents(pokemon: AIPokemon, weather: string, opponentAbility: st
 		if (damage < 0 && pokemon.volatiles.has('healblock')) return;
 		events.push({ damage, order: effect.onResidualOrder ?? order, subOrder: effect.onResidualSubOrder || 0 });
 	};
-	add(getSandstormDamage(pokemon, weather, field) + getHailDamage(pokemon, weather, field), {}, 1);
+	const weatherOrder = (dex.conditions.get(field?.weatherId || (weather === 'sand' ? 'sandstorm' : weather)) as FieldConditionData)
+		.onFieldResidualOrder ?? 1;
+	add(getSandstormDamage(pokemon, weather, field) + getHailDamage(pokemon, weather, field), {}, weatherOrder);
 	add(-wishRecovery, dex.moves.get('wish').condition!);
 	if (weather === 'rain' && item !== 'utilityumbrella') {
 		if (ability === 'raindish') add(-portion(16), {}, 1);
@@ -1697,7 +1700,8 @@ export function getEffectiveHpAfterSecondary(
 	/** Recovery due this turn, inserted at the ruleset's Wish residual order. */
 	wishRecovery = 0,
 	/** Reuse only when all residual inputs except current HP match. */
-	preparedEffects?: ResidualEffects
+	preparedEffects?: ResidualEffects,
+	fromOrder = -Infinity
 ): number {
 	if (defender.hp <= 0 || beforeOrder === Infinity && defender.volatiles.has('perish0')) return 0;
 	if (preparedEffects && beforeOrder === Infinity) {
@@ -1707,6 +1711,7 @@ export function getEffectiveHpAfterSecondary(
 	let hp = defender.hp;
 	for (const event of residualEvents(defender, weather, attackerAbility, field, wishRecovery)) {
 		if (event.order >= beforeOrder) break;
+		if (event.order < fromOrder) continue;
 		hp = Math.min(defender.maxHp || 100, hp - event.damage);
 		if (hp <= 0) return 0;
 	}

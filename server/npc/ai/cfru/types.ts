@@ -142,7 +142,10 @@ export interface AIPokemon {
 	/** Last move is cleared on entry, but a failed action still consumes Fake Out's first turn. */
 	activeMoveActions?: number;
 	/** Known remaining residual ticks; an absent control duration is unknown. */
-	volatileTurns?: { taunt?: number, encore?: number };
+	volatileTurns?: { taunt?: number, encore?: number, yawn?: number };
+	chargingMove?: string;
+	rampageMove?: string;
+	moveSequence?: { move: string, elapsed: number, storedFraction?: number };
 
 	/** Known moves (only revealed moves for opponent) */
 	moves: string[];
@@ -254,7 +257,7 @@ export interface SideConditions {
 	wishSources?: Record<number, string>;
 	/** Recovery fixed when a projected Wish is cast; public Wishes use their source's estimated HP. */
 	wishAmounts?: Record<number, number>;
-	futureAttacks?: Record<number, { source: string, move: string }>;
+	futureAttacks?: Record<number, { source: string, move: string, castDamage?: { average: number, rolls: readonly number[] } }>;
 	/** Sacrifice healing belongs to a field position, not to a team member. */
 	healingWishes?: Record<number, 'healingwish' | 'lunardance'>;
 }

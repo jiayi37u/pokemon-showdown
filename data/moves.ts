@@ -1307,6 +1307,7 @@ export const Moves: import('../sim/dex-moves').MoveDataTable = {
 		contestType: "Cute",
 	},
 	bide: {
+		actionSequence: 'storeDamage',
 		num: 117,
 		accuracy: true,
 		basePower: 0,
@@ -9575,6 +9576,7 @@ export const Moves: import('../sim/dex-moves').MoveDataTable = {
 		contestType: "Clever",
 	},
 	iceball: {
+		actionSequence: 'chainedHits',
 		num: 301,
 		accuracy: 90,
 		basePower: 30,
@@ -15936,6 +15938,7 @@ export const Moves: import('../sim/dex-moves').MoveDataTable = {
 		contestType: "Cool",
 	},
 	rollout: {
+		actionSequence: 'chainedHits',
 		num: 205,
 		accuracy: 90,
 		basePower: 30,
@@ -20990,6 +20993,7 @@ export const Moves: import('../sim/dex-moves').MoveDataTable = {
 		type: "Fighting",
 	},
 	uproar: {
+		actionSequence: 'timedAttack',
 		num: 253,
 		accuracy: 100,
 		basePower: 90,

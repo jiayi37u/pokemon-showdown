@@ -1123,6 +1123,66 @@ describe('Hard damage-based state search', () => {
 		next = step(next, 'splash', 'splash');
 		assert.equal(next.opponent.active[0].hp, next.opponent.active[0].maxHp);
 	});
+	for (const gen of [3, 4]) for (const move of ['futuresight', 'doomdesire']) {
+		it(`Gen ${gen} ${move} locks typeless damage at cast time, even across two switches`, () => {
+			const formatid = `gen${gen}customgame`;
+			const battle = new Battle({ formatid, seed: '1,2,3,4',
+				p1: { name: 'Own', team: [mon('Jirachi', [move, 'splash'], { nature: 'Modest', evs: { spa: 252 } }), mon('Mew', ['splash'])] },
+				p2: { name: 'Foe', team: [mon('Umbreon', ['splash']), mon('Tyranitar', ['protect', 'splash'])] } });
+			battles.push(battle);
+			const start = projectedState(battle);
+			const cast = step(start, move, 'splash');
+			battle.makeChoices('move 1', 'move 1');
+			const { castDamage } = cast.opponent.conditions.futureAttacks[1];
+			const actual = battle.p2.slotConditions[0].futuremove.moveData.damage;
+			assert(actual >= castDamage.rolls[0] && actual <= castDamage.rolls.at(-1), `${actual} vs ${castDamage.rolls}`);
+			const switched = advancePosition(cast, { switchTo: cast.self.reserve[0] },
+				{ switchTo: cast.opponent.reserve[0] }, () => undefined);
+			const hit = step(switched, 'splash', 'protect');
+			assert.equal(switched.opponent.active[0].hp - hit.opponent.active[0].hp, Math.floor(castDamage.average));
+			assert(supportsMove(start, move));
+		});
+	}
+	for (const move of ['healingwish', 'lunardance']) {
+		it(`Gen 4 ${move} heals its replacement before the remaining attack`, () => {
+			const battle = new Battle({ formatid: 'gen4customgame', p1: { name: 'Own',
+				team: [mon('Latias', [move]), mon('Pikachu', ['splash'])] },
+			p2: { name: 'Foe', team: [mon('Blissey', ['seismictoss'])] } });
+			battles.push(battle); battle.p1.pokemon[1].hp = 1;
+			const state = step(projectedState(battle), move, 'seismictoss');
+			battle.makeChoices('move 1', 'move 1'); battle.makeChoices('switch 2', '');
+			assert.equal(state.self.active[0].species, 'Pikachu');
+			assert.equal(state.self.active[0].hp, battle.p1.active[0].hp);
+			assert.equal(state.self.active[0].hp, state.self.active[0].maxHp - 100);
+			assert(supportsMove(state, move));
+		});
+	}
+	it('raises a delayed-effect tracking error rather than choosing a scored action', () => {
+		const f = fixture([mon('Mew', ['splash'])], [mon('Mew', ['splash'])]);
+		const run = () => searchPosition(f.state, f.evaluator, [action('splash')], new Map());
+		f.state.self.conditions.wishes[1] = 1;
+		assert.throws(run, /self slot 1 Wish: missing caster HP/);
+		f.state.field.formatId = 'gen4customgame'; assert(run().choice);
+		f.state.self.conditions.futureMoves[1] = 2;
+		assert.throws(run, /self slot 1 futuremove: missing caster/);
+		f.state.self.conditions.futureAttacks = { 1: { source: f.state.opponent.active[0].ident, move: 'futuresight' } };
+		assert.throws(run, /self slot 1 futuresight: missing cast-time damage/);
+	});
+	for (const gen of [4, 5]) {
+		it(`Gen ${gen} resolves Wish and a lethal Future Sight in PS residual order`, () => {
+			const battle = new Battle({ formatid: `gen${gen}customgame`, seed: '1,2,3,4',
+				p1: { name: 'Own', team: [mon('Mew', ['futuresight', 'splash'])] },
+				p2: { name: 'Foe', team: [mon('Blissey', ['wish', 'splash']), mon('Pikachu', ['splash'])] } });
+			battles.push(battle);
+			if (battle.requestState === 'teampreview') battle.makeChoices();
+			let state = step(projectedState(battle), 'futuresight', 'splash'); battle.makeChoices('move 1', 'move 2');
+			state = step(state, 'splash', 'wish'); battle.makeChoices('move 2', 'move 1');
+			hp(state.opponent.active[0], 1); battle.p2.active[0].hp = 1;
+			state = step(state, 'splash', 'splash'); battle.makeChoices('move 2', 'move 2');
+			assert.equal(state.opponent.active[0].fainted, gen === 5);
+			assert.equal(state.opponent.active[0].fainted, battle.p2.active[0].fainted);
+		});
+	}
 	it('covers every move in the Gen 6 OU preset catalogue', () => {
 		const presets = require('../../../data/npc/strategies/gen6ou.json');
 		for (const id of new Set(Object.values(presets.species).flatMap(sets => sets.flatMap(set => set.moves.flat())))) {
@@ -1174,10 +1234,10 @@ describe('Hard damage-based state search', () => {
 		let f = fixture([mon('Mew', ['bounce'])], [mon('Blissey', ['tackle'])]);
 		let next = step(f.state, 'bounce', 'tackle');
 		assert.equal(next.self.active[0].hp, f.state.self.active[0].hp);
-		assert(next.self.active[0].volatiles.has('bounce'));
+		assert.equal(next.self.active[0].chargingMove, 'bounce');
 		next = step(next, 'bounce', 'tackle');
 		assert(next.opponent.active[0].hp < f.state.opponent.active[0].hp);
-		assert(!next.self.active[0].volatiles.has('bounce'));
+		assert(!next.self.active[0].chargingMove);
 		f = fixture([mon('Mew', ['perishsong', 'magnetrise', 'fairylock'])], [mon('Blissey', ['splash'])]);
 		next = step(f.state, 'perishsong', 'splash');
 		assert(next.self.active[0].volatiles.has('perish2'));
@@ -1437,6 +1497,63 @@ describe('Hard damage-based state search', () => {
 		assert(step(next, 'solarbeam', 'splash').opponent.active[0].hp < next.opponent.active[0].hp);
 		Object.assign(f.state.field, { weather: 'sun', weatherId: 'sunnyday', weatherTurns: 4 });
 		assert(step(f.state, 'solarbeam', 'splash').opponent.active[0].hp < f.state.opponent.active[0].hp);
+	});
+	it('forces exactly the release for either search side, including the last PP', () => {
+		const own = [mon('Mew', ['tackle', 'dig']), mon('Pikachu', ['splash'])];
+		const foe = [mon('Blissey', ['tackle']), mon('Slowbro', ['splash'])];
+		const { state } = fixture(own, foe);
+		state.self.active[0].projection = { pp: { dig: 1, tackle: 10 } };
+		const charged = step(state, 'dig', 'tackle');
+		assert.equal(charged.self.active[0].hp, state.self.active[0].hp);
+		assert.equal(charged.self.active[0].projection.pp.dig, 0);
+		const search = new Search(new MatchupEvaluator(), charged);
+		assert.deepEqual(search.choices(charged, 'self').map(choice => choice.move), ['dig']);
+		const reversed = { ...charged, self: charged.opponent, opponent: charged.self };
+		assert.deepEqual(search.responseProbabilities(reversed).map(reply => [reply.action.move, reply.probability]), [['dig', 1]]);
+		const released = step(charged, 'dig', 'tackle');
+		assert(released.opponent.active[0].hp < charged.opponent.active[0].hp);
+		assert.equal(released.self.active[0].projection.pp.dig, 0);
+		assert(!released.self.active[0].chargingMove);
+	});
+	for (const [move, forced] of [['outrage', 'outrage'], ['petaldance', 'petaldance'],
+		['thrash', 'thrash'], ['hyperbeam', 'recharge'], ['gigaimpact', 'recharge']]) {
+		it(`projects only the committed second turn of ${move} on either side`, () => {
+			const { state } = fixture([mon('Mew', [move, 'splash']), mon('Slowbro', ['splash'])],
+				[mon('Registeel', ['seismictoss', 'protect'])]);
+			state.self.active[0].projection = { pp: { [move]: 1 } };
+			const blocked = step(state, move, 'protect');
+			assert(!blocked.self.active[0].rampageMove && !blocked.self.active[0].volatiles.has('mustrecharge'));
+			const first = step(state, move, 'splash'), search = new Search(new MatchupEvaluator(), first);
+			const decisions = search.choices(first, 'self'), reversed = { ...first, self: first.opponent, opponent: first.self };
+			assert.equal(decisions.length, 1);
+			const only = decisions[0];
+			assert.equal(only.move || only.id, forced);
+			const replies = search.responseProbabilities(reversed);
+			assert.deepEqual(replies, [{ action: only, probability: 1 }]);
+			const next = advancePosition(first, only, action('seismictoss'), () => undefined);
+			assert.equal(next.self.active[0].hp, first.self.active[0].hp - 100);
+			assert.equal(next.self.active[0].projection.pp[move], 0);
+			assert.equal(next.opponent.active[0].hp < first.opponent.active[0].hp, forced !== 'recharge');
+			assert.equal(next.self.active[0].volatiles.has('confusion'), forced !== 'recharge');
+			assert(!next.self.active[0].rampageMove && !next.self.active[0].volatiles.has('mustrecharge'));
+		});
+	}
+	it('settles Yawn after the target acts, through a later Substitute, or clears it on switching', () => {
+		for (const stay of [true, false]) {
+			const { b, state } = fixture([mon('Mew', ['yawn', 'splash'])],
+				[mon('Blissey', ['splash', 'substitute']), mon('Pikachu', ['splash'])]);
+			const first = step(state, 'yawn', 'splash');
+			b.makeChoices('move 1', 'move 1');
+			assert.equal(first.opponent.active[0].status, '');
+			assert.equal(first.opponent.active[0].volatileTurns.yawn, b.p2.active[0].volatiles.yawn.duration);
+			const next = advancePosition(first, action('splash'), stay ? action('substitute') :
+				{ switchTo: first.opponent.reserve[0] }, () => undefined);
+			b.makeChoices('move 2', stay ? 'move 2' : 'switch 2');
+			assert.equal(next.opponent.active[0].status, stay ? 'slp' : '');
+			assert.equal(next.opponent.active[0].status, b.p2.active[0].status);
+			assert.equal(next.opponent.active[0].volatiles.has('substitute'), stay);
+			assert(!next.opponent.team.some(member => member.volatiles.has('yawn')));
+		}
 	});
 	it('applies both versions of Curse and preserves a guaranteed self boost on a KO', () => {
 		const f = fixture([mon('Snorlax', ['curse'])], [mon('Mew', ['splash'])]);

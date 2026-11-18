@@ -86,11 +86,11 @@ describe('Hard safe entry replies', () => {
 		const state = fixture('uturn'), evaluator = new MatchupEvaluator();
 		state.self.active[0].moves.push('solarbeam');
 		const available = evaluator.assess(state);
-		state.self.active[0].projection = { chargingMove: 'solarbeam' };
+		state.self.active[0].chargingMove = 'solarbeam';
 		const charging = evaluator.assess(state);
 		assert(charging.self < available.self);
 		assert.deepEqual(charging, new MatchupEvaluator().assess(state));
-		delete state.self.active[0].projection.chargingMove;
+		delete state.self.active[0].chargingMove;
 		assert.deepEqual(evaluator.assess(state), available);
 	});
 	it('reuses ability-based trapping while respecting Shed Shell', () => {

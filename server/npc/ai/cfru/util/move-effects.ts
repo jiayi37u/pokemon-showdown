@@ -10,15 +10,48 @@ export const protectionMoves = new Set([
 	'protect', 'detect', 'kingsshield', 'spikyshield', 'banefulbunker', 'obstruct', 'silktrap', 'burningbulwark',
 ]);
 
+export function nextChainedHit(move: string, hits: number): AIPokemon['moveSequence'] {
+	return hits < 5 ? { move, elapsed: hits } : undefined;
+}
+
+export function sequencePower(actor: AIPokemon, move: ReturnType<typeof Dex.moves.get>): number {
+	if (move.actionSequence !== 'chainedHits') return 1;
+	const hits = actor.moveSequence?.move === move.id ? actor.moveSequence.elapsed : 0;
+	return 2 ** (hits + Number(actor.volatiles.has('defensecurl')));
+}
+
+export function chargePhase(actor: AIPokemon, move: AIMove, field: FieldConditions) {
+	if (!move.flags.charge || actor.chargingMove === move.id) return 'attack';
+	if (['solarbeam', 'solarblade'].includes(move.id) && field.weather === 'sun' &&
+		effectiveItem(actor, field) !== 'utilityumbrella') return 'attack';
+	return effectiveItem(actor, field) === 'powerherb' && move.id !== 'skydrop' ? 'herb' : 'prepare';
+}
+
+export function chargeHitPower(attacker: AIPokemon, defender: AIPokemon, move: AIMove, field: FieldConditions): number {
+	const phase = defender.chargingMove;
+	if (!phase) return 1;
+	const airborne = ['fly', 'bounce', 'skydrop'].includes(phase);
+	if (airborne && ['gust', 'twister'].includes(move.id) || phase === 'dig' && ['earthquake', 'magnitude'].includes(move.id) ||
+		phase === 'dive' && ['surf', 'whirlpool'].includes(move.id)) return 2;
+	if (airborne && ['skyuppercut', 'thunder', 'hurricane', 'smackdown', 'thousandarrows'].includes(move.id)) return 1;
+	if (effectiveAbility(attacker, field) === 'noguard' || effectiveAbility(defender, field) === 'noguard') return 1;
+	return airborne || ['dig', 'dive', 'phantomforce', 'shadowforce'].includes(phase) ? 0 : 1;
+}
+
 /** Slot recovery uses the caster's HP in Gen 5+, the recipient's HP in older rules. */
 export function pendingWishRecovery(state: BattleState, party: BattleState['self'], recipient: AIPokemon): number {
 	if (party.conditions.wishes[recipient.slot] !== 1 || recipient.volatiles.has('healblock')) return 0;
 	if (rulesDex(state.field).gen <= 4) return Math.floor(recipient.maxHp / 2);
-	const amount = party.conditions.wishAmounts?.[recipient.slot];
+	return wishCasterRecovery(state, party, recipient.slot);
+}
+
+export function wishCasterRecovery(state: BattleState, party: BattleState['self'], slot: number): number {
+	const amount = party.conditions.wishAmounts?.[slot];
 	if (amount !== undefined) return amount;
 	const source = party.team.find(p => toID(p.ident || `${p.ownerSide}:${p.slot}:${p.species}`) ===
-		toID(party.conditions.wishSources?.[recipient.slot]));
-	return source ? Math.floor(source.maxHp / 2) : 0;
+		toID(party.conditions.wishSources?.[slot]));
+	if (!source) throw new Error(`T${state.turn} ${party === state.self ? 'self' : 'opponent'} slot ${slot} Wish: missing caster HP`);
+	return Math.floor(source.maxHp / 2);
 }
 
 /** Shared tactical opportunity; this is not a guaranteed move failure. */
@@ -286,7 +319,7 @@ export function sleepClauseOccupied(field: FieldConditions, team: readonly AIPok
 
 export function statusFailure(
 	state: BattleState, attacker: AIPokemon, target: AIPokemon, move: AIMove,
-	status = inflictedStatus(move, state, attacker)
+	status = inflictedStatus(move, state, attacker), settlingYawn = false
 ): string | undefined {
 	if (move.id === 'psychoshift' && !attacker.status) return 'Psycho Shift requires a status to transfer';
 	if (!status) return;
@@ -298,7 +331,7 @@ export function statusFailure(
 	const interaction = getMoveInteraction(attacker, target, move, field,
 		{ defenderAllies: side.active, isAllyTarget: allied,
 			activePokemon: [...state.self.active, ...state.opponent.active] });
-	if (interaction.blockedBy) return interaction.blockedBy;
+	if (!settlingYawn && interaction.blockedBy) return interaction.blockedBy;
 	if (status === 'confusion') {
 		if (target.volatiles.has('confusion')) return 'Target already confused';
 		if (ability === 'owntempo') return 'Own Tempo prevents confusion';
@@ -309,11 +342,11 @@ export function statusFailure(
 	if (status !== 'confusion' && ability === 'shieldsdown' && toID(target.species) === 'miniormeteor' &&
 		!target.volatiles.has('transform')) return 'Shields Down blocks status in Meteor form';
 	if (move.id === 'yawn' && target.volatiles.has('yawn')) return 'Yawn fails: target is already drowsy';
-	if (target.volatiles.has('substitute') && attacker !== target &&
+	if (!settlingYawn && target.volatiles.has('substitute') && attacker !== target &&
 		!(dex.gen >= 6 && (move.flags.sound || effectiveAbility(attacker, field) === 'infiltrator'))) {
 		return 'Substitute blocks status';
 	}
-	if (side.conditions.safeguard && !allied && effectiveAbility(attacker, field) !== 'infiltrator') {
+	if (!settlingYawn && side.conditions.safeguard && !allied && effectiveAbility(attacker, field) !== 'infiltrator') {
 		return 'Safeguard blocks status';
 	}
 	if (grounded(target, field)) {
@@ -388,11 +421,12 @@ export function estimatedMoveAccuracy(
 	return move.accuracy;
 }
 
-/** Fixed control durations only; randomized conditions remain unknown. */
+/** Gen 4 NPCs estimate three turns for both controls; other formats use their fixed duration if known. */
 export function controlDuration(
 	effect: 'taunt' | 'encore', field: Pick<FieldConditions, 'formatId'>, willMove: boolean, enteredThisTurn: boolean
 ): number | undefined {
 	const dex = rulesDex(field), condition = dex.moves.get(effect).condition;
+	if (dex.gen === 4 || dex.gen === 3 && effect === 'encore') return 3;
 	if (!condition?.duration || condition.durationCallback) return undefined;
 	return condition.duration + (dex.gen >= 5 && !willMove && (effect === 'encore' || !enteredThisTurn) ? 1 : 0);
 }

@@ -29,6 +29,7 @@ import {
 } from './util/pokemon-builder';
 import { getOpponentPreset, getOpponentMoveKnowledge, computeStatsFromPreset } from './util/opponent-presets';
 import { applyRandomBattlePresets } from './util/random-presets';
+import { calculateDamage } from '../hard/damage';
 
 /**
  * Build Pokemon from request data (self)
@@ -251,21 +252,45 @@ export function buildBattleStateFromRequests(
 			team: [...opponentActive, ...opponentReserve], conditions: buildOpponentConditionsFromTracker(tracker) },
 		field,
 	};
-	// A fainted opponent is absent from the living team, but its Wish still has a source HP.
+	// A delayed hit can still use a fainted caster's stats. It is never a switch candidate.
+	for (const [recipient, sources] of [[state.self, state.opponent], [state.opponent, state.self]]) {
+		for (const pending of Object.values(recipient.conditions.futureAttacks || {})) {
+			if (sources.team.some(p => toID(p.ident) === toID(pending.source))) continue;
+			const tracked = sources === state.opponent && tracker.getOpponentTeam().find(p => toID(p.ident) === toID(pending.source));
+			const caster = tracked ? trackedPokemonToAIPokemon(tracked, sources.team.length + 1, false, formatId) :
+				entries.find(entry => toID(entry.pokemon.ident) === toID(pending.source))?.pokemon;
+			if (caster) sources.team.push({ ...caster, active: false });
+		}
+	}
 	for (const [slot, source] of Object.entries(state.opponent.conditions.wishSources || {})) {
-		if (state.opponent.team.some(p => p.ident === source)) continue;
-		const tracked = tracker.getOpponentTeam().find(p => p.ident === source);
+		if (state.opponent.team.some(p => toID(p.ident) === toID(source))) continue;
+		const tracked = tracker.getOpponentTeam().find(p => toID(p.ident) === toID(source));
 		if (tracked) {
 			state.opponent.conditions.wishAmounts ||= {};
 			state.opponent.conditions.wishAmounts[+slot] = Math.floor(
 				trackedPokemonToAIPokemon(tracked, +slot, false, formatId).maxHp / 2);
 		}
 	}
+	for (const [slot, source] of Object.entries(state.self.conditions.wishSources || {})) {
+		const caster = entries.find(entry => toID(entry.pokemon.ident) === toID(source));
+		if (caster) (state.self.conditions.wishAmounts ||= {})[+slot] = Math.floor(caster.pokemon.maxHp / 2);
+	}
 	tracker.rememberEvidenceTeam(state.self.team);
-	tracker.evidence.begin(state, () => {
-		const known = tracker.getEvidenceSelf();
+	const currentContext = (forCast = false) => {
+		const known = tracker.getEvidenceSelf(forCast);
 		if (!known) return;
-		const self = known.map(({ position, pokemon }) => applyPublicMechanics(pokemon, position, tracker, formatId));
+		const self = known.map(({ position, pokemon }) => {
+			if (forCast) {
+				const forme = tracker.getForme(position);
+				if (forme && forme !== pokemon.species) {
+					const species = Dex.forFormat(formatId).species.get(forme);
+					if (pokemon.statSpread) pokemon.baseStats = computeStatsFromPreset(species.baseStats, pokemon.level, pokemon.statSpread);
+					pokemon.species = forme; pokemon.types = species.types;
+				}
+				pokemon = applyTransformation(pokemon, tracker.getTransformation(position), formatId, true);
+			}
+			return applyPublicMechanics(pokemon, position, tracker, formatId);
+		});
 		const opponents = tracker.getActiveOpponents().map(({ position, pokemon }) =>
 			applyPublicMechanics(trackedPokemonToAIPokemon(pokemon, tracker.getFieldSlot(position), true, formatId),
 				position, tracker, formatId));
@@ -273,7 +298,22 @@ export function buildBattleStateFromRequests(
 			field: fieldWithActivePokemon({ ...buildFieldConditionsFromTracker(tracker), formatId }, [...self, ...opponents]),
 			selfConditions: { ...tracker.getOurSideConditions(), wishes: tracker.getWishes(),
 				futureMoves: tracker.getFutureMoves() }, opponentConditions: buildOpponentConditionsFromTracker(tracker) };
-	});
+	};
+	tracker.evidence.begin(state, currentContext);
+	if ((formatId ? Dex.forFormat(formatId) : Dex).gen <= 4) {
+		tracker.captureFutureDamage = (source, target, move) => {
+			const context = currentContext(true);
+			if (!context) return;
+			const participants = [...context.self, ...context.opponents];
+			const at = (pos: string) => participants.find(p => p.ownerSide === pos.slice(0, 2) && p.slot === tracker.getFieldSlot(pos));
+			const attacker = at(source), defender = at(target);
+			if (!attacker || !defender) return;
+			const { average, rolls } = calculateDamage(attacker, defender, buildAIMove({ id: move }, 1, formatId), context.field,
+				undefined, { isDoubles, attackerSideConditions: context.self.includes(attacker) ? context.selfConditions : context.opponentConditions,
+					defenderSideConditions: context.self.includes(defender) ? context.selfConditions : context.opponentConditions });
+			return { average, rolls };
+		};
+	}
 	state.opponentEvidence = tracker.evidence.getHistory();
 	state.actedThisTurn = tracker.getTurnActions();
 	return state;
@@ -302,6 +342,9 @@ function applyPublicMechanics(
 		[pokemon.terastallized] : pokemon.originalTypes;
 	if (pokemon.active) {
 		pokemon.volatileTurns = tracker.getVolatileTurns(identity);
+		pokemon.chargingMove = tracker.getChargingMove(identity);
+		pokemon.rampageMove = tracker.getRampageMove(identity);
+		pokemon.moveSequence = tracker.getMoveSequence(identity);
 		pokemon.usedMoves = tracker.getUsedMoves(identity);
 		pokemon.trapSource = tracker.getTrapSource(identity);
 	}

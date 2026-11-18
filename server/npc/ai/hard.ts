@@ -103,6 +103,12 @@ export class HardAI extends NPCBattleAI {
 		this.sacrificePlans.delete(actor.ident || actor.species);
 		const formatId = this.configCFRU.formatId;
 		const dex = Dex.forFormat(formatId);
+		if (!switches.length && active.moves?.length === 1 && active.moves[0].pp === undefined && moves.length === 1) {
+			const move = moves[0];
+			this.logger.logMoveDecision(state.turn, actor, [], hardMove(move.move, move.slot, formatId), state,
+				['Forced by the battle request; no alternative action']);
+			return { type: 'move', slot: move.slot };
+		}
 		const evaluator = new HardEvaluation(state, formatId, undefined, this.matchups.damageCache);
 		const predictions = evaluator.predictions(actor);
 		const megaState = flags.canMegaEvo ? megaEvolutionState(state, actor) : null;
@@ -114,7 +120,7 @@ export class HardAI extends NPCBattleAI {
 		const candidates: { choice: MoveChoice, result: MoveScore, targetPos?: string, targetName: string }[] = [];
 		for (const choice of moves.filter(m => !m.disabled)) {
 			// Return/Frustration power and Hidden Power type are public in our own side request.
-			const requestId = moveActor.moves[choice.slot - 1] || choice.move;
+			const requestId = moveActor.chargingMove || moveActor.moves[choice.slot - 1] || choice.move;
 			const base = hardMove(requestId, choice.slot, formatId);
 			const attack = choice.zMove ? damagingZMove(dex.moves.get(base.id), choice.move, choice.slot, formatId) : base;
 			if (!attack) continue;

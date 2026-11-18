@@ -384,6 +384,7 @@ export function getMoveInteraction(
 	move = resolveMove(attacker, move, field, defender);
 	const data = dex.moves.get(move.calledMove || move.id);
 	const ability = defensiveAbility(attacker, defender, move, field);
+	if (dex.gen <= 4 && data.flags.futuremove) return { effectiveness: 1 };
 	const block = (blockedBy: string, failed = false) => ({ effectiveness: 0, blockedBy, ...(failed ? { failed } : {}) });
 	if (['explosion', 'selfdestruct', 'mindblown', 'mistyexplosion'].includes(move.id) &&
 		[attacker, defender, ...(context.activePokemon || context.defenderAllies || [])].some(p =>
@@ -436,7 +437,7 @@ export function getMoveInteraction(
 	if (['suckerpunch', 'thunderclap'].includes(move.id) && defender.volatiles.has('mustrecharge')) {
 		return block(`${move.name} fails against a recharging target`, true);
 	}
-	const direct = ['normal', 'any', 'allAdjacent', 'allAdjacentFoes', 'adjacentAlly', 'adjacentAllyOrSelf']
+	const direct = data.actionSequence === 'storeDamage' || ['normal', 'randomNormal', 'any', 'allAdjacent', 'allAdjacentFoes', 'adjacentAlly', 'adjacentAllyOrSelf']
 		.includes(move.target) &&
 		!(move.id === 'curse' && !attacker.types.includes('Ghost'));
 	const foeTarget = direct && attacker !== defender && !context.isAllyTarget;
@@ -493,7 +494,7 @@ export function getMoveInteraction(
 	const isGrounded = grounded(defender, field, ability !== 'levitate');
 	let exponent = 0;
 	for (const type of types) {
-		const ignoreImmunity = data.ignoreImmunity === true ||
+		const ignoreImmunity = (data.actionSequence === 'storeDamage' ? dex.gen === 4 : data.ignoreImmunity === true) ||
 			(typeof data.ignoreImmunity === 'object' && data.ignoreImmunity[move.type]) || item === 'ringtarget' ||
 			(move.type === 'Ground' && (arrows || isGrounded)) ||
 			(type === 'Ghost' && ['Normal', 'Fighting'].includes(move.type) &&

@@ -7,11 +7,26 @@ import { megaEvolutionState } from '../cfru/util/forms';
 import { rulesDex } from '../cfru/util/mechanics';
 import { selectMoveCandidates } from '../cfru/scoring';
 import { bindOpponent, clonePosition, identity, knownMoves, modelsFor, moveAction, ownZAction, positionKey, switchIn,
-	usableMove, projectEntry, snapshotPosition, isTrapped,
+	usableMove, projectEntry, snapshotPosition, isTrapped, settleYawn, committedMove,
 	type SearchAction, type Side } from './projection';
 
 export function perspective(state: BattleState, side: Side): BattleState {
 	return side === 'self' ? state : { ...state, self: state.opponent, opponent: state.self };
+}
+
+function forcedAction(state: BattleState, side: Side, supplied?: SearchAction[]): SearchAction | undefined {
+	const move = committedMove(state[side].active[0]);
+	if (!move) return;
+	const legal = supplied?.find(action => action.move === move && !action.zMove);
+	return move === 'recharge' ? { id: legal?.id || move, prior: 0 } :
+		legal || { id: `move ${move}`, move, prior: 0 };
+}
+
+function stayAfterYawn(state: BattleState, side: Side): BattleState {
+	if (state[side].active[0]?.volatileTurns?.yawn !== 1) return state;
+	const next = clonePosition(state);
+	settleYawn(next, side);
+	return next;
 }
 
 /** Prune below-baseline moves only when the adjacent boundary gap exceeds this value. */
@@ -122,8 +137,9 @@ export class CandidateSelector {
 		if (!legal.length) return [];
 		const key = `${positionKey(state)}:${side}:${context}`, cached = this.entryCache.get(key);
 		if (cached) return legal.filter(p => cached.has(identity(p)));
-		const belief = this.entryKnowledge(state, side);
-		if (!belief) return legal;
+		const known = this.entryKnowledge(state, side);
+		if (!known) return legal;
+		const belief = required ? known : stayAfterYawn(known, side);
 		const view = perspective(belief, side), actor = view.self.active[0], foe = view.opponent.active[0];
 		// Simultaneous faints do not yet reveal the opponent's next occupant.
 		if (!foe || foe.fainted) return legal;
@@ -342,6 +358,8 @@ export class CandidateSelector {
 	 * The distribution is shared by every own root action; no queued move is an input.
 	 */
 	responseProbabilities(state: BattleState): { action: SearchAction, probability: number }[] {
+		const forced = forcedAction(state, 'opponent');
+		if (forced) return [{ action: forced, probability: 1 }];
 		const view = this.responseView(state), key = positionKey(view);
 		const cached = this.responseCachePolicy.get(key); if (cached) return cached;
 		const actor = view.opponent.active[0];
@@ -357,8 +375,9 @@ export class CandidateSelector {
 		const largest = Math.max(...weighted.map(a => a.probability));
 		weighted = weighted.filter(a => a.probability >= largest * 0.05);
 		const i = view.self.team.indexOf(view.self.active[0]), j = view.opponent.team.indexOf(actor);
-		const [pair] = this.pairs(view, [[i, j]]);
-		const finishing = this.canFinish(view, 'opponent', pair.opponent);
+		const stayView = stayAfterYawn(view, 'opponent');
+		const [pair] = this.pairs(stayView, [[i, j]]);
+		const finishing = this.canFinish(stayView, 'opponent', pair.opponent);
 		const entries = !finishing && !isTrapped(view, 'opponent') && !actor.volatiles.has('trapped') ?
 			this.entryProbabilities(state, state.opponent.reserve.filter(p => !p.fainted && p.hp > 0)) : new Map<string, number>();
 		// Retreat needs both a losing matchup and an improvement after conceding entry.
@@ -391,6 +410,8 @@ export class CandidateSelector {
 		const view = perspective(state, side), actor = view.self.active[0];
 		if (!actor || actor.fainted) return this.rankEntries(state, side).map(p =>
 			({ id: `switch ${p.slot}`, switchTo: p, prior: 0 }));
+		const forced = forcedAction(state, side, supplied);
+		if (forced) return [forced];
 		const known = knownMoves(actor).filter(id => usableMove(state, side, id));
 		let actions: SearchAction[] = supplied || [
 			...known.map(move => moveAction(state, side, move)),
@@ -419,12 +440,17 @@ export class CandidateSelector {
 
 /** An own continuation may depend on public consequences, never on invisible profile identity. */
 export function observationKey(state: BattleState): string {
+	const observedConditions = (side: BattleState['self']) => {
+		const { futureAttacks, wishAmounts, ...conditions } = side.conditions;
+		return { ...conditions, futureAttacks: Object.entries(futureAttacks || {}).map(([slot, { source, move }]) =>
+			[slot, source, move]) };
+	};
 	return JSON.stringify([state.self.team.map(p => [identity(p), p.hp, p.maxHp, p.active, p.status,
 		p.boosts, p.baseStats, p.item, p.itemExchange, p.lastMove,
-		p.moves, p.species, p.types, p.ability, [...p.volatiles].sort(), p.volatileTurns?.taunt, p.volatileTurns?.encore]),
+		p.moves, p.species, p.types, p.ability, [...p.volatiles].sort(), p.volatileTurns, committedMove(p), p.moveSequence]),
 	state.opponent.team.map(p => [identity(p), Math.ceil(p.hpPercent), p.active, p.status, p.boosts,
 		p.lastMove, p.itemKnown ? p.item : '', p.itemExchange, p.moves, p.species, p.types, [...p.volatiles].sort(),
-		p.volatileTurns?.taunt, p.volatileTurns?.encore,
+		p.volatileTurns, committedMove(p), p.moveSequence?.elapsed,
 		p.observedAbility || p.abilityChanged ? p.ability : '']),
-	state.field, state.self.conditions, state.opponent.conditions, !!state.ownZUsed]);
+	state.field, observedConditions(state.self), observedConditions(state.opponent), !!state.ownZUsed]);
 }

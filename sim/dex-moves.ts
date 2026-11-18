@@ -146,6 +146,7 @@ export interface MoveData extends EffectData, MoveEventMethods, HitEffect {
 	/** move index number, used for Metronome rolls */
 	num?: number;
 	condition?: ConditionData;
+	actionSequence?: 'chainedHits' | 'timedAttack' | 'storeDamage';
 	basePower: number;
 	accuracy: true | number;
 	pp: number;
@@ -357,6 +358,7 @@ export class DataMove extends BasicEffect implements Readonly<BasicEffect & Move
 	readonly target: MoveTarget;
 	/** Move base power. */
 	readonly basePower: number;
+	declare readonly actionSequence?: MoveData['actionSequence'];
 	/** Move base accuracy. True denotes a move that always hits. */
 	readonly accuracy: true | number;
 	/** Critical hit ratio. Defaults to 1. */

@@ -11,12 +11,12 @@
 
 import { resolveMoveType } from './type-calc';
 import { makeAIPokemonSkeleton, speciesDefaults } from './pokemon-builder';
-import type { FieldConditions } from '../types';
+import type { FieldConditions, SideConditions } from '../types';
 import { Dex, toID } from '../../../../../sim/dex';
 import { abilityStatModifier, effectiveAbility, formeAbility, hasNeutralizingGas, normalizeWeather } from './mechanics';
 import { defaultBoosts, type AIPokemon } from '../types';
 import { BattleEvidenceTracker } from './battle-evidence';
-import { controlDuration } from './move-effects';
+import { controlDuration, nextChainedHit } from './move-effects';
 
 /** Only facts available in our request; never store inferred models or scoring state here. */
 type RequestPokemonFacts = Pick<AIPokemon, 'species' | 'types' | 'baseStats' | 'ability' | 'moves' | 'item'>;
@@ -121,6 +121,10 @@ interface IdentityMemory {
 /** Bounded to one stay, so an Illusion reveal can reassign observations without replaying the battle. */
 interface EntryObservations {
 	turn: number;
+	chargingMove?: string;
+	rampageMove?: string;
+	moveSequence?: AIPokemon['moveSequence'];
+	hpFraction: number;
 	controlExpires?: AIPokemon['volatileTurns'];
 	species: string;
 	receivedHits?: number;
@@ -174,9 +178,11 @@ export class BattleTracker {
 	private actedThisTurn = new Set<string>();
 	private residualCompleted = false;
 	private slotEffects = new Map<string, { wish?: number, futuremove?: number, wishSource?: string,
-		futureAttack?: { source: string, move: string },
+		futureAttack?: NonNullable<SideConditions['futureAttacks']>[number],
 		healingWish?: { move: 'healingwish' | 'lunardance', expires: number }, }>();
 	private pendingFutureMove?: { source: string, target: string };
+	captureFutureDamage?: (source: string, target: string, move: string) =>
+		NonNullable<SideConditions['futureAttacks']>[number]['castDamage'];
 	private pendingWishPosition = '';
 	private pendingHealingWish?: { position: string, move: 'healingwish' | 'lunardance' };
 	private teamSizes = new Map<string, number>();
@@ -188,7 +194,8 @@ export class BattleTracker {
 	private entries = new Map<string, EntryObservations>();
 	private yawnSources = new Map<string, string>();
 	private lastMoveSource = '';
-	private currentAttack?: { source: string, damaging: boolean, stellarType?: string, hits: Map<string, number> };
+	private currentAttack?: { source: string, damaging: boolean, stellarType?: string, startsRampage?: string,
+		chain?: { move: string, hits: number }, hits: Map<string, number> };
 	private transformations = new Map<string, TrackedTransformation>();
 	private ownPublic = new Map<string, NonNullable<AIPokemon['publicKnowledge']>>();
 	private evidenceTeam = new Map<string, AIPokemon>();
@@ -384,15 +391,27 @@ export class BattleTracker {
 		this.observeOwnCondition(parts);
 		this.handleAbilityEvent(parts);
 		this.recordAttackHit(parts);
-		if (this.currentAttack?.stellarType &&
+		if (this.currentAttack &&
 			((command === '-damage' && !parts.some(p => p.startsWith('[from]'))) ||
 				command === '-activate' && parts[2] === 'Substitute' && parts.includes('[damage]') ||
 				command === '-end' && parts[2] === 'Substitute')) {
-			const source = this.currentAttack.source;
-			const memory = this.getIdentityMemory(source);
-			this.updateIdentityMemory(this.activeIdentities.get(source) || source, {
-				stellarBoostedTypes: [...new Set([...(memory.stellarBoostedTypes || []), this.currentAttack.stellarType])],
-			}, source);
+			const { source, startsRampage, stellarType } = this.currentAttack;
+			const chain = this.currentAttack.chain;
+			if (chain && parts[1].split(':')[0] !== source) {
+				const user = this.entries.get(source);
+				if (user && !user.sleeping) user.moveSequence = nextChainedHit(chain.move, chain.hits);
+				delete this.currentAttack.chain;
+			}
+			if (startsRampage && parts[1].split(':')[0] !== source) {
+				const user = this.entries.get(source);
+				if (user) user.rampageMove = startsRampage;
+			}
+			if (stellarType) {
+				const memory = this.getIdentityMemory(source);
+				this.updateIdentityMemory(this.activeIdentities.get(source) || source, {
+					stellarBoostedTypes: [...new Set([...(memory.stellarBoostedTypes || []), stellarType])],
+				}, source);
+			}
 		}
 		const entry = this.entries.get(parts[1]?.split(':')[0].trim());
 		if (entry && parts[0] === '-damage' && parts.includes('[from] psn')) entry.toxicTicks = (entry.toxicTicks || 0) + 1;
@@ -496,13 +515,26 @@ export class BattleTracker {
 			if (parts[2]?.startsWith('item: ')) this.handleItem(['-item', parts[1], parts[2].slice(6)], true);
 			break;
 		case '-status':
+			if (entry && parts[2] === 'slp') delete entry.rampageMove;
 			this.handleStatus(parts);
 			break;
 		case '-curestatus':
 		case '-cureteam':
 			this.handleCureStatus(parts);
 			break;
+		case '-prepare':
+			if (entry && (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(parts[2]).flags.charge) {
+				entry.chargingMove = toID(parts[2]);
+			}
+			break;
+		case '-anim':
+			if (entry?.chargingMove === toID(parts[2])) delete entry.chargingMove;
+			break;
 		case 'cant':
+			if (entry?.moveSequence && (this.formatId ? Dex.forFormat(this.formatId) : Dex)
+				.moves.get(entry.moveSequence.move).actionSequence === 'chainedHits') delete entry.moveSequence;
+			if (entry) delete entry.rampageMove;
+			if (entry) delete entry.chargingMove;
 			this.actedThisTurn.add(parts[1].split(':')[0].trim());
 			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
@@ -519,9 +551,17 @@ export class BattleTracker {
 			}
 			break;
 		case 'move':
+			if (entry) delete entry.rampageMove;
+			if (entry) delete entry.chargingMove;
 			if (!parts.some(p => p.startsWith('[from]'))) this.actedThisTurn.add(parts[1].split(':')[0].trim());
+			const attack = (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(parts[2]);
+			const chain = attack.actionSequence === 'chainedHits' ?
+				{ move: attack.id, hits: 1 + (entry?.moveSequence?.move === attack.id ? entry.moveSequence.elapsed : 0) } : undefined;
+			if (chain && entry) delete entry.moveSequence;
 			this.currentAttack = { source: parts[1].split(':')[0].trim(),
-				damaging: (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(parts[2]).category !== 'Status',
+				chain,
+				damaging: attack.category !== 'Status',
+				startsRampage: attack.self?.volatileStatus === 'lockedmove' && !parts.includes('[from] lockedmove') ? attack.id : undefined,
 				stellarType: this.stellarAttackType(parts[1].split(':')[0].trim(), parts[2]), hits: new Map() };
 			this.clearTransientEffects('move', parts[1].split(':')[0].trim());
 			this.acted.add(parts[1].split(':')[0].trim());
@@ -535,7 +575,8 @@ export class BattleTracker {
 			if (toID(parts[2]) === 'wish') {
 				const position = parts[1].split(':')[0].trim();
 				if (!this.getWish(position)) {
-					this.setSlotEffect(position, 'wish', this.turn + 2);
+					const gen = (this.formatId ? Dex.forFormat(this.formatId) : Dex).gen;
+					this.setSlotEffect(position, 'wish', gen >= 8 && this.turn % 256 === 0 ? Infinity : this.turn + 2);
 					this.slotEffects.get(position)!.wishSource = this.publicIdentity(parts[1]);
 					this.pendingWishPosition = position;
 				}
@@ -592,6 +633,12 @@ export class BattleTracker {
 			break;
 		}
 		case 'upkeep':
+			for (const observed of this.entries.values()) {
+				const seq = observed.moveSequence;
+				if (seq && (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(seq.move).actionSequence !== 'chainedHits') {
+					observed.moveSequence = { ...seq, elapsed: seq.elapsed + 1 };
+				}
+			}
 			this.recordNonMegaStay();
 			this.residualCompleted = true;
 			this.currentAttack = undefined;
@@ -646,6 +693,7 @@ export class BattleTracker {
 		if (outgoingEntry) this.identityMemory.set(outgoingEntry.ident, { ...outgoingEntry.memory });
 		const entry: EntryObservations = {
 			turn: this.turn,
+			hpFraction: this.hpFraction(parts[3]),
 			species: parts[2].split(',')[0],
 			ident: sleepIdent, memory: { ...this.identityMemory.get(sleepIdent) }, memoryUpdates: {},
 			sleeping: !!parts[3]?.split(' ').includes('slp'), sleepChecks: 0, moves: new Set(),
@@ -986,14 +1034,14 @@ export class BattleTracker {
 		this.evidenceTeam = new Map(team.map(p => [this.publicIdentity(p.ident!), structuredClone(p)]));
 	}
 
-	getEvidenceSelf(): { position: string, pokemon: AIPokemon }[] | undefined {
+	getEvidenceSelf(includeChangedForms = false): { position: string, pokemon: AIPokemon }[] | undefined {
 		const result: { position: string, pokemon: AIPokemon }[] = [];
 		for (const [position, ident] of this.activeIdentities) {
 			if (!this.isOurTeamSide(position.slice(0, 2))) continue;
 			const known = this.evidenceTeam.get(ident);
 			// A new form needs authorized stats; do not use the previous form's stats.
-			if (!known || this.getTransformation(position) ||
-				(this.getForme(position) && this.getForme(position) !== known.species)) return;
+			if (!known || !includeChangedForms && (this.getTransformation(position) ||
+				(this.getForme(position) && this.getForme(position) !== known.species))) return;
 			if (known.hpPercent <= 0) continue;
 			const current = this.ourPokemon.get(position)?.pokemon;
 			const pokemon = structuredClone(known);
@@ -1326,6 +1374,9 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim();
 		const side = position.slice(0, 2);
 
+		const entry = this.entries.get(position);
+		if (entry && parts[2]) entry.hpFraction = this.hpFraction(parts[2]);
+
 		if (!this.isOpponentSide(side)) return;
 
 		const hpPart = parts[2];
@@ -1616,14 +1667,22 @@ export class BattleTracker {
 		const position = positionPart.split(':')[0].trim();
 		// Record protocol facts for both teams, without adding any inferred effects.
 		const effect = toID((parts[2] || '').replace(/^(?:move|ability): /, ''));
+		const entry = this.entries.get(position);
+		const sequence = (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(effect).actionSequence;
+		if (entry && sequence && sequence !== 'chainedHits') {
+			if (command === '-end') delete entry.moveSequence;
+			else if (!parts.includes('[upkeep]')) entry.moveSequence = { move: effect, elapsed: 0,
+				...(sequence === 'storeDamage' && { storedFraction: 0 }) };
+		}
 		if (command === '-end') this.transientEffects.get(position)?.delete(effect);
-		if (effect === 'taunt' || effect === 'encore') {
-			const control = effect === 'taunt' ? 'taunt' : 'encore';
+		if (effect === 'taunt' || effect === 'encore' || effect === 'yawn') {
+			const control = effect as 'taunt' | 'encore' | 'yawn';
 			const entry = this.entries.get(position);
 			if (entry) {
 				if (command === '-end') delete entry.controlExpires?.[control];
 				else if (this.formatId) {
-					const duration = controlDuration(control, { formatId: this.formatId },
+					const duration = control === 'yawn' ? Dex.forFormat(this.formatId).moves.get(control).condition!.duration :
+						controlDuration(control, { formatId: this.formatId },
 						!this.actedThisTurn.has(position), entry.turn === this.turn);
 					if (duration !== undefined) (entry.controlExpires ||= {})[control] = this.turn + duration;
 				}
@@ -1632,12 +1691,16 @@ export class BattleTracker {
 		if (effect === 'futuresight' || effect === 'doomdesire') {
 			// Start names the user, while end names the occupant of the target position.
 			if (command === '-end') this.setSlotEffect(position, 'futuremove', 0);
-			else if (this.pendingFutureMove?.source === position && this.pendingFutureMove.target) {
+			else {
+				if (this.pendingFutureMove?.source !== position || !this.pendingFutureMove.target) {
+					throw new Error(`T${this.turn} ${position} ${effect}: -start has no matching move target`);
+				}
 				const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
 				const expiry = dex.gen >= 8 && this.turn >= 255 ? Infinity : this.turn + 3;
 				this.setSlotEffect(this.pendingFutureMove.target, 'futuremove', expiry);
 				this.slotEffects.get(this.pendingFutureMove.target)!.futureAttack = {
-					source: this.publicIdentity(positionPart), move: effect };
+					source: this.publicIdentity(positionPart), move: effect,
+					...(dex.gen <= 4 && { castDamage: this.captureFutureDamage?.(position, this.pendingFutureMove.target, effect) }) };
 			}
 			return;
 		}
@@ -2261,13 +2324,22 @@ export class BattleTracker {
 
 	getTurnActions(): string[] { return [...this.actedThisTurn]; }
 
+	getChargingMove(position: string): string | undefined { return this.entries.get(position)?.chargingMove; }
+	getRampageMove(position: string): string | undefined { return this.entries.get(position)?.rampageMove; }
+	getMoveSequence(position: string): AIPokemon['moveSequence'] { return this.entries.get(position)?.moveSequence; }
+
+	private hpFraction(condition: string): number {
+		const [hp, max] = (condition || '').split(' ')[0].split('/').map(Number);
+		return max ? hp / max : 0;
+	}
+
 	getVolatileTurns(position: string): AIPokemon['volatileTurns'] {
 		const expires = this.entries.get(position)?.controlExpires;
 		if (!expires) return undefined;
 		const remaining: NonNullable<AIPokemon['volatileTurns']> = {};
 		const elapsed = this.turn + Number(this.residualCompleted);
-		for (const effect of ['taunt', 'encore'] as const) {
-			if (expires[effect] !== undefined && expires[effect] > elapsed) remaining[effect] = expires[effect] - elapsed;
+		for (const effect of ['taunt', 'encore', 'yawn'] as const) {
+			if (expires[effect] !== undefined) remaining[effect] = Math.max(1, expires[effect] - elapsed);
 		}
 		return remaining;
 	}
@@ -2284,7 +2356,7 @@ export class BattleTracker {
 			if (effects[effect] === undefined) continue;
 			const side = position.slice(0, 2);
 			if (ours ? this.isOurTeamSide(side) : this.isOpponentSide(side)) {
-				result[this.getFieldSlot(position)] = Math.max(0, (effects[effect] || 0) - this.turn);
+				result[this.getFieldSlot(position)] = Math.max(0, (effects[effect] || 0) - this.turn - Number(this.residualCompleted));
 			}
 		}
 		return result;
@@ -2305,13 +2377,14 @@ export class BattleTracker {
 	getDelayedSources(ours = true) {
 		const wishSources: Record<number, string> = {};
 		const healingWishes: Record<number, 'healingwish' | 'lunardance'> = {};
-		const futureAttacks: Record<number, { source: string, move: string }> = {};
+		const futureAttacks: NonNullable<SideConditions['futureAttacks']> = {};
+		const elapsed = this.turn + Number(this.residualCompleted);
 		for (const [position, effects] of this.slotEffects) {
 			if (ours ? !this.isOurTeamSide(position.slice(0, 2)) : !this.isOpponentSide(position.slice(0, 2))) continue;
 			const slot = this.getFieldSlot(position);
-			if ((effects.wish || 0) > this.turn && effects.wishSource) wishSources[slot] = effects.wishSource;
-			if (effects.healingWish && effects.healingWish.expires > this.turn) healingWishes[slot] = effects.healingWish.move;
-			if ((effects.futuremove || 0) > this.turn && effects.futureAttack) futureAttacks[slot] = { ...effects.futureAttack };
+			if ((effects.wish || 0) > elapsed && effects.wishSource) wishSources[slot] = effects.wishSource;
+			if (effects.healingWish && effects.healingWish.expires > elapsed) healingWishes[slot] = effects.healingWish.move;
+			if ((effects.futuremove || 0) > elapsed && effects.futureAttack) futureAttacks[slot] = { ...effects.futureAttack };
 		}
 		return { wishSources, futureAttacks, healingWishes };
 	}
@@ -2349,6 +2422,10 @@ export class BattleTracker {
 		if (!entry) return;
 		const future = parts.some(p => ['[from] move: Future Sight', '[from] move: Doom Desire'].includes(p));
 		const direct = parts[0] === '-damage' && (future || !parts.some(p => p.startsWith('[from]')));
+		const seq = entry.moveSequence;
+		if (direct && seq?.storedFraction !== undefined) {
+			entry.moveSequence = { ...seq, storedFraction: seq.storedFraction + Math.max(0, entry.hpFraction - this.hpFraction(parts[2])) };
+		}
 		let hits = 0;
 		if (direct && (future || (this.currentAttack?.damaging && position !== this.currentAttack.source))) {
 			hits = 1;
@@ -2524,6 +2601,7 @@ export class BattleTracker {
 		this.actedThisTurn.clear();
 		this.slotEffects.clear();
 		this.pendingFutureMove = undefined;
+		this.captureFutureDamage = undefined;
 		this.pendingWishPosition = '';
 		this.pendingHealingWish = undefined;
 		this.teamSizes.clear();

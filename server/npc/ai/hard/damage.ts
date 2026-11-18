@@ -8,6 +8,7 @@ import type { AIPokemon, AIMove, AICache, DamageResult, FieldConditions } from '
 import { getExpectedHitCount, type DamageContext } from '../cfru/util/damage-calc';
 import { getMoveInteraction, resolveMove } from '../cfru/util/type-calc';
 import { effectiveAbility, effectiveItem, rulesDex } from '../cfru/util/mechanics';
+import { chargeHitPower, sequencePower } from '../cfru/util/move-effects';
 
 export type DamagePolicy = 'mean' | { quantile: number };
 export interface CalculatedDamage extends DamageResult { rolls: readonly number[] }
@@ -73,7 +74,7 @@ class KnownPokemon extends Pokemon {
 	}
 }
 
-export function selectDamage(result: CalculatedDamage, policy: DamagePolicy = 'mean'): number {
+export function selectDamage(result: Pick<CalculatedDamage, 'average' | 'rolls'>, policy: DamagePolicy = 'mean'): number {
 	if (policy === 'mean') return result.average;
 	const q = policy.quantile;
 	if (!Number.isFinite(q) || q < 0 || q > 1) throw new Error('Damage quantile must be between 0 and 1');
@@ -85,6 +86,12 @@ export function calculateDamage(
 	_cache?: AICache, context: Partial<DamageContext> & { defenderSwitching?: boolean, cache?: DamageCache } = {}
 ): CalculatedDamage {
 	const dex = rulesDex(field);
+	if (move.flags.futuremove && dex.gen <= 5 && effectiveAbility(attacker, field) === 'normalize') {
+		attacker = { ...attacker, ability: '' };
+	}
+	if (move.flags.futuremove && dex.gen === 4 && effectiveItem(attacker, field) === 'lifeorb') {
+		attacker = { ...attacker, item: '', itemKnown: true };
+	}
 	move = resolveMove(attacker, move, field, defender);
 	const interaction = getMoveInteraction(attacker, defender, move, field, context);
 	const result = ({ rolls, min, max, average }: DamageRolls): CalculatedDamage => {
@@ -93,7 +100,14 @@ export function calculateDamage(
 			effectiveness: interaction.effectiveness, canKO: max >= defender.hp,
 			guaranteedKO: min >= defender.hp, hitsToKO: average ? Math.ceil(defender.hp / average) : Infinity };
 	};
-	if (move.category === 'Status' || interaction.blockedBy || !interaction.effectiveness) return result(zeroDamage);
+	const chargePower = chargeHitPower(attacker, defender, move, field);
+	if (move.category === 'Status' || interaction.blockedBy || !interaction.effectiveness || !chargePower) return result(zeroDamage);
+	const data = dex.moves.get(move.calledMove || move.id);
+	if (data.actionSequence === 'storeDamage') {
+		const seq = attacker.moveSequence;
+		if (seq?.move !== data.id || seq.elapsed + 1 < data.condition!.duration!) return result(zeroDamage);
+		return result(summarize([2 * Math.round((seq.storedFraction || 0) * attacker.maxHp)]));
+	}
 	const ownAbility = effectiveAbility(attacker, field), ownItem = effectiveItem(attacker, field);
 	const ownAbilityName = dex.abilities.get(ownAbility).name, ownItemName = dex.items.get(ownItem).name;
 	const options = (p: AIPokemon, ability = dex.abilities.get(effectiveAbility(p, field)).name,
@@ -122,14 +136,14 @@ export function calculateDamage(
 		mon.onReadHP = () => { reads[side] = true; };
 		return mon;
 	};
-	const data = dex.moves.get(move.calledMove || move.id);
 	const hits = Math.max(1, Math.round(getExpectedHitCount(move, ownAbility, ownItem, attacker.species)));
 	const moveOptions = { hits,
 		isStellarFirstUse: attacker.terastallized === 'Stellar' && !attacker.stellarBoostedTypes?.includes(move.type),
 		ability: ownAbilityName as AbilityName,
 		item: ownItemName as ItemName,
 		// Re-resolve dynamic power/type inside calc, never apply an already resolved boost twice.
-		overrides: { basePower: move.isZMove || ['return', 'frustration'].includes(data.id) ? move.basePower : data.basePower,
+		overrides: { basePower: (move.isZMove || ['return', 'frustration'].includes(data.id) ? move.basePower : data.basePower) *
+			chargePower * (move.isZMove ? 1 : sequencePower(attacker, data)),
 			// Hidden Power's canonical ID omits its publicly inferred/request-supplied type.
 			type: (data.id === 'hiddenpower' ? move.type : data.type) as TypeName,
 			category: move.isZMove ? move.category : data.category,

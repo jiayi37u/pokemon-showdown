@@ -10,7 +10,7 @@ import {
 import { calculateDamage, selectDamage, DamageCache, type DamagePolicy } from './damage';
 import { modelsFor, knownMoves, isTrapped, clonePosition, settleFutureAttacks, bindOpponent,
 	positionKey, usableMove, hasMovePP, clonePokemon, projectEntry, boosts, status, isSnapshotPokemon,
-	applyRecovery, applyAttackHealth, type Side, type ProjectedPokemon } from './projection';
+	applyRecovery, applyAttackHealth, committedMove, type Side, type ProjectedPokemon } from './projection';
 import { compareSpeedOrder, type ActionOrder } from '../cfru/util/speed';
 import { getMoveInteraction } from '../cfru/util/type-calc';
 import { directRecoveryAmount } from '../cfru/util/turn-outcome';
@@ -19,7 +19,7 @@ import {
 } from '../cfru/util/mechanics';
 import {
 	mustSkipMove, statusFailure, sleepClauseOccupied, moveSelectionFailure, conditionalAttackDiscouraged,
-	estimatedMoveAccuracy,
+	estimatedMoveAccuracy, chargePhase,
 } from '../cfru/util/move-effects';
 
 export interface Matchup {
@@ -75,8 +75,8 @@ const moveData = new Map<string, AIMove>();
 function fingerprint(p: AIPokemon, currentHP = true): string {
 	return JSON.stringify([p.species, p.level, currentHP ? p.hp : undefined, p.maxHp, p.types, p.status, p.ability, p.item,
 		p.itemLost, p.itemKnown, p.itemAssumed, p.baseStats, p.boosts, [...p.volatiles].sort(), p.moves,
-		p.lastMove, p.active, p.activeMoveActions, p.sleepTurns, p.toxicCounter, p.sleepSelfInflicted,
-		p.queuedSpeed, p.queuedPriorityAbility, p.abilityStatMod, p.terastallized,
+		p.lastMove, p.active, p.activeMoveActions, p.sleepTurns, p.toxicCounter, p.sleepSelfInflicted, committedMove(p),
+		p.moveSequence, p.queuedSpeed, p.queuedPriorityAbility, p.abilityStatMod, p.terastallized,
 		p.terastallized && p.originalTypes, p.stellarBoostedTypes, p.gender, p.fainted, p.ownerSide]);
 }
 
@@ -153,7 +153,7 @@ export function actionDelay(p: AIPokemon, field: FieldConditions, move?: AIMove)
 	}
 	if (p.status === 'frz' && !data?.flags.defrost) return 2;
 	return data?.flags.futuremove ? 2 :
-		data?.flags.charge && !(move?.id === 'solarbeam' && field.weather === 'sun') ? 1 : 0;
+		move && chargePhase(p, move, field) === 'prepare' ? 1 : 0;
 }
 
 function combatant(p: AIPokemon, state: PairState): CombatantFacts {
@@ -580,7 +580,7 @@ export class MatchupEvaluator {
 		const ownActive = own.findIndex(p => p.active && p.hp > 0 && !p.fainted);
 		const foeActive = foes.findIndex(p => p.active && p.hp > 0 && !p.fainted);
 		const charging = [own[ownActive], foes[foeActive]].map(p =>
-			(p as ProjectedPokemon | undefined)?.projection?.chargingMove);
+			p && committedMove(p));
 		// Partial queries need their coordinates and the active pair's stranded-boost verdict.
 		const ownNeeded = coordinates && new Set([ownActive, ...coordinates.map(([i]) => i)]);
 		const foeNeeded = coordinates && new Set([foeActive, ...coordinates.map(([, j]) => j)]);

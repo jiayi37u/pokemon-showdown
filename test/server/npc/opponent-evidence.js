@@ -170,6 +170,22 @@ describe('Hard inference from observed battle outcomes', () => {
 		assert.equal(state.self.conditions.futureAttacks[1].move, 'futuresight');
 		assert.equal(state.self.conditions.futureAttacks[1].source.replaceAll(' ', ''), state.opponent.active[0].ident.replaceAll(' ', ''));
 	});
+	it('rebuilds a delayed hit after its public caster faints without offering it as a replacement', () => {
+		const caster = { species: 'Alakazam', moves: ['futuresight'] };
+		const g = game({ ...passive, moves: ['nightshade', 'splash'] }, caster, 'singles', 'gen6ou', passive,
+			{ own: [], foe: [passive] });
+		g.battle.p1.active[0].hp = 1;
+		g.battle.makeChoices('move 1', 'move 1');
+		assert(g.battle.p1.active[0].fainted);
+		g.battle.makeChoices('switch 2', '');
+		const state = g.state();
+		const { settleFutureAttacks } = require('../../../dist/server/npc/ai/hard/projection');
+		assert(state.opponent.team.some(pokemon => pokemon.species === 'Alakazam' && pokemon.fainted));
+		assert(!state.opponent.reserve.some(pokemon => pokemon.species === 'Alakazam'));
+		const target = state.self.active[0], before = target.hp;
+		settleFutureAttacks(state, 'mean', true);
+		assert(target.hp < before);
+	});
 	it('tests the known type of our Hidden Power instead of inventing Normal-type damage', () => {
 		const special = { nature: 'Careful', evs: { hp: 252, spd: 252 }, ability: 'Poison Heal' };
 		const g = game({ species: 'Mew', nature: 'Modest', evs: { spa: 252 }, moves: ['hiddenpowerice'] },

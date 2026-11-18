@@ -8,7 +8,7 @@ import { rulesDex } from '../cfru/util/mechanics';
 import { CandidateSelector, observationKey, perspective } from './candidates';
 import {
 	actionOutcomes, beginTurn, continueTurn, bindOpponent, clonePosition, endTurn, identity, modelsFor, positionKey,
-	supportsMove, switchIn, transitionSupported, snapshotPosition, clonePokemon, knownMoves, usableMove,
+	supportsMove, switchIn, transitionSupported, snapshotPosition, clonePokemon, knownMoves, usableMove, committedMove,
 	type SearchAction, type Side, type TurnCheckpoint,
 } from './projection';
 export type { SearchAction } from './projection';
@@ -115,7 +115,7 @@ function entryConditionsChanged(before: BattleState, after: BattleState): boolea
 function needsContinuation(state: BattleState, search: Search): boolean {
 	const actors = [state.self.active[0], state.opponent.active[0]] as ReturnType<typeof clonePokemon>[];
 	if (actors.some(p => !p || p.fainted || p.hp <= 0 || Object.values(p.boosts).some(n => n > 0) ||
-		p.volatiles.size || p.projection?.chargingMove) || hasDelayedEffects(state)) return true;
+		p.volatiles.size || p.chargingMove) || hasDelayedEffects(state)) return true;
 	if ([state.field.weatherTurns, state.field.terrainTurns, state.field.trickroomTurns, state.field.fairylockTurns]
 		.some(n => n === 1) || (['self', 'opponent'] as const).some(side =>
 		(['reflect', 'lightscreen', 'auroraveil', 'tailwind', 'safeguard', 'mist'] as const)
@@ -703,6 +703,8 @@ function runSearch(
 			// Observationally identical worlds share one depth decision. Own entry choices
 			// are alternatives, not probabilities; their paths retain conditional mass.
 			const probability = group.reduce((sum, b) => sum + b.configWeight * (b.replyWeight ?? 1) * b.weight, 0);
+			if (group.some(({ state }) => [...state.self.active, ...state.opponent.active].some(pokemon =>
+				committedMove(pokemon) || pokemon.volatiles.has('yawn')))) return true;
 			const unsettled = replacing || hasDelayedEffects(root) ||
 				candidate.action.move && rulesDex(root.field).moves.get(candidate.action.move).sideCondition ||
 				group.some(branch => entryConditionsChanged(root, branch.state) || needsContinuation(branch.state, search));

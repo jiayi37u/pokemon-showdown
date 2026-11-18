@@ -105,6 +105,7 @@ export interface TrackedPokemon {
 
 /** Identity-bound facts; position-bound effects remain in the active maps. */
 interface IdentityMemory {
+	stayedWithoutMega?: boolean;
 	itemExchange?: AIPokemon['itemExchange'];
 	terastallized?: string;
 	stellarBoostedTypes?: string[];
@@ -587,10 +588,24 @@ export class BattleTracker {
 			break;
 		}
 		case 'upkeep':
+			this.recordNonMegaStay();
 			this.residualCompleted = true;
 			this.currentAttack = undefined;
 			this.clearTransientEffects('turn');
 			break;
+		}
+	}
+
+	/** Record the public stay, leaving preset interpretation to Hard. */
+	private recordNonMegaStay(): void {
+		const dex = this.formatId ? Dex.forFormat(this.formatId) : Dex;
+		const used = new Set(this.getOpponentTeam().filter(p => dex.species.get(p.species).isMega)
+			.map(p => (p.ident || p.position).slice(0, 2)));
+		for (const [position, pokemon] of this.opponentPokemon) {
+			const entry = this.entries.get(position);
+			if (!this.turn || !pokemon.active || !entry || entry.turn >= this.turn ||
+				used.has(position.slice(0, 2)) || this.transformations.has(position)) continue;
+			this.updateIdentityMemory(entry.ident, { stayedWithoutMega: true }, position);
 		}
 	}
 
@@ -2391,6 +2406,10 @@ export class BattleTracker {
 
 	getItemExchange(pokemon: string): AIPokemon['itemExchange'] {
 		return this.getIdentityMemory(pokemon).itemExchange;
+	}
+
+	stayedWithoutMega(pokemon: string): boolean {
+		return !!this.getIdentityMemory(pokemon).stayedWithoutMega;
 	}
 
 	getTimesAttacked(pokemon: string): number {

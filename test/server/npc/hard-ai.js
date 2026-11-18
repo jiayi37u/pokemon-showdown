@@ -57,6 +57,78 @@ describe('Hard user-authorized team preset rules', () => {
 			}
 		});
 	}
+	for (const format of ['gen6ou', 'gen7ou']) {
+		it(`excludes an unused Mega opportunity, then restores only the revealed Mega in ${format}`, () => {
+			const game = start(['Garchomp', 'Mew'], format);
+			const tracker = game.ai.getTracker();
+			assert(evaluate(game, format).models('Garchomp').every(m => m.pokemon.item === 'garchompite'));
+			tracker.parseMessage('|move|p1a: Garchomp|Surf|p2a: Mew\n|upkeep\n|turn|2');
+			let models = evaluate(game, format).models('Garchomp');
+			assert(models.length);
+			assert(models.every(m => m.pokemon.item !== 'garchompite'));
+			assert(models.every(m => m.pokemon.moveKnowledge.revealedMoves.includes('surf')));
+			tracker.parseMessage('|switch|p1a: Mew|Mew|100/100\n|upkeep\n|turn|3');
+			assert(evaluate(game, format).models('Garchomp').every(m => m.pokemon.item !== 'garchompite'));
+			tracker.parseMessage('|switch|p1a: Garchomp|Garchomp|100/100\n|upkeep\n|turn|4');
+			assert(evaluate(game, format).models('Garchomp').every(m => m.pokemon.item !== 'garchompite'));
+			tracker.parseMessage('|detailschange|p1a: Garchomp|Garchomp-Mega, M\n|move|p1a: Garchomp|Earthquake|p2a: Mew\n|upkeep\n|turn|5');
+			models = evaluate(game, format).models('Garchomp-Mega');
+			assert(models.length);
+			assert(models.every(m => m.matched && m.pokemon.item === 'garchompite'));
+			assert(models.every(m => ['surf', 'earthquake'].every(move => m.pokemon.moveKnowledge.revealedMoves.includes(move))));
+		});
+	}
+
+	it('falls back without Mega stones when every tier set is Mega, then restores only the public form', () => {
+		const game = start(['Charizard', 'Mew'], 'gen7ou');
+		const tracker = game.ai.getTracker();
+		tracker.parseMessage('|move|p1a: Charizard|Surf|p2a: Mew\n|upkeep\n|turn|2');
+		const before = evaluate(game, 'gen7ou').models('Charizard');
+		assert(before.length);
+		assert(before.every(m => !Dex.items.get(m.pokemon.item).megaStone));
+		tracker.parseMessage('|detailschange|p1a: Charizard|Charizard-Mega-X, M');
+		const after = evaluate(game, 'gen7ou').models('Charizard-Mega-X');
+		assert(after.length);
+		assert(after.every(m => m.matched && m.pokemon.item === 'charizarditex'));
+		assert(after.every(m => m.pokemon.moveKnowledge.revealedMoves.includes('surf')));
+	});
+
+	it('does not exclude Mega presets on a switch turn or merely at the initial request', () => {
+		const game = start(['Latias', 'Garchomp']);
+		const tracker = game.ai.getTracker();
+		assert(!tracker.stayedWithoutMega('p1: Latias'));
+		tracker.parseMessage('|switch|p1a: Garchomp|Garchomp|100/100\n|upkeep\n|turn|2');
+		assert(!tracker.stayedWithoutMega('p1: Latias'));
+		assert(!tracker.stayedWithoutMega('p1: Garchomp'));
+		assert(evaluate(game).models('Latias').every(m => m.pokemon.item === 'latiasite'));
+	});
+
+	it('reassigns the sole Mega candidate after a teammate stays without evolving', () => {
+		const game = start(['Latias', 'Garchomp']);
+		game.ai.getTracker().parseMessage('|cant|p1a: Latias|slp\n|upkeep\n|turn|2');
+		const { models } = evaluate(game);
+		assert(models('Latias').every(m => m.pokemon.item !== 'latiasite'));
+		assert(models('Garchomp').every(m => m.pokemon.item === 'garchompite'));
+	});
+
+	it('does not record an unused opportunity after the owner has Mega evolved, even if that member fainted', () => {
+		const game = start(['Latias', 'Garchomp']);
+		const tracker = game.ai.getTracker();
+		tracker.parseMessage('|detailschange|p1a: Latias|Latias-Mega, F\n|faint|p1a: Latias\n' +
+			'|switch|p1a: Garchomp|Garchomp|100/100\n|turn|2\n|upkeep\n|turn|3');
+		assert(!tracker.stayedWithoutMega('p1: Garchomp'));
+	});
+
+	it('keeps unused Mega opportunities separate for Multi trainers', () => {
+		const tracker = createBattleTracker('p2', true);
+		tracker.setFormat('gen6ou');
+		tracker.parseMessage('|switch|p1a: Garchomp|Garchomp|100/100\n' +
+			'|switch|p3b: Latias|Latias|100/100\n|turn|1\n' +
+			'|detailschange|p3b: Latias|Latias-Mega, F\n|upkeep\n|turn|2');
+		assert(tracker.stayedWithoutMega('p1: Garchomp'));
+		assert(!tracker.stayedWithoutMega('p3: Latias'));
+	});
+
 	it('lets public ability evidence override the sand-team prior', () => {
 		const game = start(['Excadrill', 'Tyranitar']);
 		game.ai.getTracker().parseMessage('|-ability|p1a: Excadrill|Mold Breaker');

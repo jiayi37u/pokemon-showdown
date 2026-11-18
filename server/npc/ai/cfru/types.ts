@@ -100,6 +100,8 @@ export interface AIPokemon {
 	faintedAllies?: number;
 	/** Moves used during the current stay, for Last Resort. Undefined means unobserved. */
 	usedMoves?: string[];
+	/** Completed a turn without switching or Mega evolving while the owner had not used Mega. */
+	stayedWithoutMega?: boolean;
 	/** Revealed Terastallization only; never the unrevealed team configuration. */
 	terastallized?: string;
 	stellarBoostedTypes?: string[];
@@ -325,7 +327,7 @@ export interface BattleState {
 	opponent: {
 		/** Public roster, including fainted members; team-building priors must survive a KO. */
 		roster?: Pick<AIPokemon,
-			'species' | 'ownerSide' | 'item' | 'itemKnown' | 'originalItem' | 'itemChanged' | 'itemLost'>[],
+			'species' | 'ownerSide' | 'item' | 'itemKnown' | 'originalItem' | 'itemChanged' | 'itemLost' | 'stayedWithoutMega'>[],
 		megaUsedByOwner?: Record<string, boolean>,
 		/** Public team size minus observed fainted members. */
 		remaining?: number;

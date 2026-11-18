@@ -165,7 +165,8 @@ export function applyTeamPresetRules(
 		const party = roster.filter(p => p.ownerSide === owner);
 		const eligible = party.filter(p => {
 			const items = stones(p), known = originalItem(p);
-			return items.length && (!known || items.includes(known));
+			return items.length && (!p.stayedWithoutMega || dex.species.get(p.species).isMega) &&
+				(!known || items.includes(known));
 		});
 		// Rule 3: Garchomp yields the inferred Mega role to other candidates, unless public evidence says otherwise.
 		const preferred = eligible.filter(p => dex.species.get(p.species).baseSpecies !== 'Garchomp' ||
@@ -205,6 +206,9 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 	const presetSpecies = species.isMega ? species.baseSpecies : opponent.species;
 	const sets = data[toID(presetSpecies)] || data[presetSpeciesId(presetSpecies, formatId)] || [];
 	const hypotheses: OpponentHypothesis[] = [];
+	const excludeMega = !!opponent.stayedWithoutMega && !species.isMega &&
+		sets.some(set => set.items.some(item => dex.items.get(item).megaStone?.[species.baseSpecies]));
+	const excludedItem = (item: string) => excludeMega && !!dex.items.get(item).megaStone?.[species.baseSpecies];
 	const originalItem = toID(opponent.originalItem ||
 		(opponent.itemKnown && !opponent.itemChanged && !opponent.itemLost ? opponent.item : ''));
 	const listedItem = sets.some(set => set.items.includes(originalItem));
@@ -214,7 +218,7 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 			dex.items.get(item).megaStone?.[species.baseSpecies] === species.name);
 		// An unlisted public item replaces the item, not the preset's spread or move pool.
 		const items = (originalItem && !listedItem && !species.isMega ? [originalItem] : presetItems)
-			.filter(item => !originalItem || item === originalItem);
+			.filter(item => (!originalItem || item === originalItem) && !excludedItem(item));
 		const native = toID(opponent.observedAbility);
 		// Sources sometimes list the Mega ability even for a pre-evolution set.
 		const abilities = species.isMega ? [toID(species.abilities[0])] :
@@ -259,8 +263,10 @@ export function inferOpponent(opponent: AIPokemon, formatId: string): OpponentHy
 		return hypotheses.map(h => ({ ...h, weight: h.weight / total }));
 	}
 	// Every format shares this fallback, including species absent from a tier and out-of-book sets.
-	const preset = getOpponentPreset(opponent.species, formatId);
+	const generic = getOpponentPreset(opponent.species, formatId);
+	const preset = generic?.item && excludedItem(generic.item) ? null : generic;
 	const knowledge = getOpponentMoveKnowledge(opponent.species, opponent.moves, formatId);
+	if (generic && !preset) knowledge.presetCandidates = [];
 	const stats = computeStatsFromPreset(species.baseStats, opponent.level, preset || {});
 	if (species.baseStats.hp === 1) stats.hp = 1;
 	const fallback = { ...opponent, baseStats: stats, maxHp: stats.hp, moveKnowledge: knowledge,

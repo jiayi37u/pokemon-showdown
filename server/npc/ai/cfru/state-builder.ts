@@ -226,6 +226,7 @@ export function buildBattleStateFromRequests(
 				species: p.species, ownerSide: (p.ident || p.position).slice(0, 2),
 				item: p.item, itemKnown: !!p.item || p.itemLost, originalItem: p.originalItem,
 				itemChanged: p.itemChanged, itemLost: p.itemLost,
+				stayedWithoutMega: tracker.stayedWithoutMega(p.ident || p.position),
 			})),
 			megaUsedByOwner: Object.fromEntries(tracker.getOpponentTeam().filter(p =>
 				(formatId ? Dex.forFormat(formatId) : Dex).species.get(p.species).isMega)
@@ -280,6 +281,7 @@ function applyPublicMechanics(
 	pokemon.faintedAllies = tracker.getFaintCount(pokemon.ownerSide || identity.slice(0, 2));
 	pokemon.terastallized = tracker.getTerastallized(identity);
 	pokemon.itemExchange = tracker.getItemExchange(identity);
+	pokemon.stayedWithoutMega = tracker.stayedWithoutMega(identity);
 	pokemon.stellarBoostedTypes = tracker.getStellarBoostedTypes(identity);
 	const types = speciesDefaults(pokemon.species, formatId).types;
 	pokemon.originalTypes = pokemon.active ? tracker.getTypes(identity, types, true) : types;

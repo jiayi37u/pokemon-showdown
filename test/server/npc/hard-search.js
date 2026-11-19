@@ -31,6 +31,18 @@ const scoresFor = (search, state, moves, side = 'self') => Object.fromEntries(
 
 describe('Hard damage-based state search', () => {
 	afterEach(() => battles.splice(0).forEach(b => b.destroy()));
+	it('propagates incomplete battle state and unresolved choices instead of returning a scoring fallback', () => {
+		const { state, evaluator } = fixture([mon('Mew', ['splash'])], [mon('Slowbro', ['tackle'])]);
+		const search = (snapshot, actions) => searchPosition(snapshot, evaluator, actions, new Map());
+		assert.throws(() => search({ ...state, opponent: { ...state.opponent, active: [] } }, [action('splash')]),
+			/Hard T\d+.*self=1, opponent=0/);
+		for (const effect of ['taunt', 'encore']) {
+			const snapshot = clonePosition(state);
+			snapshot.opponent.active[0].volatiles.add(effect);
+			assert.throws(() => search(snapshot, [action('splash')]), new RegExp(`opponent slot 1 .*active ${effect} has no tracked duration`));
+		}
+		assert.throws(() => search(state, []), /Hard T\d+ move search: no resolved action/);
+	});
 	for (const [ability, stage, item, substitute] of [
 		['Huge Power', 1, ''], ['Huge Power', -1, 'Big Root'], ['Contrary', -6, ''],
 		['Clear Body', 1, ''], ['Contrary', 1, ''], ['Liquid Ooze', 1, 'Big Root'],

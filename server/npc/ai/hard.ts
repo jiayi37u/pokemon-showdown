@@ -101,7 +101,10 @@ export class HardAI extends NPCBattleAI {
 		const slot = this.activeSlot + activeIndex;
 		const actor = state.self.active.find(p => p.slot === slot);
 		this.entryPlan = undefined;
-		if (!actor || !state.opponent.active.length) return super.makeDecision(active, moves, switches, flags, activeIndex);
+		if (!actor || !state.opponent.active.length) {
+			throw new Error(`Hard T${state.turn} move request: missing active record; ` +
+				`self slot ${slot}=${actor?.species ?? 'missing'}, opponent count=${state.opponent.active.length}`);
+		}
 		const formatId = this.configCFRU.formatId;
 		const dex = Dex.forFormat(formatId);
 		if (!switches.length && active.moves?.length === 1 && active.moves[0].pp === undefined && moves.length === 1) {
@@ -247,7 +250,9 @@ export class HardAI extends NPCBattleAI {
 	}
 
 	protected override chooseSwitch(active: AnyObject | undefined, switches: SwitchChoice[]): number {
-		if (!this.state || !switches.length) return super.chooseSwitch(active, switches);
+		if (!this.state || !switches.length) {
+			throw new Error(`Hard T${this.tracker.getTurn()} replacement request: state=${!!this.state}, legal switches=${switches.length}`);
+		}
 		// Shared state omits fainted actives. Keep an inert request placeholder only for
 		// projecting this free entry; the simulator then applies entry effects normally.
 		let state = this.state;

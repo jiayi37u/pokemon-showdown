@@ -492,8 +492,12 @@ export function applyAttackHealth(actor: AIPokemon, target: AIPokemon, move: Ret
 
 export function transitionSupported(state: BattleState): string | undefined {
 	if (state.isDoubles) return 'two-turn search currently supports singles';
-	if (state.self.active.length !== 1 || state.opponent.active.length !== 1) return 'requires active placeholders';
-	if (rulesDex(state.field).gen < 3 || rulesDex(state.field).gen > 7) return 'generation outside transition coverage';
+	if (state.self.active.length !== 1 || state.opponent.active.length !== 1) {
+		throw new Error(`Hard T${state.turn}: singles requires one active per side (including fainted placeholders); ` +
+			`self=${state.self.active.length}, opponent=${state.opponent.active.length}`);
+	}
+	const gen = rulesDex(state.field).gen;
+	if (gen < 3 || (gen > 7 && gen !== 9)) return 'generation outside transition coverage';
 	for (const side of ['self', 'opponent'] as const) {
 		const party = state[side];
 		for (const [slot, turns] of Object.entries(party.conditions.futureMoves)) {
@@ -504,7 +508,7 @@ export function transitionSupported(state: BattleState): string | undefined {
 		}
 		for (const p of party.active) for (const effect of ['taunt', 'encore'] as const) {
 			if (p.volatiles.has(effect) && p.volatileTurns?.[effect] === undefined) {
-				return `${effect} remaining duration unavailable`;
+				throw new Error(`Hard T${state.turn} ${side} slot ${p.slot} (${p.species}): active ${effect} has no tracked duration`);
 			}
 		}
 	}

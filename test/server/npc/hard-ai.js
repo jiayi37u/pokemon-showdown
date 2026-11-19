@@ -32,6 +32,15 @@ function setup(foes, team, { doubles = false, AI = HardAI, format = '' } = {}) {
 	return { ai, reveal, decide() { ai.receiveRequest(battle.p2.activeRequest); return choice; } };
 }
 
+describe('Hard Gen 9 singles', () => {
+	it('searches ordinary moves even when the NPC can Terastallize', () => {
+		const game = setup([mon('Snorlax', ['bodyslam'])], [mon('Starmie', ['surf', 'psychic'])], { format: 'gen9ou' });
+		assert(battle.p2.activeRequest.active[0].canTerastallize);
+		assert.match(game.decide(), /^move [12]$/);
+		assert(game.ai.getLogger().getEntries().at(-1).reasoning.some(reason => reason.startsWith('Two-turn search')));
+	});
+});
+
 describe('Hard live replacement requests', () => {
 	for (const move of ['voltswitch', 'uturn', 'batonpass', 'partingshot']) {
 		it(`reuses the searched ${move} recipient on a matching public checkpoint`, () => {

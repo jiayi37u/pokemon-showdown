@@ -830,7 +830,8 @@ function runSearch(
 		refresh(candidate);
 	}
 	if (!winner || !Number.isFinite(winner.lo)) {
-		return { reason: 'no resolved action', values: [], nodes: search.nodes };
+		throw new Error(`Hard T${state.turn} ${replacing ? 'replacement' : 'move'} search: no resolved action ` +
+			`after ${search.nodes} nodes; supplied=[${actions.map(action => action.id)}], retained=[${playable.map(action => action.id)}]`);
 	}
 	const initial = search.value(root);
 	const values: SearchResult['values'] = roots.map(c => ({ id: c.action.id, value: (c === winner ? c.lo : c.hi) - initial,

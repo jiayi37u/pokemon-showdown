@@ -13,7 +13,7 @@ NPC 对战功能允许用户与电脑控制的对手进行对战，支持可配�
 |------|------|------|
 | BasicAI | ✅ 可用 | 简单 AI，优先最大伤害 |
 | NormalAI | ✅ 可用 | CFRU 评分系统，基本调试完成，少量细节遗漏 |
-| Multi NPC | ✅ 可用 | 两名玩家组队对战 NPC (v1.2) |
+| Multi NPC | ✅ 可用 | 两名玩家对战两名 NPC；每个 NPC 按 Normal 或 Hard 评分独立行动，只能换入自己的后备 |
 | HardAI | ✅ 可用 | 配置推断、单打对位价值和两回合搜索，见 [AI 逻辑](../ai-logic/HardAI/logic.md) |
 | ExpertAI | ⏳ 待开发 | 完整策略 + 双打协作 (v1.4) |
 

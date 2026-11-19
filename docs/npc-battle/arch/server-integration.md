@@ -358,20 +358,7 @@ opponentActive.push(trackedPokemonToAIPokemon(pokemon, slot, true, formatId));
 
 ## AI 选择机制
 
-`server/npc/room.ts` 中根据 NPC 模板的 `difficulty` 选择 AI：
-
-```typescript
-switch (difficulty) {
-case 'smart':
-case 'normal':
-    ai = new NormalAI(battle.stream, options);
-    break;
-case 'basic':
-default:
-    ai = new BasicAI(battle.stream);
-    break;
-}
-```
+`server/npc/room.ts` 优先使用挑战时指定的难度，其次使用 NPC 模板的 `difficulty`，默认 `basic`。`basic` 使用 `BasicAI`，`smart`／`normal` 使用 `NormalAI`，`hard` 使用 `HardAI`。Multi 由 `NPCMultiManager` 为 p2 和 p4 分别选择 Normal 或 Hard 控制器。
 
 ---
 
@@ -548,7 +535,7 @@ this.sides[3].sideConditions = this.sides[1].sideConditions;
 
 ### NPCMultiManager 协调器
 
-由于 NPC 被拆成 p2 和 p4 两个 side，需要 NPCMultiManager 统一协调决策：
+`NPCMultiManager` 把同一公开场面交给 p2、p4 各自的 Normal 或 Hard 控制器；每个控制器只使用本方请求中的后备。两边分别选好行动后再提交，Hard 在 Multi 使用战术评分，不展开两回合搜索：
 
 ```
                     ┌─────────────────────────────────────┐

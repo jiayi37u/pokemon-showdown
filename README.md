@@ -13,7 +13,7 @@
 | 模块 | 位置 | 说明 |
 |------|------|------|
 | NPC 对战系统 | `server/npc/` | 模板管理、房间创建、AI 轮询驱动 |
-| NPC AI | `server/npc/ai/` | `BasicAI`（最大伤害）、`NormalAI`（CFRU 评分）、`NPCMultiManager`（多人协调） |
+| NPC AI | `server/npc/ai/` | `BasicAI`（最大伤害）、`NormalAI`（CFRU 评分）、`HardAI`（配置推断与单打搜索）、`NPCMultiManager`（多人协调） |
 | CFRU 移植层 | `server/npc/ai/cfru/` | 评分引擎、伤害计算、`BattleTracker` 协议黑板、日志 |
 | NPC 数据 | `data/npc/` | `templates.json` 模板 + `teams/*.json` 队伍 |
 | 聊天命令 | `server/chat-plugins/npc.ts` | `/npc` 系列命令、`view-npc` 页面 |
@@ -22,7 +22,7 @@
 | 队伍转换工具 | `tools/convert-team.js` | PS 文本队伍 → NPC JSON，自动写回 `templates.json` |
 | 测试 | `test/npc/ai/` | 348 个单元用例：`node test/npc/ai/run-tests.js` |
 
-**AI 难度**：`BasicAI`（可用）、`NormalAI`（可用）、`HardAI` / `ExpertAI`（规划中，见 `docs/npc-battle/ROADMAP.md`）。
+**AI 难度**：Basic、Normal（Smart）和 Hard 可用，Expert 仍在规划中。各模式的支持范围见 [AI 逻辑](docs/ai-logic/README.md)。
 
 ## 快速开始
 

@@ -8,7 +8,7 @@
 |------|------|------|------|
 | Basic | BasicAI | ✅ 可用 | 优先最大伤害 |
 | Normal | NormalAI | ✅ 策略固定 | CFRU 基础评分；保留正确性修复 |
-| Hard | HardAI | ✅ 可用 | 公开证据约束配置，以对位矩阵和回应概率做最多两回合的选择性搜索；其他局面使用战术评分和换人，见 [Hard 逻辑](./HardAI/logic.md) |
+| Hard | HardAI | ✅ 可用 | 根据公开证据推断配置。Gen 3～7、Gen 9 和 PokeMMO 单打最多搜索两回合；双打和 Multi 使用 Hard 自己的出招、目标和换人评分。见 [Hard 逻辑](./HardAI/logic.md) |
 | Expert | ExpertAI | ⏳ 计划中 | 完整策略 + 双打协作 |
 
 ## 文档结构

@@ -184,7 +184,7 @@ python3 test/npc/sim-battle/benchmark.py --pool npc1 --pairs 60 --offset 30 --ou
 
 ## 与玩家录像逐回合对照
 
-现有导入器限定 Gen 9 Random Battle 单打、控制 p2。Hard 两回合搜索支持 Gen 3～7，因此该导入器中的 Hard 比较使用评分与规则回退，不衡量两回合搜索效果。其他格式需要适配状态还原；模拟产生的原始决策可使用下文快照工具直接复现。
+现有导入器限定 Gen 9 Random Battle 单打、控制 p2。Hard 比较走生产的单打两回合搜索；NPC 不主动太晶化，已公开的太晶化按录像还原。判断某回合是否因未支持招式退回评分，以决策日志为准。其他格式需要适配状态还原；模拟产生的原始决策可使用下文快照工具直接复现。
 
 ```bash
 node build

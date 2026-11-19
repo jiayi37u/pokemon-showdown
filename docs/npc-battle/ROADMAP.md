@@ -55,7 +55,7 @@
 - Phase 4: 集成测试
 
 **核心组件**:
-- NPCManager - 统一协调 p2+p4 的 AI 决策
+- `NPCMultiManager` 分别驱动 p2、p4 的 Normal 或 Hard 控制器。为控制决策耗时，Multi 暂不接入两回合联合搜索。
 - 虚拟双打状态构建 - 合并 p2+p4 视角
 - Request 同步机制 - 处理异步 request
 

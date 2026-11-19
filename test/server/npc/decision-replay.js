@@ -23,7 +23,7 @@ describe('Hard production decision snapshots', () => {
 			assert.deepEqual(state.opponent.active[0].moves, []);
 			const buffer = serialize({ difficulty: 'hard', request, state, args: [], seed: ai.prng.getSeed(),
 				config: ai.configCFRU, lastSwitchTurn: ai.lastSwitchTurn,
-				sacrificePlans: ai.sacrificePlans, lastMoves: [] });
+				entryPlan: ai.entryPlan });
 			const restored = deserialize(buffer);
 			assert.equal(restored.state.self.active[0], restored.state.self.team[0]);
 			assert(restored.state.self.active[0].volatiles instanceof Set);

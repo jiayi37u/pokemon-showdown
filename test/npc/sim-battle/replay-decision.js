@@ -13,9 +13,8 @@ function replay(buffer) {
 	ai.tracker = createBattleTracker(frame.request.side.id);
 	ai.setBattle({ format: frame.state.field.formatId });
 	ai.lastSwitchTurn = frame.lastSwitchTurn;
-	ai.sacrificePlans = frame.sacrificePlans;
-	const lastMoves = new Map(frame.lastMoves);
-	ai.tracker.getOurLastMove = position => lastMoves.get(position) || '';
+	ai.entryPlan = frame.entryPlan;
+	ai.tracker.getPivotMove = () => frame.pivotMove;
 	let choice;
 	ai.choose = value => { choice = value; };
 	const started = performance.now();

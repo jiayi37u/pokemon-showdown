@@ -23,9 +23,8 @@ for (const [difficulty, name] of [['hard', 'HardAI'], ['normal', 'NormalAI']]) {
 			// Capture the actual production input before decision mutation. Never read the opposing team.
 			fs.writeFileSync(snapshot, serialize({ difficulty, request, state, args,
 				seed: this.prng.getSeed(), config: this.configCFRU,
-				lastSwitchTurn: this.lastSwitchTurn, sacrificePlans: this.sacrificePlans,
-				lastMoves: [...(this.sacrificePlans?.values() || [])].map(p =>
-					[p.position, this.getTracker().getOurLastMove(p.position)]),
+				lastSwitchTurn: this.lastSwitchTurn, entryPlan: this.entryPlan,
+				pivotMove: this.getTracker().getPivotMove(side + 'a'),
 			}));
 		}
 		const choose = this.choose;

@@ -30,8 +30,7 @@ function buildFrame(input) {
 		state = buildBattleStateWithTracker(request, { format: input.format, turn }, tracker, config);
 	}
 	return { difficulty: 'hard', request, state, args: [], config, seed: input.seed,
-		lastSwitchTurn: new Map(input.lastSwitchTurn), sacrificePlans: new Map(),
-		lastMoves: [[`${input.side}a`, tracker.getOurLastMove(`${input.side}a`)]] };
+		lastSwitchTurn: new Map(input.lastSwitchTurn), pivotMove: tracker.getPivotMove(`${input.side}a`) };
 }
 
 function grade(expectedMove, choice, request) {

@@ -86,6 +86,7 @@ export function conditionalAttackDiscouraged(
 export function moveSelectionFailure(pokemon: AIPokemon, id: string, field: FieldConditions): string | undefined {
 	const dex = rulesDex(field), move = dex.moves.get(id), item = effectiveItem(pokemon, field);
 	if (item === 'assaultvest' && move.category === 'Status') return 'Assault Vest';
+	if (pokemon.volatiles.has('healblock') && move.flags.heal) return 'Heal Block';
 	if (pokemon.volatiles.has('taunt') && move.category === 'Status') return 'Taunt';
 	if (pokemon.volatiles.has('encore') && pokemon.lastMove &&
 		dex.moves.get(pokemon.lastMove).id !== move.id) return 'Encore';

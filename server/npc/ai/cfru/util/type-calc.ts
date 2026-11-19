@@ -379,7 +379,7 @@ export interface MoveInteractionContext {
 export function getMoveInteraction(
 	attacker: AIPokemon, defender: AIPokemon, move: AIMove, field: FieldConditions,
 	context: MoveInteractionContext = {}
-): { effectiveness: number, blockedBy?: string, failed?: boolean } {
+): { effectiveness: number, blockedBy?: string, failed?: boolean, immunityAbility?: string } {
 	const dex = rulesDex(field);
 	move = resolveMove(attacker, move, field, defender);
 	const data = dex.moves.get(move.calledMove || move.id);
@@ -481,7 +481,7 @@ export function getMoveInteraction(
 		if (direct && data.ignoreImmunity === false && !dex.getImmunity(move.type, defender.types) &&
 			effectiveItem(defender, field) !== 'ringtarget') return block('Type immunity to status move');
 		if (direct && getEffectiveAbilityTypeImmunity(attacker, defender, move, field).immune) {
-			return block(`Ability immunity: ${defender.ability}`);
+			return { ...block(`Ability immunity: ${defender.ability}`), immunityAbility: ability };
 		}
 		return { effectiveness: 1 };
 	}

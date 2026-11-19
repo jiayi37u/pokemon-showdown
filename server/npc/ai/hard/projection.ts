@@ -9,14 +9,14 @@ import { calculateDamage, selectDamage, type DamageCache, type DamagePolicy } fr
 import { canHaveOpponentMoves } from '../cfru/util/opponent-presets';
 import {
 	effectiveAbility, defensiveAbility, effectiveItem, effectivePriority, fieldWithActivePokemon,
-	grounded, projectWeather, rulesDex, tracedAbility,
+	getEffectiveStat, grounded, projectWeather, rulesDex, tracedAbility,
 } from '../cfru/util/mechanics';
 import { compareActionOrder, compareSpeedOrder } from '../cfru/util/speed';
 import { megaEvolutionState } from '../cfru/util/forms';
 import { directRecoveryAmount, entryHazardDamage, flinchesOnHit } from '../cfru/util/turn-outcome';
 import { getActualWeight, getEffectiveHpAfterSecondary, getExpectedHitCount } from '../cfru/util/damage-calc';
 import {
-	boostsCanChange, boostChanges, statusFailure, protectionMoves, volatileEffectFailure, moveSelectionFailure,
+	boostChanges, statusFailure, protectionMoves, volatileEffectFailure, moveSelectionFailure,
 	pendingWishRecovery, wishCasterRecovery, controlDuration, chargePhase, chargeHitPower, nextChainedHit, transferableVolatiles,
 } from '../cfru/util/move-effects';
 import { getMoveInteraction, getEffectiveAbilityTypeImmunity } from '../cfru/util/type-calc';
@@ -255,17 +255,21 @@ export function usableMove(state: BattleState, side: Side, id: string): boolean 
 }
 
 export function boosts(p: AIPokemon, changes: SparseBoostsTable,
-	state: Pick<BattleState, 'field'>, hostile = false): void {
-	const ability = effectiveAbility(p, state.field);
+	state: Pick<BattleState, 'field'>, hostile = false, ability = effectiveAbility(p, state.field)): boolean {
+	let changed = false;
 	for (const [stat, amount] of Object.entries(changes)) {
-		if (hostile && amount < 0 && ['clearbody', 'whitesmoke', 'fullmetalbody'].includes(ability)) continue;
 		const key = stat as keyof AIPokemon['boosts'];
 		if (!(key in p.boosts)) continue;
-		p.boosts[key] = Math.max(-6, Math.min(6, p.boosts[key] + amount *
-		(ability === 'contrary' ? -1 : ability === 'simple' ? 2 : 1)));
+		const delta = amount * (ability === 'contrary' ? -1 : ability === 'simple' ? 2 : 1);
+		if (hostile && delta < 0 && (['clearbody', 'whitesmoke', 'fullmetalbody'].includes(ability) ||
+			ability === 'hypercutter' && stat === 'atk' || ability === 'flowerveil' && p.types.includes('Grass'))) continue;
+		const stage = Math.max(-6, Math.min(6, p.boosts[key] + delta));
+		if (p.boosts[key] === stage) continue;
+		p.boosts[key] = stage; changed = true;
 		if (hostile && amount < 0 && ability === 'defiant') p.boosts.atk = Math.min(6, p.boosts.atk + 2);
 		if (hostile && amount < 0 && ability === 'competitive') p.boosts.spa = Math.min(6, p.boosts.spa + 2);
 	}
+	return changed;
 }
 
 function entryAbility(state: BattleState, side: Side): void {
@@ -511,12 +515,12 @@ export function transitionSupported(state: BattleState): string | undefined {
 export function supportsMove(state: BattleState, id: string): boolean {
 	const move = rulesDex(state.field).moves.get(id); id = move.id;
 	if ((id === 'taunt' || id === 'encore') && controlDuration(id, state.field, true, false) === undefined) return false;
-	if (move.selfSwitch === 'copyvolatile') return true;
+	if (move.selfSwitch === 'copyvolatile' || id === 'partingshot') return true;
 	if (move.ohko) return false;
 	if (id === 'naturepower') return false;
 	if (move.category !== 'Status') return true;
 	return !!(move.boosts || move.heal || move.status || move.sideCondition || move.weather || move.terrain || id === 'yawn' ||
-		protectionMoves.has(id) || ['rest', 'wish', 'painsplit', 'substitute', 'taunt', 'encore', 'leechseed',
+		protectionMoves.has(id) || ['rest', 'wish', 'painsplit', 'strengthsap', 'substitute', 'taunt', 'encore', 'leechseed',
 		'haze', 'defog', 'trick', 'switcheroo', 'roar', 'whirlwind', 'healbell', 'aromatherapy',
 		'curse', 'imprison', 'sleeptalk', 'bellydrum', 'perishsong', 'reflecttype', 'transform', 'skillswap', 'magnetrise', 'fairylock', 'healingwish', 'lunardance', 'synthesis', 'moonlight', 'morningsun', 'shoreup', 'splash', 'trickroom'].includes(id));
 }
@@ -643,7 +647,12 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		}
 	}
 	const interaction = getMoveInteraction(actionActor, target, move, state.field);
-	if (targetCanRespond && (interaction.failed || data.category === 'Status' && interaction.blockedBy)) return;
+	if (targetCanRespond && (interaction.failed || data.category === 'Status' && interaction.blockedBy)) {
+		if (interaction.immunityAbility === 'sapsipper') {
+			boosts(target, { atk: 1 }, state); revealAbility(target);
+		}
+		return;
+	}
 	if (data.category === 'Status' && targetCanRespond && data.flags.reflectable &&
 		defensiveAbility(actor, target, move, state.field) === 'magicbounce') {
 		[actor, target] = [target, actor]; [party, foeParty] = [foeParty, party]; side = other(side);
@@ -768,11 +777,28 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 			}
 		} else boosts(actor, { atk: 1, def: 1, spe: -1 }, state);
 	}
-	if (data.boosts) {
+	if (data.boosts || id === 'partingshot' || id === 'strengthsap') {
 		const recipient = targetsSelf ? actor : target;
-		if (boostsCanChange(recipient, boostChanges(move, perspective) || data.boosts, perspective)) {
-			boosts(recipient, boostChanges(move, perspective) || data.boosts, state, !targetsSelf);
+		let drained = 0;
+		if (id === 'strengthsap') {
+			if (target.boosts.atk === -6 || target.volatiles.has('substitute') &&
+				effectiveAbility(actor, state.field) !== 'infiltrator') return;
+			drained = getEffectiveStat(target.baseStats.atk, target.boosts.atk);
 		}
+		const changes = id === 'strengthsap' ? { atk: -1 } :
+			id === 'partingshot' ? { atk: -1, spa: -1 } : boostChanges(move, perspective)!;
+		const blocked = !targetsSelf && foeParty.conditions.mist && effectiveAbility(actor, state.field) !== 'infiltrator' &&
+			Object.values(changes).every(amount => amount < 0);
+		const changed = !blocked && boosts(recipient, changes, state, !targetsSelf, defensiveAbility(actor, recipient, move, state.field));
+		if (drained) {
+			if (effectiveAbility(target, state.field) === 'liquidooze') {
+				if (effectiveAbility(actor, state.field) !== 'magicguard') hp(actor, actor.hp - drained);
+			} else {
+				const healing = effectiveItem(actor, state.field) === 'bigroot' ? Math.floor((drained * 5324 + 2047) / 4096) : drained;
+				hp(actor, actor.hp + healing);
+			}
+		}
+		if (id === 'partingshot' && !changed && (dex.gen >= 7 || dex.currentMod === 'mmo')) return;
 	}
 	if (data.status && !target.fainted) status(state, side, actor, targetsSelf ? actor : target, move, data.status);
 	for (const secondary of data.secondaries || []) {

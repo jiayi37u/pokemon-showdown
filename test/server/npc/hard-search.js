@@ -31,6 +31,27 @@ const scoresFor = (search, state, moves, side = 'self') => Object.fromEntries(
 
 describe('Hard damage-based state search', () => {
 	afterEach(() => battles.splice(0).forEach(b => b.destroy()));
+	for (const [ability, stage, item, substitute] of [
+		['Huge Power', 1, ''], ['Huge Power', -1, 'Big Root'], ['Contrary', -6, ''],
+		['Clear Body', 1, ''], ['Contrary', 1, ''], ['Liquid Ooze', 1, 'Big Root'],
+		['Sap Sipper', 0, ''], ['Huge Power', 1, '', true],
+	]) {
+		it(`projects Strength Sap against PS: ${ability}, Attack ${stage}, ${item || 'no item'}${substitute ? ', Substitute' : ''}`, () => {
+			const battle = new Battle({ formatid: 'gen7customgame',
+				p1: { name: 'Own', team: [mon('Blissey', ['strengthsap'], { ability: 'Natural Cure', item })] },
+				p2: { name: 'Foe', team: [mon('Magikarp', ['splash'], { ability, item: 'Choice Band' })] } });
+			battles.push(battle); battle.makeChoices();
+			const user = battle.p1.active[0], target = battle.p2.active[0];
+			user.hp = 350; target.boosts.atk = stage;
+			if (substitute) target.addVolatile('substitute');
+			const state = projectedState(battle);
+			assert(supportsMove(state, 'strengthsap'));
+			const next = step(state, 'strengthsap', 'splash');
+			battle.makeChoices('move 1', 'move 1');
+			assert.equal(next.self.active[0].hp, user.hp);
+			assert.equal(next.opponent.active[0].boosts.atk, target.boosts.atk);
+		});
+	}
 	it('spends Z once per friendly branch across switches and charges only the base PP', () => {
 		const { ownZAction } = require('../../../dist/server/npc/ai/hard/projection');
 		const holder = species => mon(species, ['earthpower'], { item: 'Groundium Z' });
@@ -1649,6 +1670,19 @@ describe('Hard damage-based state search', () => {
 		assert.equal(receiver.boosts.spa, 2); assert.equal(receiver.hp, receiver.maxHp);
 		assert(!receiver.volatiles.has('substitute'));
 	});
+	for (const formatid of ['gen6customgame', 'gen7customgame', 'gen5pokemmoou']) {
+		it(`matches PS Parting Shot when neither stat can fall in ${formatid}`, () => {
+			const battle = new Battle({ formatid, p1: { name: 'Own', team: [mon('Mew', ['partingshot']), mon('Slowbro', ['surf'])] },
+				p2: { name: 'Foe', team: [mon('Registeel', ['splash'], { ability: 'Clear Body' })] } });
+			battles.push(battle); if (battle.requestState === 'teampreview') battle.makeChoices();
+			const state = projectedState(battle);
+			const projected = step(state, 'partingshot', 'splash');
+			battle.makeChoices('move 1', 'move 1');
+			assert.equal(projected.self.active[0].species === 'Slowbro', !!battle.p1.activeRequest.forceSwitch);
+			assert.equal(projected.opponent.active[0].boosts.atk, battle.p2.active[0].boosts.atk);
+			assert.equal(projected.opponent.active[0].boosts.spa, battle.p2.active[0].boosts.spa);
+		});
+	}
 	it('uses one opposing entry distribution for every simultaneous choice without advancing the turn', () => {
 		const f = fixture([mon('Mew', ['splash']), mon('Jolteon', ['thunderbolt']), mon('Slowbro', ['surf'])],
 			[mon('Mew', ['splash']), mon('Garchomp', ['earthquake']), mon('Venusaur', ['gigadrain'])]);

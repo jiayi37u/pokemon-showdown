@@ -13,7 +13,7 @@ import { megaEvolutionState } from './cfru/util/forms';
 import { getEffectiveSpeed } from './cfru/util/speed';
 import { HardEvaluation } from './hard/evaluation';
 import { fightingStyle, hardMove, hardMoveId } from './hard/opponent-model';
-import { pivotObservation, searchPosition, type SearchResult } from './hard/search';
+import { entryObservation, searchPosition, type SearchResult } from './hard/search';
 import { MatchupEvaluator } from './hard/matchups';
 
 const leadMoves = new Set(['voltswitch', 'uturn', 'flipturn', 'stealthrock', 'spikes']);
@@ -38,10 +38,9 @@ export class HardAI extends NPCBattleAI {
 	private logger: ReturnType<typeof createBattleLogger>;
 	private lastSwitchTurn = new Map<number, number>();
 	private useSearch: boolean;
-	private pivotPlan?: { turn: number, actor: string, move: string, belief: string,
+	private entryPlan?: { turn: number, belief: string,
 		receivers: NonNullable<SearchResult['receivers']> };
 	private matchups = new MatchupEvaluator();
-	private sacrificePlans = new Map<string, { turn: number, recipient: number, position: string, move: string }>();
 
 	constructor(stream: ObjectReadWriteStream<string>, options: HardAIOptions = {}, debug = false) {
 		super(stream, { useStatusMoves: true, canSwitch: true, damageCalc: 'full' }, { seed: options.seed }, debug);
@@ -101,9 +100,8 @@ export class HardAI extends NPCBattleAI {
 		const state = this.state!;
 		const slot = this.activeSlot + activeIndex;
 		const actor = state.self.active.find(p => p.slot === slot);
-		this.pivotPlan = undefined;
+		this.entryPlan = undefined;
 		if (!actor || !state.opponent.active.length) return super.makeDecision(active, moves, switches, flags, activeIndex);
-		this.sacrificePlans.delete(actor.ident || actor.species);
 		const formatId = this.configCFRU.formatId;
 		const dex = Dex.forFormat(formatId);
 		if (!switches.length && active.moves?.length === 1 && active.moves[0].pp === undefined && moves.length === 1) {
@@ -184,6 +182,8 @@ export class HardAI extends NPCBattleAI {
 				.filter(a => a.switchTo) : [])],
 		new Map((active.moves || []).map((m: AnyObject) => [dex.moves.get(m.id || m.move).id, m.pp])),
 		this.matchups) : undefined;
+		if (search?.receivers) this.entryPlan = { turn: state.turn, belief: this.entryBelief(evaluator, state),
+			receivers: search.receivers };
 		if (search?.choice?.startsWith('switch')) {
 			const target = Number(search.choice.split(' ')[1]);
 			const sw = switches.find(s => s.slot === target)!;
@@ -200,8 +200,6 @@ export class HardAI extends NPCBattleAI {
 			return { type: 'switch', target };
 		}
 		if (search?.choice) best = candidates.find(c => choiceId(c.choice) === search.choice)!;
-		if (search?.receivers) this.pivotPlan = { turn: state.turn, actor: actor.ident!, move: best.result.move.id,
-			belief: this.entryBelief(evaluator, state), receivers: search.receivers };
 		if (!search?.choice && !active.trapped) {
 			const replacements = switches.map(sw =>
 				evaluator.scoreSwitch(
@@ -237,13 +235,6 @@ export class HardAI extends NPCBattleAI {
 		}
 		this.logger.logMoveDecision(state.turn, actor, candidates.map(c => c.result), best.result.move,
 			state, reasoning, undefined, best.targetName);
-		if (['healingwish', 'lunardance'].includes(best.result.move.id)) {
-			const recipient = moveEvaluator.sacrificeRecipient(moveActor);
-			if (recipient) this.sacrificePlans.set(actor.ident || actor.species, {
-				turn: state.turn, recipient: recipient.pokemon.slot,
-				position: `${actor.ownerSide || this.tracker.getOurSide()}${String.fromCharCode(96 + actor.slot)}`,
-				move: best.result.move.id });
-		}
 		return { type: 'move', slot: best.choice.slot, targetPos: best.targetPos,
 			zMove: best.choice.zMove, transform };
 	}
@@ -257,15 +248,6 @@ export class HardAI extends NPCBattleAI {
 
 	protected override chooseSwitch(active: AnyObject | undefined, switches: SwitchChoice[]): number {
 		if (!this.state || !switches.length) return super.chooseSwitch(active, switches);
-		const plan = this.sacrificePlans.get(active?.ident);
-		this.sacrificePlans.delete(active?.ident);
-		const recipient = switches.find(sw => sw.slot === plan?.recipient);
-		if (recipient && this.state.turn === plan?.turn && this.tracker.getOurLastMove(plan.position) === plan.move) {
-			const pokemon = buildPokemonFromRequest(recipient.pokemon, recipient.slot, false, this.configCFRU.formatId);
-			this.logger.logSwitchDecision(this.state.turn, null, pokemon, [],
-				`Receive planned ${plan.move} recovery`, this.state);
-			return recipient.slot;
-		}
 		// Shared state omits fainted actives. Keep an inert request placeholder only for
 		// projecting this free entry; the simulator then applies entry effects normally.
 		let state = this.state;
@@ -286,19 +268,19 @@ export class HardAI extends NPCBattleAI {
 		const evaluator = new HardEvaluation(state, this.configCFRU.formatId, undefined, this.matchups.damageCache);
 		const actor = state.self.active.find(p => p.ident === active?.ident);
 		const pivot = actor && this.tracker.getPivotMove(`${actor.ownerSide}a`);
-		const previous = this.pivotPlan;
-		this.pivotPlan = undefined;
-		if (previous && previous.turn === state.turn && previous.actor === actor?.ident && previous.move === pivot &&
+		const previous = this.entryPlan;
+		this.entryPlan = undefined;
+		if (previous && previous.turn === state.turn && actor && (actor.fainted || pivot) &&
 			state.opponent.active.length && previous.belief === this.entryBelief(evaluator, state)) {
-			const observation = pivotObservation(state);
-			const health = [actor!.hpPercent, state.opponent.active[0].hpPercent];
+			const observation = entryObservation(state);
+			const health = [actor.hpPercent, state.opponent.active[0].hpPercent];
 			const distance = (values: number[]) => health.reduce((sum, value, index) => sum + Math.abs(value - values[index]), 0);
 			const match = previous.receivers.filter(candidate => candidate.observation === observation)
 				.sort((left, right) => distance(left.health) - distance(right.health))[0];
 			const selected = match && switches.find(choice => choice.pokemon.ident === match.recipient);
 			if (selected) {
-				this.logger.logSwitchDecision(state.turn, actor!, state.self.reserve.find(member => member.ident === match.recipient)!,
-					[], 'Reuse two-turn pivot recipient', state);
+				this.logger.logSwitchDecision(state.turn, actor, state.self.reserve.find(member => member.ident === match.recipient)!,
+					[], 'Reuse two-turn replacement plan', state);
 				return selected.slot;
 			}
 		}

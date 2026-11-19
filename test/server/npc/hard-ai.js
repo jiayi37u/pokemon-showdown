@@ -33,7 +33,7 @@ function setup(foes, team, { doubles = false, AI = HardAI, format = '' } = {}) {
 }
 
 describe('Hard live replacement requests', () => {
-	for (const move of ['voltswitch', 'uturn', 'batonpass']) {
+	for (const move of ['voltswitch', 'uturn', 'batonpass', 'partingshot']) {
 		it(`reuses the searched ${move} recipient on a matching public checkpoint`, () => {
 			const game = setup([mon('Snorlax', ['meanlook', 'tackle'])],
 				[mon('Jolteon', [move, 'splash']), mon('Garchomp', ['earthquake']), mon('Slowbro', ['scald'])],
@@ -49,7 +49,7 @@ describe('Hard live replacement requests', () => {
 			let reason;
 			game.ai.logger.logSwitchDecision = (_turn, _actor, _target, _scores, message) => { reason = message; };
 			assert.match(game.decide(), /^switch [23]$/);
-			assert.match(reason, /Reuse two-turn pivot recipient/);
+			assert.match(reason, /Reuse two-turn replacement plan/);
 		});
 	}
 	for (const switchFoe of [false, true]) {
@@ -61,7 +61,7 @@ describe('Hard live replacement requests', () => {
 			battle.makeChoices('move meanlook', 'move splash');
 			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
 			assert.equal(game.decide(), 'move 1');
-			assert(game.ai.pivotPlan?.receivers.length);
+			assert(game.ai.entryPlan?.receivers.length);
 			cursor = battle.log.length;
 			battle.makeChoices(switchFoe ? 'switch 2' : 'move psychic', 'move 1');
 			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
@@ -71,6 +71,45 @@ describe('Hard live replacement requests', () => {
 			assert.match(reason, /^Replacement search/);
 		});
 	}
+	for (const move of ['memento', 'healingwish']) {
+		it(`executes the receiver selected before ${move} fainted its user`, () => {
+			const game = setup([mon('Snorlax', ['meanlook'])], [mon('Latios', [move, 'splash']),
+				mon('Garchomp', ['earthquake']), mon('Slowbro', ['scald'])], { format: 'gen6customgame' });
+			let cursor = battle.log.length;
+			battle.p2.active[0].moveSlots[1].pp = 1;
+			battle.makeChoices('move meanlook', 'move splash');
+			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
+			assert.equal(game.decide(), 'move 1');
+			cursor = battle.log.length;
+			battle.makeChoices('move meanlook', 'move 1');
+			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
+			assert(battle.p2.active[0].fainted);
+			let reason;
+			game.ai.logger.logSwitchDecision = (_turn, _actor, _target, _scores, message) => { reason = message; };
+			assert.match(game.decide(), /^switch [23]$/);
+			assert.equal(reason, 'Reuse two-turn replacement plan');
+		});
+	}
+	it('keeps the searched receiver when an ordinary attack is followed by a predicted knockout', () => {
+		const game = setup([mon('Snorlax', ['meanlook', 'seismictoss'])], [
+			mon('Pikachu', ['thundershock'], { level: 5, item: 'Focus Sash' }),
+			mon('Garchomp', ['earthquake']), mon('Slowbro', ['scald']),
+		], { format: 'gen6customgame' });
+		const play = foe => {
+			const cursor = battle.log.length;
+			battle.makeChoices(foe, 'move 1');
+			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
+		};
+		play('move meanlook'); play('move seismictoss');
+		assert.equal(battle.p2.active[0].hp, 1);
+		assert.equal(game.decide(), 'move 1');
+		play('move seismictoss');
+		assert(battle.p2.activeRequest.forceSwitch);
+		let reason;
+		game.ai.logger.logSwitchDecision = (_turn, _actor, _target, _scores, message) => { reason = message; };
+		assert.match(game.decide(), /^switch [23]$/);
+		assert.equal(reason, 'Reuse two-turn replacement plan');
+	});
 	for (const button of [true, false]) {
 		it(button ? 'searches after Eject Button activates' : 'searches a simultaneous replacement request', () => {
 			const game = setup([mon('Mew', ['tackle'], { level: button ? 100 : 1 }), mon('Pikachu', ['surf']), mon('Pelipper', ['scald'])],

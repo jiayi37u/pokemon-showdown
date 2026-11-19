@@ -60,6 +60,14 @@ export function resolveMove(attacker: AIPokemon, move: AIMove, field: FieldCondi
 	return { ...move, ...resolveMoveType(attacker, { ...move, id }, field) };
 }
 
+export function consumedStellarType(attacker: AIPokemon, move: Parameters<typeof resolveMoveType>[1], field: FieldConditions) {
+	if (attacker.terastallized !== 'Stellar' || toID(attacker.species) === 'terapagosstellar' || move.category === 'Status') return;
+	const data = rulesDex(field).moves.get(move.id);
+	if (data.damage || data.damageCallback || data.ohko) return;
+	const { type } = resolveMoveType(attacker, move, field);
+	if (type !== '???' && !attacker.stellarBoostedTypes?.includes(type)) return type;
+}
+
 /** Type-changing effects also resolve public Stellar type consumption without constructing a scoring context. */
 export function resolveMoveType(
 	attacker: AIPokemon,

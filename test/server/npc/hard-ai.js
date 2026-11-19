@@ -42,11 +42,11 @@ describe('Hard Gen 9 singles', () => {
 });
 
 describe('Hard live replacement requests', () => {
-	for (const move of ['voltswitch', 'uturn', 'batonpass', 'partingshot']) {
+	for (const move of ['voltswitch', 'uturn', 'batonpass', 'partingshot', 'shedtail']) {
 		it(`reuses the searched ${move} recipient on a matching public checkpoint`, () => {
 			const game = setup([mon('Snorlax', ['meanlook', 'tackle'])],
 				[mon('Jolteon', [move, 'splash']), mon('Garchomp', ['earthquake']), mon('Slowbro', ['scald'])],
-				{ format: 'gen6customgame' });
+				{ format: move === 'shedtail' ? 'gen9customgame' : 'gen6customgame' });
 			const play = (own, foe) => {
 				const cursor = battle.log.length;
 				battle.makeChoices(foe, own);
@@ -63,11 +63,11 @@ describe('Hard live replacement requests', () => {
 	}
 	for (const switchFoe of [false, true]) {
 		it(switchFoe ? 'replans a pivot when the opponent switches' : 'replans after contact rules out an opposing item', () => {
-			const game = setup([mon('Slowbro', ['meanlook', 'psychic']), mon('Snorlax', ['tackle'])],
+			const game = setup([mon('Slowbro', ['infestation', 'psychic']), mon('Snorlax', ['tackle'])],
 				[mon('Jolteon', ['uturn', 'splash']), mon('Tyranitar', ['crunch']), mon('Blissey', ['seismictoss'])],
 				{ format: 'gen6customgame' });
 			let cursor = battle.log.length;
-			battle.makeChoices('move meanlook', 'move splash');
+			battle.makeChoices('move infestation', 'move splash');
 			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
 			assert.equal(game.decide(), 'move 1');
 			assert(game.ai.entryPlan?.receivers.length);
@@ -82,15 +82,15 @@ describe('Hard live replacement requests', () => {
 	}
 	for (const move of ['memento', 'healingwish']) {
 		it(`executes the receiver selected before ${move} fainted its user`, () => {
-			const game = setup([mon('Snorlax', ['meanlook'])], [mon('Latios', [move, 'splash']),
+			const game = setup([mon('Snorlax', ['splash'])], [mon('Latios', [move, 'ingrain']),
 				mon('Garchomp', ['earthquake']), mon('Slowbro', ['scald'])], { format: 'gen6customgame' });
 			let cursor = battle.log.length;
 			battle.p2.active[0].moveSlots[1].pp = 1;
-			battle.makeChoices('move meanlook', 'move splash');
+			battle.makeChoices('move splash', 'move ingrain');
 			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
 			assert.equal(game.decide(), 'move 1');
 			cursor = battle.log.length;
-			battle.makeChoices('move meanlook', 'move 1');
+			battle.makeChoices('move splash', 'move 1');
 			game.ai.getTracker().parseMessage(battle.log.slice(cursor).join('\n'));
 			assert(battle.p2.active[0].fainted);
 			let reason;

@@ -466,10 +466,10 @@ export function observationKey(state: BattleState): string {
 	};
 	return JSON.stringify([state.self.team.map(p => [identity(p), p.hp, p.maxHp, p.active, p.status,
 		p.boosts, p.baseStats, p.item, p.itemExchange, p.lastMove,
-		p.moves, p.species, p.types, p.ability, [...p.volatiles].sort(), p.volatileTurns, committedMove(p), p.moveSequence]),
+		p.moves, p.species, p.types, p.terastallized, p.stellarBoostedTypes, p.ability, [...p.volatiles].sort(), p.volatileTurns, committedMove(p), p.moveSequence]),
 	state.opponent.team.map(p => [identity(p), Math.ceil(p.hpPercent), p.active, p.status, p.boosts,
 		p.lastMove, p.itemKnown ? p.item : '', p.itemExchange, p.moves, p.species, p.types, [...p.volatiles].sort(),
-		p.volatileTurns, committedMove(p), p.moveSequence?.elapsed,
+		p.terastallized, p.stellarBoostedTypes, p.volatileTurns, committedMove(p), p.moveSequence?.elapsed,
 		p.observedAbility || p.abilityChanged ? p.ability : '']),
 	state.field, observedConditions(state.self), observedConditions(state.opponent), !!state.ownZUsed]);
 }

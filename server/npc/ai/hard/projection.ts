@@ -19,7 +19,7 @@ import {
 	boostChanges, statusFailure, protectionMoves, volatileEffectFailure, moveSelectionFailure,
 	pendingWishRecovery, wishCasterRecovery, controlDuration, chargePhase, chargeHitPower, nextChainedHit, transferableVolatiles,
 } from '../cfru/util/move-effects';
-import { getMoveInteraction, getEffectiveAbilityTypeImmunity } from '../cfru/util/type-calc';
+import { consumedStellarType, getMoveInteraction, getEffectiveAbilityTypeImmunity } from '../cfru/util/type-calc';
 import { itemMoveFailure, itemRemovalFailure } from '../cfru/util/items';
 
 export interface SearchAction {
@@ -30,7 +30,7 @@ export interface SearchAction {
 	calledMove?: string;
 	mega?: boolean;
 	switchTo?: AIPokemon;
-	copyVolatile?: boolean;
+	selfSwitch?: Move['selfSwitch'];
 	prior: number;
 }
 export type Side = 'self' | 'opponent';
@@ -164,7 +164,7 @@ export function positionKey(state: BattleState): string {
 	const cached = snapshotKeys.get(state); if (cached !== undefined) return cached;
 	const pokemon = (p: ProjectedPokemon) => [identity(p), p.slot, p.species, p.hp, p.maxHp, p.active, p.fainted,
 		p.status, p.sleepTurns, p.toxicCounter, p.boosts, p.baseStats, p.statSpread, p.trapSource,
-		p.types, p.item, p.itemKnown, p.itemLost, p.itemAssumed,
+		p.types, p.terastallized, p.terastallized && p.originalTypes, p.stellarBoostedTypes, p.item, p.itemKnown, p.itemLost, p.itemAssumed,
 		p.itemChanged, p.itemExchange, p.ability, p.observedAbility, p.abilityChanged, p.moves, p.lastMove, p.activeMoveActions,
 		[...p.volatiles].sort(), p.volatileTurns, p.chargingMove, p.rampageMove, p.moveSequence, p.projection,
 		p.queuedSpeed, p.queuedPriorityAbility, p.publicKnowledge,
@@ -297,9 +297,9 @@ function releaseTraps(state: BattleState, source: AIPokemon): void {
 	}
 }
 
-function transferEntryEffects(outgoing: ProjectedPokemon, incoming: ProjectedPokemon, field: BattleState['field']) {
-	incoming.boosts = { ...outgoing.boosts };
-	for (const effect of transferableVolatiles(outgoing.volatiles, rulesDex(field), 'copyvolatile')) {
+function transferEntryEffects(outgoing: ProjectedPokemon, incoming: ProjectedPokemon, field: BattleState['field'], kind: 'copyvolatile' | 'shedtail') {
+	if (kind === 'copyvolatile') incoming.boosts = { ...outgoing.boosts };
+	for (const effect of transferableVolatiles(outgoing.volatiles, rulesDex(field), kind)) {
 		incoming.volatiles.add(effect);
 		const control = effect as keyof NonNullable<AIPokemon['volatileTurns']>;
 		if (outgoing.volatileTurns?.[control]) (incoming.volatileTurns ||= {})[control] = outgoing.volatileTurns[control];
@@ -309,19 +309,19 @@ function transferEntryEffects(outgoing: ProjectedPokemon, incoming: ProjectedPok
 	}
 }
 
-export function entryView(state: BattleState, side: Side, copyVolatile?: boolean): BattleState {
-	if (!copyVolatile) return state;
+export function entryView(state: BattleState, side: Side, selfSwitch?: Move['selfSwitch']): BattleState {
+	if (typeof selfSwitch !== 'string') return state;
 	const next = clonePosition(state);
-	for (const candidate of next[side].reserve) transferEntryEffects(next[side].active[0], candidate, next.field);
+	for (const candidate of next[side].reserve) transferEntryEffects(next[side].active[0], candidate, next.field, selfSwitch);
 	return next;
 }
 
-function installEntry(state: BattleState, side: Side, selected: AIPokemon, copyVolatile = false): AIPokemon | undefined {
+function installEntry(state: BattleState, side: Side, selected: AIPokemon, selfSwitch?: Move['selfSwitch']): AIPokemon | undefined {
 	const party = state[side], outgoing = party.active[0];
 	const incoming = party.team.find(p => identity(p) === identity(selected))!;
 	if (!incoming || incoming.fainted || incoming === outgoing) return;
 	if (outgoing) {
-		if (copyVolatile) transferEntryEffects(outgoing, incoming, state.field);
+		if (typeof selfSwitch === 'string') transferEntryEffects(outgoing, incoming, state.field, selfSwitch);
 		releaseTraps(state, outgoing);
 		const ability = effectiveAbility(outgoing, state.field);
 		if (!outgoing.fainted && ability === 'regenerator') hp(outgoing, outgoing.hp + Math.floor(outgoing.maxHp / 3));
@@ -357,8 +357,8 @@ function installEntry(state: BattleState, side: Side, selected: AIPokemon, copyV
 	return incoming;
 }
 
-export function switchIn(state: BattleState, side: Side, selected: AIPokemon, copyVolatile = false): void {
-	const incoming = installEntry(state, side, selected, copyVolatile);
+export function switchIn(state: BattleState, side: Side, selected: AIPokemon, selfSwitch?: Move['selfSwitch']): void {
+	const incoming = installEntry(state, side, selected, selfSwitch);
 	if (!incoming) return;
 	const party = state[side];
 	applyEntryEffects(incoming, party.conditions, state.field);
@@ -519,7 +519,7 @@ export function transitionSupported(state: BattleState): string | undefined {
 export function supportsMove(state: BattleState, id: string): boolean {
 	const move = rulesDex(state.field).moves.get(id); id = move.id;
 	if ((id === 'taunt' || id === 'encore') && controlDuration(id, state.field, true, false) === undefined) return false;
-	if (move.selfSwitch === 'copyvolatile' || id === 'partingshot') return true;
+	if (typeof move.selfSwitch === 'string' || id === 'partingshot') return true;
 	if (move.ohko) return false;
 	if (id === 'naturepower') return false;
 	if (move.category !== 'Status') return true;
@@ -530,7 +530,7 @@ export function supportsMove(state: BattleState, id: string): boolean {
 }
 
 export type ChooseEntry = (state: BattleState, side: Side, cause: 'pivot' | 'phaze') => AIPokemon | undefined;
-interface PendingEntry { side: Side; cause: 'pivot' | 'phaze'; copyVolatile?: boolean }
+interface PendingEntry { side: Side; cause: 'pivot' | 'phaze'; selfSwitch?: Move['selfSwitch'] }
 
 function execute(state: BattleState, side: Side, action: SearchAction, reply: SearchAction,
 	policy: DamagePolicy, remaining: TurnCheckpoint['remaining'], startedActors: readonly string[],
@@ -619,6 +619,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 			!chargeHitPower(actor, target, move, state.field) || (dex.gen >= 6 || dex.currentMod === 'mmo') &&
 			getActualWeight(target.species, effectiveAbility(target, state.field), effectiveItem(target, state.field)) >= 2000)) return;
 		if (id === 'skullbash') boosts(actor, { def: 1 }, state);
+		if (id === 'electroshot' || id === 'meteorbeam') boosts(actor, { spa: 1 }, state);
 		const phase = chargePhase(actor, move, state.field);
 		if (phase === 'herb') {
 			revealItem(actor, true);
@@ -629,6 +630,11 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 		}
 	}
 	if (releasing && id === 'skydrop' && target.types.includes('Flying')) return;
+	if (data.flags.charge) {
+		actionActor.chargingMove = id;
+		actionActor.item = actor.item;
+		actionActor.itemLost = actor.itemLost;
+	}
 	if (protectionMoves.has(id)) {
 		if (!protectionMoves.has(previous)) actor.projection.protect = true;
 		return;
@@ -687,6 +693,8 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 				activePokemon: [...party.active, ...foeParty.active] }), policy));
 		if (dealt && action.zMove && target.projection?.protect && !data.breaksProtect) dealt = Math.max(1, Math.floor(dealt / 4));
 		if (!dealt) return;
+		const stellarType = consumedStellarType(actionActor, move, state.field);
+		if (stellarType) actor.stellarBoostedTypes = [...(actor.stellarBoostedTypes || []), stellarType];
 		hitSubstitute = target.volatiles.has('substitute') &&
 			!data.flags.sound && effectiveAbility(actor, state.field) !== 'infiltrator';
 		if (hitSubstitute) {
@@ -824,10 +832,13 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 	if (id === 'painsplit') {
 		const health = Math.floor((actor.hp + target.hp) / 2); hp(actor, health); hp(target, health);
 	}
-	if (id === 'substitute' && !actor.volatiles.has('substitute') && actor.hp > Math.floor(actor.maxHp / 4)) {
+	if (id === 'substitute' || data.selfSwitch === 'shedtail') {
+		if (volatileEffectFailure(perspective, actor, actor, move)) return;
 		actor.projection ||= {};
-		actor.projection.substituteHp = Math.floor(actor.maxHp / 4); hp(actor, actor.hp - actor.projection.substituteHp);
+		actor.projection.substituteHp = Math.floor(actor.maxHp / 4);
+		hp(actor, actor.hp - (data.selfSwitch === 'shedtail' ? Math.ceil(actor.maxHp / 2) : actor.projection.substituteHp));
 		actor.volatiles.add('substitute');
+		actor.volatiles.delete('partiallytrapped'); delete actor.trapSource;
 	}
 	if (['taunt', 'encore', 'leechseed'].includes(id) && !volatileEffectFailure(perspective, actor, target, move) &&
 		(id !== 'encore' || hasMovePP(target, toID(target.lastMove)))) {
@@ -893,7 +904,7 @@ function execute(state: BattleState, side: Side, action: SearchAction, reply: Se
 
 	triggerHealthItem(actor, state);
 	if (data.forceSwitch && target.hp) return { side: other(side), cause: 'phaze' };
-	if (data.selfSwitch && actor.hp) return { side, cause: 'pivot', copyVolatile: data.selfSwitch === 'copyvolatile' };
+	if (data.selfSwitch && actor.hp) return { side, cause: 'pivot', selfSwitch: data.selfSwitch };
 }
 
 function futureAttackSource(state: BattleState, side: Side, slot: number) {
@@ -1176,7 +1187,7 @@ export function advancePosition(state: BattleState, own: SearchAction, foe: Sear
 	while (!continueTurn(turn, policy, cache)) {
 		const { side, cause } = turn.pending!;
 		const entrant = chooseEntry(turn.state, side, cause);
-		if (entrant) switchIn(turn.state, side, entrant, turn.pending!.copyVolatile);
+		if (entrant) switchIn(turn.state, side, entrant, turn.pending!.selfSwitch);
 		if (!entrant) turn.pending = undefined;
 	}
 	return turn.state;

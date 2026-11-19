@@ -138,6 +138,7 @@ export function calculateDamage(
 	};
 	const hits = Math.max(1, Math.round(getExpectedHitCount(move, ownAbility, ownItem, attacker.species)));
 	const moveOptions = { hits,
+		chargeBoostApplied: attacker.chargingMove === data.id,
 		isStellarFirstUse: attacker.terastallized === 'Stellar' && !attacker.stellarBoostedTypes?.includes(move.type),
 		ability: ownAbilityName as AbilityName,
 		item: ownItemName as ItemName,

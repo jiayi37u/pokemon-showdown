@@ -30,6 +30,7 @@ export namespace State {
     useMax?: boolean | 'gmax';
     isCrit?: boolean;
     isStellarFirstUse?: boolean;
+    chargeBoostApplied?: boolean;
     hits?: number;
     timesUsed?: number;
     timesUsedWithMetronome?: number;

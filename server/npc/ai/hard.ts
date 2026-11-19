@@ -293,7 +293,7 @@ export class HardAI extends NPCBattleAI {
 			buildPokemonFromRequest(sw.pokemon, sw.slot, false, this.configCFRU.formatId));
 		const search = this.useSearch ? searchPosition(state, evaluator,
 			recipients.map(member => ({ id: `switch ${member.slot}`, switchTo: member, prior: 0,
-				copyVolatile: !!pivot && Dex.forFormat(this.configCFRU.formatId).moves.get(pivot).selfSwitch === 'copyvolatile' })),
+				selfSwitch: pivot ? Dex.forFormat(this.configCFRU.formatId).moves.get(pivot).selfSwitch : undefined })),
 			new Map(), this.matchups, true) : undefined;
 		const searched = recipients.find(member => search?.choice === `switch ${member.slot}`);
 		if (search && searched) {

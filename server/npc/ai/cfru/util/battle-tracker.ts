@@ -9,7 +9,7 @@
  * @license MIT
  */
 
-import { resolveMoveType } from './type-calc';
+import { consumedStellarType } from './type-calc';
 import { makeAIPokemonSkeleton, speciesDefaults } from './pokemon-builder';
 import type { FieldConditions, SideConditions } from '../types';
 import { Dex, toID } from '../../../../../sim/dex';
@@ -2461,7 +2461,6 @@ export class BattleTracker {
 		const known = this.ourPokemon.get(position)?.pokemon || this.opponentPokemon.get(position);
 		const species = this.activeFormes.get(position) || known?.species || this.entries.get(position)?.species;
 		if (!species) return;
-		if (toID(species) === 'terapagosstellar') return;
 		const data = speciesDefaults(species, this.formatId);
 		const attacker = makeAIPokemonSkeleton({ slot: this.getFieldSlot(position), species,
 			hp: 100, maxHp: 100, hpPercent: 100, status: '', fainted: false, active: true, level: 100, gender: 'N',
@@ -2470,11 +2469,10 @@ export class BattleTracker {
 		attacker.volatiles = this.getVolatiles(position);
 		attacker.terastallized = 'Stellar';
 		const move = (this.formatId ? Dex.forFormat(this.formatId) : Dex).moves.get(moveName);
-		if (move.category === 'Status') return;
 		const field: FieldConditions = { ...this.fieldConditions, formatId: this.formatId, weatherTurns: 0, terrainTurns: 0,
 			trickroom: this.fieldConditions.trickRoom, trickroomTurns: 0,
 			magicroom: this.fieldConditions.magicRoom, wonderroom: this.fieldConditions.wonderRoom };
-		return resolveMoveType(attacker, move, field).type;
+		return consumedStellarType(attacker, move, field);
 	}
 
 	getStellarBoostedTypes(pokemon: string): string[] {

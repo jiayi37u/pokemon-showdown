@@ -87,7 +87,7 @@ export function calculateSMSSSV(
   checkWindRider(attacker, field.attackerSide);
   checkWindRider(defender, field.defenderSide);
 
-  if (move.named('Meteor Beam', 'Electro Shot')) {
+  if (!move.chargeBoostApplied && move.named('Meteor Beam', 'Electro Shot')) {
     attacker.boosts.spa +=
       attacker.hasAbility('Simple') ? 2
       : attacker.hasAbility('Contrary') ? -1

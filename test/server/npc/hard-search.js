@@ -31,6 +31,48 @@ const scoresFor = (search, state, moves, side = 'self') => Object.fromEntries(
 
 describe('Hard damage-based state search', () => {
 	afterEach(() => battles.splice(0).forEach(b => b.destroy()));
+	for (const [move, weather, item, turns] of [
+		['electroshot', 'raindance', 'Power Herb', 1], ['electroshot', 'raindance', 'Utility Umbrella', 2],
+		['meteorbeam', '', '', 2], ['meteorbeam', '', 'Power Herb', 1],
+	]) {
+		it(`matches PS charge boosts and damage: ${move} / ${weather} / ${item}`, () => {
+			const battle = new Battle({ formatid: 'gen9customgame', seed: '1,2,3,4',
+				p1: { name: 'Own', team: [mon('Mew', [move], { ability: 'No Guard', item })] },
+				p2: { name: 'Foe', team: [mon('Blissey', ['splash'], { ability: 'Battle Armor' })] } });
+			battles.push(battle); battle.makeChoices(); battle.randomizer = base => base;
+			if (weather) battle.field.setWeather(weather, battle.p1.active[0]);
+			let state = projectedState(battle);
+			for (let turn = 1; turn <= turns; turn++) {
+				state = step(state, move, 'splash', { quantile: 1 });
+				battle.makeChoices('move 1', 'move 1');
+				assert.equal(state.self.active[0].boosts.spa, 1);
+				assert.equal(state.self.active[0].boosts.spa, battle.p1.active[0].boosts.spa);
+				assert.equal(state.self.active[0].item, battle.p1.active[0].item);
+				assert.equal(state.opponent.active[0].hp, battle.p2.active[0].hp);
+				assert.equal(state.opponent.active[0].hp < state.opponent.active[0].maxHp, turn === turns);
+			}
+		});
+	}
+	it('spends the observed opponent Stellar boost only in the branch that hits', () => {
+		const battle = new Battle({ formatid: 'gen9customgame', seed: '1,2,3,4',
+			p1: { name: 'Own', team: [mon('Blissey', ['protect', 'splash'], { ability: 'Battle Armor' })] },
+			p2: { name: 'Foe', team: [mon('Mew', ['psychic', 'splash'], { teraType: 'Stellar' })] } });
+		battles.push(battle); battle.makeChoices(); battle.randomizer = base => base;
+		battle.makeChoices('move splash', 'move splash terastallize');
+		const root = projectedState(battle);
+		root.opponent.active[0].terastallized = battle.p2.active[0].terastallized;
+		root.opponent.active[0].stellarBoostedTypes = [...battle.p2.active[0].stellarBoostedTypes];
+		let state = root;
+		for (let turn = 0; turn < 2; turn++) {
+			state = step(state, 'splash', 'psychic', { quantile: 1 });
+			battle.makeChoices('move splash', 'move psychic');
+			assert.equal(state.self.active[0].hp, battle.p1.active[0].hp);
+			assert.deepEqual(state.opponent.active[0].stellarBoostedTypes, ['Psychic']);
+			assert.deepEqual(state.opponent.active[0].stellarBoostedTypes, battle.p2.active[0].stellarBoostedTypes);
+		}
+		assert.deepEqual(step(root, 'protect', 'psychic').opponent.active[0].stellarBoostedTypes, []);
+		assert.deepEqual(root.opponent.active[0].stellarBoostedTypes, []);
+	});
 	it('propagates incomplete battle state and unresolved choices instead of returning a scoring fallback', () => {
 		const { state, evaluator } = fixture([mon('Mew', ['splash'])], [mon('Slowbro', ['tackle'])]);
 		const search = (snapshot, actions) => searchPosition(snapshot, evaluator, actions, new Map());
@@ -1505,13 +1547,14 @@ describe('Hard damage-based state search', () => {
 		assert(result.safe, result.reasons.join('; '));
 		assert(result.reasons.some(reason => reason.startsWith('Wish recipient')));
 	});
-	it('does not discard an unsupported opponent response while returning a confident search result', () => {
-		const f = fixture([mon('Mew', ['psychic', 'psyshock'])], [mon('Mew', ['naturepower', 'splash']), mon('Magikarp', ['splash'])]);
+	it('rejects unsupported opponent responses instead of projecting them', () => {
+		const move = 'naturepower';
+		const f = fixture([mon('Mew', ['psychic', 'psyshock'])], [mon('Mew', [move, 'splash']), mon('Magikarp', ['splash'])]);
 		const original = Search.prototype.responseProbabilities;
-		Search.prototype.responseProbabilities = () => [{ action: action('naturepower'), probability: 1 }];
+		Search.prototype.responseProbabilities = () => [{ action: action(move), probability: 1 }];
 		try {
 			const result = searchPosition(f.state, f.evaluator, [action('psychic'), action('psyshock')], new Map());
-			assert(!result.choice); assert(result.reason.includes('naturepower'));
+			assert(!result.choice); assert(result.reason.includes(move));
 		} finally {
 			Search.prototype.responseProbabilities = original;
 		}
@@ -1682,6 +1725,44 @@ describe('Hard damage-based state search', () => {
 		assert.equal(receiver.boosts.spa, 2); assert.equal(receiver.hp, receiver.maxHp);
 		assert(!receiver.volatiles.has('substitute'));
 	});
+	it('matches a faster opposing Shed Tail through the pending hit and the following turn', () => {
+		const battle = new Battle({ formatid: 'gen9customgame',
+			p1: { name: 'Own', team: [mon('Dusclops', ['nightshade'], { level: 50 })] },
+			p2: { name: 'Foe', team: [mon('Cyclizar', ['shedtail'], { ability: 'Shed Skin' }), mon('Slowbro', ['splash'])] } });
+		battles.push(battle); battle.makeChoices();
+		const user = battle.p2.active[0];
+		user.boosts.atk = 2;
+		const initial = projectedState(battle);
+		assert(supportsMove(initial, 'shedtail'));
+		let state = step(initial, 'nightshade', 'shedtail');
+		battle.makeChoices('move 1', 'move 1'); battle.makeChoices('', 'switch 2');
+		const receiver = battle.p2.active[0];
+		assert.equal(state.opponent.reserve[0].hp, user.hp);
+		assert.equal(user.hp, user.maxhp - Math.ceil(user.maxhp / 2));
+		assert.equal(state.opponent.active[0].boosts.atk, receiver.boosts.atk);
+		assert.equal(state.opponent.active[0].projection.substituteHp, receiver.volatiles.substitute.hp);
+		assert.equal(receiver.volatiles.substitute.hp, Math.floor(user.maxhp / 4) - 50);
+		state = step(state, 'nightshade', 'splash'); battle.makeChoices('move 1', 'move 1');
+		assert(!state.opponent.active[0].volatiles.has('substitute') && !receiver.volatiles.substitute);
+		assert.equal(state.opponent.active[0].hp, receiver.hp);
+	});
+	for (const failure of ['low HP', 'existing Substitute', 'no reserve']) {
+		it(`matches PS when Shed Tail fails: ${failure}`, () => {
+			const battle = new Battle({ formatid: 'gen9customgame', p1: { name: 'Own', team: [
+				mon('Cyclizar', ['shedtail']), ...(failure === 'no reserve' ? [] : [mon('Blissey', ['splash'])]),
+			] }, p2: { name: 'Foe', team: [mon('Mew', ['splash'])] } });
+			battles.push(battle); battle.makeChoices();
+			const user = battle.p1.active[0];
+			if (failure === 'low HP') user.hp = Math.ceil(user.maxhp / 2);
+			if (failure === 'existing Substitute') user.addVolatile('substitute');
+			const state = step(projectedState(battle), 'shedtail', 'splash');
+			const before = user.hp;
+			battle.makeChoices('move 1', 'move 1');
+			assert(!battle.p1.activeRequest.forceSwitch);
+			assert.equal(state.self.active[0].species, user.species.name);
+			assert.equal(state.self.active[0].hp, before); assert.equal(user.hp, before);
+		});
+	}
 	for (const formatid of ['gen6customgame', 'gen7customgame', 'gen5pokemmoou']) {
 		it(`matches PS Parting Shot when neither stat can fall in ${formatid}`, () => {
 			const battle = new Battle({ formatid, p1: { name: 'Own', team: [mon('Mew', ['partingshot']), mon('Slowbro', ['surf'])] },

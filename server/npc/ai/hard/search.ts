@@ -176,10 +176,13 @@ export class Search extends CandidateSelector {
 		this.values.set(key, value); return value;
 	}
 
+	private requireSupported(state: BattleState, move?: string) {
+		if (move && !supportsMove(state, move)) throw new UnsupportedTransition(move, this.nodes);
+	}
+
 	override choices(state: BattleState, side: Side, supplied?: SearchAction[]): SearchAction[] {
 		const actions = super.choices(state, side, supplied);
-		const unsupported = actions.find(action => action.move && !supportsMove(state, action.zMove?.id || action.move));
-		if (unsupported) throw new UnsupportedTransition(unsupported.move!, this.nodes);
+		for (const action of actions) this.requireSupported(state, action.zMove?.id || action.move);
 		return actions;
 	}
 
@@ -280,7 +283,7 @@ export class Search extends CandidateSelector {
 	TransitionNode[] {
 		const walk = (state: BattleState, turn: TurnCheckpoint | undefined, history: string[],
 			weight: number, entries: EntryDecision[]): TransitionNode[] => {
-			let pending: { side: Side, cause: 'pivot' | 'phaze' | 'faint', copyVolatile?: boolean } | undefined;
+			let pending: { side: Side, cause: 'pivot' | 'phaze' | 'faint', selfSwitch?: Move['selfSwitch'] } | undefined;
 			if (turn) {
 				const completed = continueTurn(turn, this.matchups.damagePolicy, this.matchups.damageCache);
 				state = turn.state;
@@ -297,7 +300,7 @@ export class Search extends CandidateSelector {
 			return [{ weight, entries,
 				checkpoint: cause === 'phaze' || side === 'opponent' ? undefined : { key, side, depth: history.length },
 				expand: () => {
-					const view = entryView(state, side, pending.copyVolatile);
+					const view = entryView(state, side, pending.selfSwitch);
 					const legal = view[side].reserve.filter(p => !p.fainted && p.hp > 0);
 					const exposed = turn?.remaining.some(a => a.side !== side &&
 						!state[a.side].active[0]?.fainted && a.actor === identity(state[a.side].active[0]));
@@ -324,7 +327,7 @@ export class Search extends CandidateSelector {
 								if (model) bindOpponent(next, pokemon, model);
 								if (simultaneous) return this.pairedEntries(next, pokemon, (paired, chance) =>
 									walk(paired, undefined, [...history, identity(pokemon)], weight * chance, nextEntries));
-								switchIn(next, side, pokemon, pending.copyVolatile);
+								switchIn(next, side, pokemon, pending.selfSwitch);
 								return walk(next, cause === 'faint' ? undefined : { ...turn!, state: next, remaining: [...turn!.remaining] },
 									[...history, identity(pokemon)], weight * (model?.weight ?? 1) * chance, nextEntries);
 							},
@@ -340,7 +343,7 @@ export class Search extends CandidateSelector {
 		if (start.self.active[0].fainted && start.opponent.active[0].fainted) {
 			return this.pairedEntries(start, own.switchTo!, (next, chance) => walk(next, undefined, [], chance, []));
 		}
-		const next = clonePosition(start); switchIn(next, 'self', own.switchTo!, own.copyVolatile);
+		const next = clonePosition(start); switchIn(next, 'self', own.switchTo!, own.selfSwitch);
 		if (midTurnEntry(start)) {
 			const foe = next.opponent.active[0];
 			return walk(next, { state: next, startedActors: [identity(start.self.active[0]), identity(foe)],
@@ -392,6 +395,7 @@ export class Search extends CandidateSelector {
 
 	private responseWork(response: Response, own: SearchAction, replacing = false): ResponseWork {
 		const { profile, state: bound, action: reply } = response;
+		this.requireSupported(bound, reply.zMove?.id || reply.move);
 		const frontier: ResponseWork['frontier'] = [];
 		const targets: (OpponentModel | undefined)[] = reply.switchTo ? modelsFor(reply.switchTo) : [undefined];
 		for (const target of targets) {
@@ -400,10 +404,7 @@ export class Search extends CandidateSelector {
 			if (target) bindOpponent(start, reply.switchTo!, target);
 			for (const a of actionOutcomes(start, 'self', own)) {
 				for (const b of actionOutcomes(start, 'opponent', reply, profile.moves)) {
-					for (const outcome of [a, b]) if (outcome.action.calledMove &&
-						!supportsMove(start, outcome.action.calledMove)) {
-						throw new UnsupportedTransition(outcome.action.calledMove, this.nodes);
-					}
+					for (const outcome of [a, b]) this.requireSupported(start, outcome.action.calledMove);
 					const mass = (target?.weight ?? 1) * a.weight * b.weight;
 					const weighted = (node: TransitionNode): TransitionNode => ({ ...node, weight: node.weight * mass,
 						expand: node.expand && (() => node.expand!().map(weighted)) });
@@ -715,7 +716,7 @@ function runSearch(
 	Object.assign(root.self.active[0], { projection: { pp: Object.fromEntries(ownPP) } });
 	snapshotPosition(root);
 	const search = new Search(matchups, root);
-	const entries = replacing ? new Set(search.entryChoices(entryView(root, 'self', actions[0]?.copyVolatile),
+	const entries = replacing ? new Set(search.entryChoices(entryView(root, 'self', actions[0]?.selfSwitch),
 		'self', awaitsOpponent(root) ? 'exposed' : 'free').map(identity)) : undefined;
 	const candidates = entries ? actions.filter(a => a.switchTo && entries.has(identity(a.switchTo))) :
 		search.choices(root, 'self', actions);

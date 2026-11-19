@@ -30,7 +30,8 @@ export function sequencePower(actor: AIPokemon, move: ReturnType<typeof Dex.move
 
 export function chargePhase(actor: AIPokemon, move: AIMove, field: FieldConditions) {
 	if (!move.flags.charge || actor.chargingMove === move.id) return 'attack';
-	if (['solarbeam', 'solarblade'].includes(move.id) && field.weather === 'sun' &&
+	if ((['solarbeam', 'solarblade'].includes(move.id) && field.weather === 'sun' ||
+		move.id === 'electroshot' && field.weather === 'rain') &&
 		effectiveItem(actor, field) !== 'utilityumbrella') return 'attack';
 	return effectiveItem(actor, field) === 'powerherb' && move.id !== 'skydrop' ? 'herb' : 'prepare';
 }
